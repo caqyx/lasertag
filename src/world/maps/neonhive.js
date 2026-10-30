@@ -150,8 +150,8 @@ export default {
     spawn(-19.5, 7, 3), spawn(-19.5, -7, 3),
   ],
   cams: [
-    // pod sufitem w rogu NW, ukośnie nad ścianami na cały plaster
-    { name: 'overview', pos: [-20.3, 4.3, -20.3], look: [3, 0, 3] },
+    // pod sufitem (0.35 m) nad pasem N, ukośnie w dół nad szczytami ścian: komora centralna + 4 satelity
+    { name: 'overview', pos: [-4, 4.15, -20], look: [-2, 0, 0] },
     // korytarz promieniowy między satelitami (kierunek 0°), patrzy do środka
     { name: 'corridor', pos: [17.5, 1.65, 0.6], look: [0, 1.4, 0.6] },
     // korytarz pierścieniowy przy wejściu do komory centralnej (bok 4), widok na filar i osłony

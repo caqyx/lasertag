@@ -152,7 +152,8 @@ export default {
     spawn(-18.5, 5.5, 3, DECK), spawn(-18.5, -5.5, 3, DECK),
   ],
   cams: [
-    { name: 'overview', pos: [-19.3, 7.4, -15.3], look: [3, 1, 2] },
+    // pod sufitem (0.4 m) nad ćwiartką NW, ukośnie: rdzeń, galeria N/E/W/S, rampy N i W
+    { name: 'overview', pos: [-15, 7.6, -14], look: [2, 0, 2] },
     // przejście pod balkonem W, kładką i galerią W, widok wzdłuż osi na rdzeń
     { name: 'corridor', pos: [-19.0, 1.65, 0.4], look: [0, 1.6, 0.4] },
     // parter od strony N, widok na rdzeń nad osłonami
