@@ -98,15 +98,84 @@ createGraphics({ canvas, presetName }) → Graphics = {
 - `window.__lt` (zawsze): `{ ready, params, info(), setCam(i), world: { id, solids: n } }` — dla testów/zrzutów.
 - `src/world/maps/index.js`: `MAPS = { uvmaze, neonhive, reactor }`.
 
-## 7. Etapy późniejsze (szkic kontraktów)
-- **M1**: `participant.js` (`createParticipant({ id, name, team, color, inputSource })` = body + hp + weapon + stany),
-  `weapon.js` (`createWeapon()`, `stepWeapon(w, wantFire, dt) → fired:boolean`), `combat.js`
-  (`raycastParticipants`, `applyHit`, `stepCombatState` eliminacja/respawn/ochrona), `scoring.js`, `beams.js` (pula), `avatars.js`, `hud.js`.
+## 7. M1 — strzelanie (kontrakty)
+
+### 7.1 Zdarzenia (`src/core/events.js`)
+```js
+createEventQueue(capacity) → Q = { push(type) → Rec, count, at(i) → Rec, clear() }   // pierścień prealokowanych rekordów
+Rec = { type, time, a, b, team, sensor, x, y, z, x2, y2, z2, value }   // a = sprawca (id), b = cel (id) lub -1
+EV = { SHOT:1, HIT:2, ELIM:3, RESPAWN:4, OVERHEAT:5, PROTECT_END:6 }   // stałe typów (eksport)
+```
+Symulacja czyści kolejkę na początku `stepSim`? **Nie** — kolejka jest czyszczona przez właściciela pętli raz na klatkę renderu
+(po tym, jak render/HUD ją przeczytały), bo w jednej klatce może być kilka kroków symulacji.
+
+### 7.2 Uczestnik (`src/game/participant.js`)
+```js
+createParticipant({ id, name, team, color, isPlayer, inputSource }) → P = {
+  id, name, team, color /* '#rrggbb' */, isPlayer, inputSource,
+  body /* movement.createBody() */, input /* createInputState() */, prevX, prevY, prevZ,   // do interpolacji renderu
+  hp, state /* 'alive'|'eliminated' */, stateTimer, protectTimer,
+  weapon /* createWeapon() */,
+  sensorFlash: Float32Array(4) /* timery błysku [front, back, left, right] */, sensorsLit: 4,
+  stats: { score, hits, elims, deaths, shots },
+  lastHitBy, lastHitTime, lastHitDirX, lastHitDirZ,   // do wskaźnika kierunku trafienia
+}
+SENSOR = { FRONT:0, BACK:1, LEFT:2, RIGHT:3 }
+```
+
+### 7.3 Broń (`src/game/weapon.js`)
+```js
+createWeapon() → W = { heat, cooldown, sinceShot, overheated }
+stepWeapon(W, wantFire, dt) → boolean fired       // SPEC §2.3, CONFIG.weapon
+```
+
+### 7.4 Walka (`src/game/combat.js`)
+```js
+eyeRay(P, out)                                    // out = { ox,oy,oz, dx,dy,dz } z pozycji oka i yaw/pitch (PLAN §0)
+rayVsParticipant(P, ox,oy,oz, dx,dy,dz, maxDist) → dist | -1   // kapsuła pionowa CONFIG.combat.hitCapsule*
+nearestSensor(P, x,y,z) → SENSOR index           // sensory obrócone o body.yaw
+resolveShot(sim, shooter)                         // world raycast + uczestnicy (pomija siebie, wyeliminowanych, sojuszników
+                                                  // gdy !friendlyFire — przelatuje przez nich), emituje SHOT (+HIT/ELIM)
+applyHit(sim, shooter, target, sensor, hx,hy,hz)  // ochrona → brak efektu; hp−1, błysk, punkty, eliminacja przy 0
+stepParticipantState(sim, P, dt)                  // timery: eliminacja → respawn (pickSpawn), ochrona, błyski
+pickSpawn(sim, P) → spawn                         // najdalszy od żywych wrogów z linią wzroku (fallback: najdalszy od wszystkich)
+```
+Strzał przerywa ochronę (PROTECT_END).
+
+### 7.5 Punktacja (`src/game/scoring.js`)
+`awardHit(sim, shooter, target)`, `awardElim(sim, shooter, target)` — CONFIG.scoring; wyniki drużyn liczone w `teamScores(sim, out)`.
+
+### 7.6 Symulacja (`src/game/sim.js`)
+```js
+createSim({ world, seed, friendlyFire }) → sim = { world, rng, participants: [], events, time, teams: [] }
+addParticipant(sim, P)        // ustawia na spawnie (pickSpawn), state alive, hp max
+stepSim(sim, dt)              // dla każdego P: prev = pos; inputSource.sample(P, sim, P.input);
+                              // stepParticipantState; jeśli alive: stepMovement; stepWeapon(input.fire) → resolveShot
+```
+`InputSource` dla manekina: `src/game/input/dummyInput.js` → `createDummyInput({ strafe:boolean })` (stoi lub powoli chodzi lewo-prawo).
+
+### 7.7 Render/UI M1
+```js
+// src/render/beams.js
+createBeams(scene, capacity) → { spawn(x,y,z, x2,y2,z2, colorHex, hit:boolean), update(dt, camera), dispose() }
+   // 1 draw call: InstancedMesh billboardowych wstęg (rdzeń + poświata w shaderze), pula; iskry w punkcie trafienia (osobna pula Points/Instanced, 1 call)
+// src/render/avatars.js
+createAvatars(scene, maxCount) → { sync(participants, alpha, time, localId), dispose() }
+   // InstancedMesh: korpus (ciemny), głowa/hełm, 4 sensory kamizelki (emisyjne, kolor uczestnika; zgaszone = ciemne;
+   // błysk = biały; eliminacja = miganie; ochrona = pulsowanie), broń; lokalny gracz ukryty. ≤ 6 draw calli łącznie.
+// src/render/viewModel.js
+createViewModel(camera) → { update(dt, weapon, firedThisFrame, color), dispose() }   // fazer FPP, pasek ciepła na broni, odrzut
+// src/ui/hud.js
+createHud(rootEl) → { update(player, sim, dt), dispose() }   // HP 4 segmenty, ciepło, trafienie (hitmarker), kierunek
+   // trafienia, ekran eliminacji z odliczaniem, ochrona, feed eliminacji (z kolejki zdarzeń); DOM aktualizowany tylko przy zmianie
+```
+
+## 8. Etapy późniejsze (szkic)
 - **M2**: `nav.js` (`buildNav(world) → { nodes, edges, findPath(a,b,outPath), nearestNode(x,y,z) }`), `bots/ai.js` (FSM jako InputSource), `bots/adapt.js`.
 - **M3**: `modes.js`, `match.js` (timer, limity, koniec), `ui/scoreboard.js`, `ui/menu.js`, `ui/endScreen.js`.
 - **M4**: `maps/neonhive.js`, `maps/reactor.js` + decor (rdzeń reaktora).
 
-## 8. Podział pracy M0 (równolegle, rozłączne pliki)
+## 9. Podział pracy M0 (równolegle, rozłączne pliki)
 | Coder | Pliki |
 |---|---|
 | A — świat | `src/core/rng.js`, `src/world/maps/uvmaze.js`, `src/world/maps/index.js`, `src/world/mapgen.js`, `src/world/physics.js`, `src/game/movement.js` |
