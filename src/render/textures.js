@@ -241,7 +241,7 @@ function paintSplatter(g, W, H, ppm, cols, rng) {
   for (let i = 0; i < splats; i++) {
     const x = rng() * W;
     const y = rr(rng, 0.15, 0.75) * H;
-    const r = rr(rng, 0.08, 0.28) * ppm;
+    const r = rr(rng, 0.06, 0.2) * ppm;
     const col = pick(rng, cols);
     const sat = 14 + Math.floor(rng() * 20);
     const drips = 2 + Math.floor(rng() * 5);

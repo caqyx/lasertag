@@ -65,13 +65,14 @@ function addBar(buf, ax, ay, az, bx, by, bz, tw, th, r, g, b) {
     const nx = (p1.y - p0.y) * (p2.z - p0.z) - (p1.z - p0.z) * (p2.y - p0.y);
     const ny = (p1.z - p0.z) * (p2.x - p0.x) - (p1.x - p0.x) * (p2.z - p0.z);
     const nz = (p1.x - p0.x) * (p2.y - p0.y) - (p1.y - p0.y) * (p2.x - p0.x);
-    const nl = Math.hypot(nx, ny, nz) || 1;
+    // kolejność rogów w `faces` daje normalną do środka → odwracamy (ściany zewnętrzne = front)
+    const nl = -(Math.hypot(nx, ny, nz) || 1);
     const i0 = buf.count;
     for (let k = 0; k < 4; k++) {
       const p = _c[f[k]];
       buf.vert(p.x, p.y, p.z, nx / nl, ny / nl, nz / nl, k === 1 || k === 2 ? 1 : 0, k >= 2 ? 1 : 0, r, g, b);
     }
-    buf.quad(i0, i0 + 1, i0 + 2, i0 + 3);
+    buf.quad(i0, i0 + 3, i0 + 2, i0 + 1);
   }
 }
 
@@ -334,7 +335,10 @@ export function buildArena(world, preset, textures, opts = {}) {
     geo.translate(cx, ceil, cz);
     scaleUv(geo, W / A.ceilingTile, D / A.ceilingTile);
     const tex = textures.get('ceiling');
-    const mat = own(new THREE.MeshStandardMaterial({ color: 0xffffff, map: tex, roughness: 0.95, metalness: 0 }));
+    const mat = own(new THREE.MeshStandardMaterial({
+      color: 0xffffff, map: tex, roughness: 0.95, metalness: 0,
+      emissive: new THREE.Color(pal.uv), emissiveMap: tex, emissiveIntensity: A.ceilingGlow,
+    }));
     const m = new THREE.Mesh(geo, mat);
     m.name = 'ceiling';
     group.add(m);
@@ -363,6 +367,22 @@ export function buildArena(world, preset, textures, opts = {}) {
       addBar(trussBuf, x, yTop + tw, b.minZ, x, yTop + tw, b.maxZ, tw * 1.2, tw * 1.6, 1, 1, 1);
     }
   }
+  // świetlówki UV (blacklight) wzdłuż dźwigarów — sufit czytelny jako zamknięty, fiolet „wisi" w powietrzu
+  {
+    const yT = ceil - A.trussDrop - A.trussDepth - A.uvTube.drop;
+    const c = lin(pal.uv, A.uvTube.intensity);
+    const hl = A.uvTube.length / 2;
+    let row = 0;
+    for (let z = b.minZ + A.trussSpacing; z < b.maxZ - 0.5; z += A.trussSpacing, row++) {
+      const start = b.minX + A.uvTube.spacing * (row % 2 ? 0.5 : 0.25);
+      for (let x = start; x < b.maxX - hl; x += A.uvTube.spacing) {
+        let nearLamp = false;
+        for (const L of world.lights || []) if (Math.abs(L.x - x) < 1.5 && Math.abs(L.z - z) < 1.5) nearLamp = true;
+        if (nearLamp) continue;
+        addBar(trimBuf, x - hl, yT, z, x + hl, yT, z, A.uvTube.thickness, A.uvTube.thickness, c.r, c.g, c.b);
+      }
+    }
+  }
   // lampy UV (emisyjne prostokąty w kolorze światła — w meshu listew) + oprawy (w kratownicy)
   for (const L of world.lights || []) {
     const y = Math.min(L.y, ceil - A.trussDrop - A.trussDepth - 0.05);
@@ -377,7 +397,10 @@ export function buildArena(world, preset, textures, opts = {}) {
     const geo = trussBuf.toGeometry();
     if (geo) {
       geo.deleteAttribute('uv');
-      const mat = own(new THREE.MeshStandardMaterial({ color: A.trussColor, roughness: 0.5, metalness: 0.6 }));
+      const mat = own(new THREE.MeshStandardMaterial({
+        color: A.trussColor, roughness: 0.5, metalness: 0.6,
+        emissive: new THREE.Color(pal.uv), emissiveIntensity: A.trussGlow,
+      }));
       const m = new THREE.Mesh(own(geo), mat);
       m.name = 'truss';
       group.add(m);

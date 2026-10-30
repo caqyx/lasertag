@@ -70,6 +70,9 @@ export function createGraphics({ canvas, presetName = CONFIG.defaults.preset }) 
         const base = UnrealBloomPass.prototype.setSize;
         bloomPass.setSize = function setSizeScaled(w, h) { base.call(this, Math.max(1, Math.round(w * scale)), Math.max(1, Math.round(h * scale))); };
       }
+      // wagi mipów: mocniej mała poświata przy listwach, słabiej szerokie „mydło" (bliskie listwy nie zalewają kadru)
+      const f = bloomPass.compositeMaterial.uniforms.bloomFactors.value;
+      for (let i = 0; i < f.length && i < R.bloomFactors.length; i++) f[i] = R.bloomFactors[i];
       composer.addPass(bloomPass);
     }
     outputPass = new OutputPass();
@@ -122,7 +125,8 @@ export function createGraphics({ canvas, presetName = CONFIG.defaults.preset }) 
     });
     arena = buildArena(world, preset, textures, { renderer });
     scene.add(arena.group);
-    smoke = createSmoke(world, preset.smoke, makeRng((world.seed ^ 0x5307e) >>> 0), { texture: textures.get('smoke') });
+    smoke = createSmoke(world, preset.smoke, makeRng((world.seed ^ 0x5307e) >>> 0),
+      { texture: preset.smoke > 0 ? textures.get('smoke') : null });
     if (smoke.mesh) scene.add(smoke.mesh);
   }
 
