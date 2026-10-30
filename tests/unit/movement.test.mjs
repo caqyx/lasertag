@@ -29,10 +29,10 @@ test('createBody / createInputState: pola wg kontraktu PLAN §4', () => {
   assert.equal(b.height, P.height);
   assert.equal(typeof b.onGround, 'boolean');
   const s = createInputState();
-  assert.deepEqual(s, { moveX: 0, moveZ: 0, yaw: 0, pitch: 0, fire: false, jump: false, sprint: false, scoreboard: false });
-  Object.assign(s, { moveX: 1, moveZ: -1, yaw: 2, pitch: 0.3, fire: true, jump: true, sprint: true, scoreboard: true });
+  assert.deepEqual(s, { moveX: 0, moveZ: 0, yaw: 0, pitch: 0, fire: false, jump: false, sprint: false, crouch: false, scoreboard: false });
+  Object.assign(s, { moveX: 1, moveZ: -1, yaw: 2, pitch: 0.3, fire: true, jump: true, sprint: true, crouch: true, scoreboard: true });
   resetInputState(s);
-  assert.deepEqual(s, { moveX: 0, moveZ: 0, yaw: 2, pitch: 0.3, fire: false, jump: false, sprint: false, scoreboard: false }, 'reset zachowuje yaw/pitch');
+  assert.deepEqual(s, { moveX: 0, moveZ: 0, yaw: 2, pitch: 0.3, fire: false, jump: false, sprint: false, crouch: false, scoreboard: false }, 'reset zachowuje yaw/pitch');
 });
 
 test('ciało na ziemi po pierwszym kroku; yaw/pitch przepisane z wejścia', () => {
@@ -199,4 +199,42 @@ test('pusty / brakujący moveX/moveZ (undefined) traktowany jak 0', () => {
   stepMovement(body, { yaw: 0, pitch: 0 }, DT, world);
   assert.equal(hspeed(body), 0);
   assert.ok(Number.isFinite(body.x) && Number.isFinite(body.z));
+});
+
+// ------------------------------------------------------------------------------------------------ kucanie (§9, CONFIG.player.crouch*)
+
+test('kuc: płynne przejście (crouchTime), wysokość/oko, prędkość × crouchSpeedMul, bez sprintu i skoku', () => {
+  const { body, input } = setup({ crouch: true, moveZ: 1, sprint: true, jump: true });
+  const n = Math.ceil(P.crouchTime / DT);
+  stepMovement(body, input, DT, world);
+  assert.ok(body.crouch > 0 && body.crouch < 1, `crouch po 1 kroku: ${body.crouch}`);
+  for (let i = 0; i < n + 60; i++) stepMovement(body, input, DT, world);
+  assert.equal(body.crouch, 1);
+  assert.ok(Math.abs(body.height - P.crouchHeight) < 1e-12);
+  assert.ok(Math.abs(body.eyeHeight - P.crouchEyeHeight) < 1e-12);
+  assert.ok(Math.abs(hspeed(body) - P.walkSpeed * P.crouchSpeedMul) < 1e-9, `prędkość w kucu ${hspeed(body)}`);
+  assert.equal(body.y, 0, 'skok w kucu');
+  input.crouch = false;
+  for (let i = 0; i < n + 1; i++) stepMovement(body, input, DT, world);
+  assert.equal(body.crouch, 0);
+  assert.equal(body.height, P.height);
+});
+
+test('kuc: nie można wstać pod przeszkodą (spód bryły nad głową); po wyjściu wstaje', () => {
+  const w = buildWorld({
+    id: 't', name: 't', seed: 1, size: { w: 30, d: 30 }, ceiling: 10, perimeter: { h: 10 }, ramps: [], spawns: [], cams: [],
+    walls: [{ x: 0, z: -4, w: 4, d: 4, h: 0.3, y: 1.3, kind: 'platform' }], // spód 1.3: kuc (1.15) przejdzie, stojący (1.8) nie
+  });
+  const body = createBody();
+  const input = Object.assign(createInputState(), { crouch: true, moveZ: 1 });
+  for (let i = 0; i < 150; i++) stepMovement(body, input, DT, w); // ≈ 4.3 m w kucu → z ≈ −4.3 (pod platformą z∈[−6,−2])
+  assert.ok(body.z < -3 && body.z > -5.5, `pod platformą: z=${body.z}`);
+  input.moveZ = 0; input.crouch = false;
+  for (let i = 0; i < 30; i++) stepMovement(body, input, DT, w);
+  assert.ok(body.y + body.height <= 1.3 + 1e-9, `wstał pod platformą: głowa ${body.y + body.height}`);
+  assert.ok(body.crouch > 0);
+  input.moveZ = -1;
+  for (let i = 0; i < 200; i++) stepMovement(body, input, DT, w);
+  assert.equal(body.crouch, 0);
+  assert.equal(body.height, P.height);
 });

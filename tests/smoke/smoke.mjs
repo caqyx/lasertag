@@ -6,7 +6,7 @@
 // zamrożenia, reszta skrócona; boty strzelają)
 // → timeLeft = 1 → ekran końca → „Jeszcze raz" (Enter) → goMenu() → zmiana mapy; 3 tryby na uvmaze + neonhive/tdm2 +
 // reactor/tdm4; po powrocie na tę samą mapę renderer.info geometries/textures jak na początku. Zero błędów konsoli/HTTP.
-// Użycie: npm run smoke [-- --map uvmaze --preset low,ultra --skip-game --skip-leak --leak-all --jobs 3 --skip-flow --flow-only]
+// Użycie: npm run smoke [-- --map uvmaze --preset low,ultra --skip-game --skip-leak --leak-all --jobs 3 --skip-flow --flow-only --time-limit 480]
 // Mapy sprawdzane równolegle (--jobs, domyślnie 3 strony), presety mapy po kolei. Test wycieków domyślnie tylko na pierwszej
 // mapie (zmiana presetu nie zależy od mapy; ultra w SwiftShaderze jest wolne) — --leak-all na każdej.
 // Kod wyjścia ≠ 0 przy jakimkolwiek problemie. Bez zrzutów ekranu (renderowanie programowe jest wolne).
@@ -22,7 +22,7 @@ const require = createRequire(import.meta.url);
 const { chromium } = require('playwright');
 const ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const T0 = Date.now();
-const TOTAL_LIMIT_MS = 8 * 60 * 1000;
+const TOTAL_LIMIT_MS = Number(arg('time-limit', 480)) * 1000; // --time-limit s (domyślnie 8 min)
 const SETTLE_MS = 2000;
 const VIEWPORT = { width: 640, height: 360 }; // liczby renderer.info nie zależą od rozdzielczości; mniejszy = szybciej w SwiftShaderze
 
@@ -82,8 +82,8 @@ async function openPage(browser, url, viewport = VIEWPORT) {
   page.on('response', (r) => { if (r.status() >= 400) problems.push(`HTTP ${r.status()} ${r.url()}`); });
   page.on('requestfailed', (r) => problems.push(`requestfailed: ${r.url()} (${r.failure() && r.failure().errorText})`));
   const t = Date.now();
-  await page.goto(url, { waitUntil: 'commit', timeout: 120000 }); // „load“ pod obciążeniem SwiftShadera bywa > 30 s
-  await page.waitForFunction(() => window.__lt && window.__lt.ready, null, { timeout: 120000 });
+  await page.goto(url, { waitUntil: 'commit', timeout: 240000 }); // „load“ pod obciążeniem SwiftShadera bywa > 30 s
+  await page.waitForFunction(() => window.__lt && window.__lt.ready, null, { timeout: 240000 });
   return { page, problems, loadMs: Date.now() - t };
 }
 

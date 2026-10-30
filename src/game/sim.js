@@ -137,6 +137,26 @@ function separateParticipants(sim) {
           if (vn > 0) { b.vx -= vn * nx; b.vz -= vn * nz; }
           resolveBodyWalls(sim.world, b);
         }
+        // ściana cofnęła któreś ciało → resztę nachodzenia przejmuje drugie (żywe), znów z rozwiązaniem ścian
+        if (wa > 0 && wb > 0) {
+          const ex = a.x - b.x, ez = a.z - b.z;
+          const e2 = ex * ex + ez * ez;
+          if (e2 < rr * rr) {
+            const e = Math.sqrt(e2);
+            const res = rr - e + SEP_EPS;
+            const mx = e > 1e-9 ? ex / e : nx, mz = e > 1e-9 ? ez / e : nz;
+            // przesuń to ciało, które ściana mniej zablokowała (sprawdzamy oba kierunki po kolei)
+            const ax0 = a.x, az0 = a.z;
+            a.x += mx * res; a.z += mz * res;
+            resolveBodyWalls(sim.world, a);
+            const fx = a.x - b.x, fz = a.z - b.z;
+            if (fx * fx + fz * fz < rr * rr - 1e-9) {
+              a.x = ax0; a.z = az0;
+              b.x -= mx * res; b.z -= mz * res;
+              resolveBodyWalls(sim.world, b);
+            }
+          }
+        }
         any = true;
       }
     }

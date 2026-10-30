@@ -247,3 +247,49 @@ test('niezmienniki meczu: punkty = 10·hits + 50·elims, suma elims = suma death
   assert.equal(elims, deaths);
   assert.ok(elims > 0);
 });
+
+// ------------------------------------------------------------------------------------------------ kolizje uczestników (D-017)
+
+/** InputSource: idzie stale w zadanym kierunku świata (yaw). */
+function walkInput(yaw) {
+  return { sample(P, s, o) { o.moveX = 0; o.moveZ = 1; o.yaw = yaw; o.pitch = 0; o.fire = false; o.jump = false; o.sprint = true; } };
+}
+
+test('separacja: dwa ciała idące na siebie nie nachodzą (d ≥ 2r − ε), prędkość „w siebie" wyzerowana', () => {
+  const sim = createSim({ world: openWorld(), seed: 1 });
+  const A = addParticipant(sim, createParticipant({ id: 1, inputSource: walkInput(Math.PI / 2) }));  // −X
+  const B = addParticipant(sim, createParticipant({ id: 2, inputSource: walkInput(-Math.PI / 2) })); // +X
+  placeAt(A, 3, 0, 0, Math.PI / 2); placeAt(B, -3, 0, 0, -Math.PI / 2);
+  let minD = Infinity;
+  for (let i = 0; i < 120; i++) {
+    stepSim(sim, DT);
+    minD = Math.min(minD, Math.hypot(A.body.x - B.body.x, A.body.z - B.body.z));
+  }
+  const rr = A.body.radius + B.body.radius;
+  assert.ok(minD >= rr - 1e-6, `nachodzą: d=${minD} < ${rr}`);
+  assert.ok(Math.abs(A.body.x + B.body.x) < 1e-6, 'symetryczne rozepchnięcie po połowie');
+});
+
+test('separacja: ciało wypchnięte na ścianę nie wchodzi w nią; wyeliminowany stoi', () => {
+  const w = buildWorld({
+    id: 't', name: 't', seed: 1, size: { w: 30, d: 30 }, ceiling: 6, perimeter: { h: 6 },
+    walls: [{ x: -2, z: 0, w: 1, d: 6, h: 3 }], ramps: [], spawns: [{ x: 10, z: 10, team: 0 }], cams: [], lights: [], decor: [], palette: {},
+  });
+  const sim = createSim({ world: w, seed: 1 });
+  const A = addParticipant(sim, createParticipant({ id: 1, inputSource: walkInput(Math.PI / 2) })); // pcha w −X
+  const B = addParticipant(sim, createParticipant({ id: 2 }));                                     // stoi przy ścianie
+  placeAt(A, 1.5, 0, 0, Math.PI / 2); placeAt(B, -1.5 + B.body.radius + 0.01, 0, 0, 0);
+  const wallFace = -1.5;
+  for (let i = 0; i < 120; i++) {
+    stepSim(sim, DT);
+    assert.ok(B.body.x - B.body.radius >= wallFace - 2e-3, `B w ścianie: x=${B.body.x}`);
+    assert.ok(A.body.x - B.body.x >= A.body.radius + B.body.radius - 2e-3, 'A nachodzi na B');
+  }
+  // wyeliminowany: nie przesuwa się, żywy się od niego odbija
+  B.state = 'eliminated'; B.stateTimer = 100;
+  const bx = B.body.x;
+  placeAt(A, bx + 2, 0, 0, Math.PI / 2);
+  for (let i = 0; i < 60; i++) stepSim(sim, DT);
+  assert.equal(B.body.x, bx);
+  assert.ok(A.body.x - bx >= A.body.radius + B.body.radius - 1e-6);
+});

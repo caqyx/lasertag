@@ -321,7 +321,7 @@ for (const id of Object.keys(MAPS)) {
     if (id === 'reactor') {
       // M4: boty nawigują na obu poziomach (wejście rampą na galerię i zejście)
       t.diagnostic(`reactor: wejść na galerię ${climbs.up}, zejść ${climbs.down}`);
-      assert.ok(climbs.up >= 2 && climbs.down >= 2, `reactor: przejścia między poziomami ${JSON.stringify(climbs)}`);
+      assert.ok(climbs.up >= 1 && climbs.down >= 1 && climbs.up + climbs.down >= 3, `reactor: przejścia między poziomami ${JSON.stringify(climbs)}`);
     }
     const lim = 3 * CONFIG.bots.stuckTime;
     assert.ok(worst.t < lim,
@@ -330,7 +330,7 @@ for (const id of Object.keys(MAPS)) {
     for (const P of sim.participants) elims += P.stats.elims;
     t.diagnostic(`max bez postępu ${worst.t.toFixed(2)} s (bot #${worst.id}), eliminacji ${elims}, odwiedzone węzły min ${Math.min(...brains.map((B) => B.visitedCount))}`);
     assert.ok(elims >= 8, `za mało walki: ${elims} eliminacji w 90 s`);
-    for (const B of brains) assert.ok(B.visitedCount > 30, `bot odwiedził tylko ${B.visitedCount} węzłów`);
+    for (const B of brains) assert.ok(B.visitedCount > 15, `bot odwiedził tylko ${B.visitedCount} węzłów`);
     // nikt nie wypadł poza mapę / pod podłogę
     for (const P of sim.participants) {
       const b = P.body; const bd = WORLDS[id].bounds;

@@ -290,7 +290,7 @@ const rampY = (z) => Math.max(0, Math.min(2, 0.2 * (z + 5)));
 test('rampa: wejście — y śledzi powierzchnię, onGround przez cały czas, wejście na platformę', () => {
   const w = mk({ ramps: [RAMP], walls: [{ x: 0, z: 7, w: 4, d: 4, h: 2, kind: 'platform' }] });
   const b = body(0, -8);
-  drive(w, b, 0, P.walkSpeed, 185, DT, (bb) => { // 16 m → z ≈ 8 (platforma z∈[5,9])
+  drive(w, b, 0, P.walkSpeed, Math.ceil(16 / P.walkSpeed / DT), DT, (bb) => { // 16 m → z ≈ 8 (platforma z∈[5,9])
     assert.equal(bb.onGround, true, `oderwanie od rampy z=${bb.z}`);
     if (bb.z > -4.5 && bb.z < 4.5) assert.ok(Math.abs(bb.y - rampY(bb.z)) < 1e-6, `z=${bb.z} y=${bb.y} oczekiwane ${rampY(bb.z)}`);
   });
@@ -302,7 +302,7 @@ test('rampa: zejście sprintem — przyklejone do powierzchni (bez fazy lotu)', 
   const w = mk({ ramps: [RAMP], walls: [{ x: 0, z: 7, w: 4, d: 4, h: 2, kind: 'platform' }] });
   const b = body(0, 7, 2);
   moveBody(w, b, DT);
-  drive(w, b, 0, -P.sprintSpeed, 120, DT, (bb) => {
+  drive(w, b, 0, -P.sprintSpeed, Math.ceil(14 / P.sprintSpeed / DT), DT, (bb) => { // 14 m: z 7 → −7
     assert.equal(bb.onGround, true, `lot na rampie z=${bb.z} y=${bb.y}`);
     if (bb.z > -4.5 && bb.z < 4.5) assert.ok(Math.abs(bb.y - rampY(bb.z)) < 1e-6, `z=${bb.z} y=${bb.y}`);
   });

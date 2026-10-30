@@ -11,7 +11,6 @@ import { CONFIG } from '../../config.js';
 import { segmentClearSeg, SEG } from '../../world/physics.js';
 import { nearestNodeBuf, NEAR, findPath, randomNode, smoothPath } from '../../world/nav.js';
 import { isEnemy, sameTeam, eyeOf, heightScale } from '../combat.js';
-import { EV } from '../../core/events.js';
 import { skillScale, stepAdapt } from './adapt.js';
 
 export const BOT_STATE = Object.freeze({ PATROL: 'patrol', HOLD: 'hold', ENGAGE: 'engage', COVER: 'cover', CHASE: 'chase' });
@@ -65,7 +64,7 @@ export function createBotBrain(o) {
     // wymiana ognia (wycofanie po przegranej)
     engageTime: 0.5, hitsAtEngage: 0,
     // słuch
-    heardX: 0.5, heardZ: 0.5, heardTime: -1e9 + 0.5, heardScan: -1e9 + 0.5, heardHandled: -1e9 + 0.5,
+    heardX: 0.5, heardZ: 0.5, heardTime: -1e9 + 0.5, heardHandled: -1e9 + 0.5,
     path2: new Int32Array(CONFIG.bots.pathCapacity), investigating: false,
     rng: null, resampleAim: false, needErr: false, pauseNeeded: false,
     sample: null,
@@ -202,24 +201,21 @@ function timers(B) {
 }
 
 /**
- * Słuch: strzały wrogów (SHOT z kolejki) w promieniu hearRadius → B.heard*. Każdy krok (kolejka czyszczona raz na
- * klatkę renderu); rekordy o czasie ≥ ostatnio przetworzonego (powtórki idempotentne).
+ * Słuch: wróg, który właśnie strzelił (weapon.sinceShot < 1.5 kroku), w promieniu hearRadius → B.heard*.
+ * Z broni uczestników, nie z kolejki zdarzeń — ta jest czyszczona raz na klatkę renderu, często zanim bot ją przeczyta.
  */
 function listen(B, P, sim) {
-  const ev = sim.events;
   const b = P.body;
   const r2 = CONFIG.bots.hearRadius * CONFIG.bots.hearRadius;
+  const fresh = B.dt * 1.5;
   const ps = sim.participants;
-  for (let i = 0; i < ev.count; i++) {
-    const r = ev.at(i);
-    if (r.type !== EV.SHOT || r.time < B.heardScan || r.a === P.id) continue;
-    B.heardScan = r.time;
-    const dx = r.x - b.x, dz = r.z - b.z;
+  for (let i = 0; i < ps.length; i++) {
+    const Q = ps[i];
+    if (Q === P || Q.state !== 'alive' || Q.weapon.sinceShot >= fresh || !isEnemy(P, Q)) continue;
+    const q = Q.body;
+    const dx = q.x - b.x, dz = q.z - b.z;
     if (dx * dx + dz * dz > r2) continue;
-    let Q = null;
-    for (let j = 0; j < ps.length; j++) if (ps[j].id === r.a) { Q = ps[j]; break; }
-    if (Q === null || !isEnemy(P, Q)) continue;
-    B.heardX = r.x; B.heardZ = r.z; B.heardTime = r.time;
+    B.heardX = q.x; B.heardZ = q.z; B.heardTime = sim.time;
   }
 }
 
@@ -493,6 +489,7 @@ function startHold(B, P, sim) {
       const inv = 1 / Math.sqrt(e2);
       vx += ex * inv; vz += ez * inv;
     }
+    if (score >= 2 && halfCoverNear(sim.world, nav.x[n], nav.z[n])) score += 2;   // preferuj połówkę (kucanie)
     if (score > bestScore) { bestScore = score; best = n; B.holdYaw = Math.atan2(-vx, -vz); }
   }
   if (best < 0) return false;
@@ -521,7 +518,9 @@ function startHoldNear(B, P, sim) {
     const n = randomNode(nav, sim.rng);
     if (n < 0 || nav.cover[n] === 0) continue;
     const dx = nav.x[n] - b.x, dz = nav.z[n] - b.z;
-    const d2 = dx * dx + dz * dz;
+    let d2 = dx * dx + dz * dz;
+    if (d2 >= bestD) continue;
+    if (halfCoverNear(sim.world, nav.x[n], nav.z[n])) d2 *= 0.25;   // preferuj połówkę (kucanie)
     if (d2 < bestD) { bestD = d2; best = n; }
   }
   if (best < 0) return false;
@@ -683,7 +682,9 @@ function steerMove(B, P, sim) {
     const dyN = nav.y[n] - py;
     const dyB = nav.y[n] - b.y;
     const ramp = dyN > C.rampDy || dyN < -C.rampDy || dyB > C.rampDy || dyB < -C.rampDy;
-    const ad = ramp ? C.rampArriveDist : C.arriveDist;
+    // ostatni węzeł osłony/zasadzki: dojście dokładne (inaczej bot staje 0.6 m przed węzłem — często na widoku)
+    const final = B.pathIdx === B.pathLen - 1 && (B.state === BOT_STATE.COVER || B.state === BOT_STATE.HOLD);
+    const ad = ramp || final ? C.rampArriveDist : C.arriveDist;
     if (ramp) B.onRamp = true;
     if (dx * dx + dz * dz > ad * ad) break;
     if (B.visited[n] === 0) { B.visited[n] = 1; B.visitedCount++; }
