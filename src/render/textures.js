@@ -117,7 +117,7 @@ function drawPaint(style, S, palette, rng) {
 
 function paintStripes(g, W, H, ppm, cols, rng) {
   // 1) poziome pakiety taśm (grube + cienkie), pełna szerokość — bezszwowe
-  const bands = 2 + Math.floor(rng() * 2);
+  const bands = 3 + Math.floor(rng() * 3);
   for (let b = 0; b < bands; b++) {
     let y = rr(rng, 0.1, 0.9) * H;
     const col = pick(rng, cols);
@@ -130,7 +130,7 @@ function paintStripes(g, W, H, ppm, cols, rng) {
     }
   }
   // 2) ukośne segmenty taśmy (szewrony / „chevron"), w kilku miejscach kafla
-  const groups = 3 + Math.floor(rng() * 3);
+  const groups = 6 + Math.floor(rng() * 4);
   for (let k = 0; k < groups; k++) {
     const x0 = rng() * W;
     const yC = rr(rng, 0.2, 0.8) * H;
@@ -178,12 +178,12 @@ function paintStripes(g, W, H, ppm, cols, rng) {
 
 function paintGeo(g, W, H, ppm, cols, rng) {
   // mural skupiony w ~1/2 kafla (różna gęstość na różnych ścianach dzięki losowemu offsetowi u), reszta rzadko
-  const muralX = rng() * W, muralW = rr(rng, 1.6, 2.6) * ppm;
-  const shapes = 16 + Math.floor(rng() * 8);
+  const muralX = rng() * W, muralW = rr(rng, 2.6, 3.6) * ppm;
+  const shapes = 30 + Math.floor(rng() * 10);
   for (let i = 0; i < shapes; i++) {
-    const x = rng() < 0.8 ? muralX + (rng() - 0.5) * muralW : rng() * W;
+    const x = rng() < 0.6 ? muralX + (rng() - 0.5) * muralW : rng() * W;
     const y = rr(rng, 0.12, 0.88) * H;
-    const r = rr(rng, 0.12, 0.6) * ppm;
+    const r = (rng() < 0.15 ? rr(rng, 0.55, 0.9) : rr(rng, 0.1, 0.45)) * ppm;
     const lw = (rng() < 0.35 ? rr(rng, 0.006, 0.014) : rr(rng, 0.025, 0.06)) * ppm;
     const col = pick(rng, cols);
     const type = Math.floor(rng() * 5);
@@ -244,16 +244,16 @@ function paintGeo(g, W, H, ppm, cols, rng) {
 
 function paintSplatter(g, W, H, ppm, cols, rng) {
   // 2–3 skupiska małych rozbryzgów (różne kształty, obroty, kilka kropel), pył tylko wokół plam; reszta kafla czysta
-  const clusters = 2 + Math.floor(rng() * 2);
+  const clusters = 5 + Math.floor(rng() * 3);
   for (let c = 0; c < clusters; c++) {
-    const cx = rng() * W, cy = rr(rng, 0.25, 0.7) * H;
+    const cx = (c + rng() * 0.6) / clusters * W, cy = rr(rng, 0.2, 0.75) * H;
     const spread = rr(rng, 0.5, 1.1) * ppm;
     const colA = pick(rng, cols);
     const n = 5 + Math.floor(rng() * 7);
     for (let i = 0; i < n; i++) {
       const x = cx + (rng() - 0.5) * spread * 2;
       const y = Math.min(H * 0.85, Math.max(H * 0.1, cy + (rng() - 0.5) * spread));
-      const r = rr(rng, 0.025, 0.075) * ppm;
+      const r = rr(rng, 0.02, 0.06) * ppm * (rng() < 0.15 ? 1.8 : 1);
       const col = rng() < 0.7 ? colA : pickD(rng, cols);
       const kind = Math.floor(rng() * 3); // 0 kleks z kroplami, 1 gwiazda (uderzenie), 2 smuga (rozbryzg pod kątem)
       const rot = rng() * Math.PI * 2;
@@ -306,7 +306,7 @@ function paintGrid(g, W, H, ppm, cols, rng) {
   // ścieżki PCB na siatce 10 cm, zakręty 45°, pady i przelotki
   const step = 0.1 * ppm;
   const nx = Math.round(W / step);
-  const traces = 34 + Math.floor(rng() * 16);
+  const traces = 55 + Math.floor(rng() * 20);
   for (let i = 0; i < traces; i++) {
     const col = pickD(rng, cols);
     const lw = (rng() < 0.6 ? rr(rng, 0.008, 0.016) : rr(rng, 0.02, 0.035)) * ppm;

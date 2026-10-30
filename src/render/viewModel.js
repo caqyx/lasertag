@@ -1,9 +1,10 @@
 // Broń FPP — stylizowany fazer w prawym dolnym rogu (PLAN §7.7).
-// createViewModel(camera, scene?) → { update(dt, weapon, firedThisFrame, color, speed?), dispose(), group }
+// createViewModel(camera, scene?) → { update(dt, weapon, firedThisFrame, color, speed?), muzzleWorld(out), dispose(), group }
 //
 // Grupa jest dzieckiem kamery; aby dzieci kamery były renderowane, kamera musi być w scenie —
 // gdy camera.parent jest pusty i podano `scene`, kamera jest do niej dodawana.
-// Wylot lufy leży dokładnie w CONFIG.weapon.muzzleOffset (układ kamery) — tam zaczyna się wiązka.
+// Wylot lufy: CONFIG.weapon.muzzleOffset + CONFIG.viewModel.offset (układ kamery); muzzleWorld(out) zwraca go w świecie
+// (np. jako start wiązki gracza, żeby wiązka wychodziła z widocznej lufy).
 // 1 draw call: scalona geometria z atrybutem aPart (0 korpus, 1 listwy w kolorze gracza, 2 pasek ciepła, 3 wylot).
 // Bez drugiego passu: w vertex shaderze głębia jest ściskana do przedniego 5% zakresu (NDC z ∈ [−1, −0.9]),
 // więc broń nie wbija się w ściany, a jej własne ściany nadal poprawnie się zasłaniają.
@@ -13,7 +14,9 @@ import { CONFIG } from '../config.js';
 import { hexNumber } from './beams.js';
 
 const VM = CONFIG.viewModel;
-const MUZZLE = CONFIG.weapon.muzzleOffset;
+const M0 = CONFIG.weapon.muzzleOffset;
+const OFF = VM.offset;
+const MUZZLE = [M0[0] + OFF[0], M0[1] + OFF[1], M0[2] + OFF[2]];
 const TAU = Math.PI * 2;
 
 // część: box/cylinder w układzie lokalnym (wylot = 0,0,0; broń sięga w +Z, ku kamerze)
@@ -44,9 +47,9 @@ function buildGeometry() {
     part(new THREE.CylinderGeometry(0.019, 0.019, 0.012, 12), 3, 0, 0, 0.004, Math.PI / 2),
     // emiter na górze (obudowa) + pasek ciepła na górnej ścianie
     part(new THREE.BoxGeometry(0.03, 0.012, 0.17), 0, 0, 0.032, 0.18),
-    part(new THREE.BoxGeometry(0.018, 0.004, 0.15), 2, 0, 0.0395, 0.18, 0, 0.255, 0.105),
+    part(new THREE.BoxGeometry(0.008, 0.003, 0.15), 2, 0, 0.0395, 0.18, 0, 0.255, 0.105),
     // listwy w kolorze gracza: lewy bok (widoczny z kamery) i przód osłony
-    part(new THREE.BoxGeometry(0.003, 0.006, 0.2), 1, -0.0262, -0.018, 0.18),
+    part(new THREE.BoxGeometry(0.002, 0.004, 0.2), 1, -0.0258, -0.018, 0.18),
     part(new THREE.BoxGeometry(0.062, 0.005, 0.004), 1, 0, 0.026, 0.047),
     // rękojeść + spust
     part(new THREE.BoxGeometry(0.034, 0.095, 0.042), 0, 0, -0.072, 0.255, 0.28),
@@ -59,7 +62,7 @@ function buildGeometry() {
 
 function buildMaterial(uniforms) {
   const mat = new THREE.MeshStandardMaterial({
-    color: VM.bodyColor, roughness: 0.45, metalness: 0.35, fog: false,
+    color: VM.bodyColor, roughness: VM.roughness, metalness: VM.metalness, fog: false,
   });
   mat.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, uniforms);
@@ -79,12 +82,12 @@ function buildMaterial(uniforms) {
         // sztuczne światło od góry (układ widoku = układ kamery) + fresnel w kolorze gracza: bryła czytelna w ciemności
         'float vmRim = pow(1.0 - clamp(dot(normal, normalize(vViewPosition)), 0.0, 1.0), 2.0);',
         'totalEmissiveRadiance += uFill * (0.35 + 0.65 * clamp(normal.y, 0.0, 1.0)) + uColor * vmRim * uRimI;',
-        'if (vPart > 0.5 && vPart < 1.5) totalEmissiveRadiance += uColor * uTrimI * (1.0 + uFlash);',
+        'if (vPart > 0.5 && vPart < 1.5) totalEmissiveRadiance += uColor * uTrimI * (1.0 + 0.4 * uFlash);',
         'else if (vPart > 1.5 && vPart < 2.5) {',
         '  float on = step(vBar, uHeat);',
         '  vec3 hc = mix(uColor, uHot, smoothstep(0.45, 0.95, uHeat));',
-        '  totalEmissiveRadiance += mix(uColor * 0.05, hc * uHeatI * uBlink, on);',
-        '} else if (vPart > 2.5) totalEmissiveRadiance += (uColor * 0.6 + vec3(uFlash)) * uFlashI * (0.15 + uFlash);',
+        '  totalEmissiveRadiance += mix(uColor * 0.03, hc * uHeatI * uBlink, on);',
+        '} else if (vPart > 2.5) totalEmissiveRadiance += (uColor + vec3(0.35 * uFlash)) * uFlashI * (0.12 + uFlash);',
       ].join('\n'));
   };
   mat.customProgramCacheKey = () => 'lt-viewmodel';
@@ -154,11 +157,17 @@ export function createViewModel(camera, scene) {
     group.rotation.set(VM.recoilPitch * recoil, 0, 0);
   }
 
+  // faktyczny wylot lufy (z odrzutem i kołysaniem) w układzie świata; bez alokacji
+  function muzzleWorld(out) {
+    group.updateWorldMatrix(true, false);
+    return out.set(0, 0, 0).applyMatrix4(group.matrixWorld);
+  }
+
   function dispose() {
     camera.remove(group);
     geo.dispose();
     mat.dispose();
   }
 
-  return { update, dispose, group };
+  return { update, muzzleWorld, dispose, group };
 }

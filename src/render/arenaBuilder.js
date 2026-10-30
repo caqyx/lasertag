@@ -119,11 +119,12 @@ const _wa = [0, 0], _wb = [0, 0];
 
 // Ściana pionowa prostokąta: rogi lokalne (l0 → l1), wysokość y0..y1, normalna lokalna (nlx, nlz).
 // u w metrach wzdłuż ściany (rośnie w prawo patrząc z zewnątrz), v = y (metry) → skala do kafla farby.
-function addSide(buf, s, lx0, lz0, lx1, lz1, nlx, nlz, y0, y1, uOff, tileW, tileH) {
+function addSide(buf, s, lx0, lz0, lx1, lz1, nlx, nlz, y0, y1, uOff, tileW, tileH, mirror = false) {
   toWorld(s, lx0, lz0, _wa); toWorld(s, lx1, lz1, _wb);
   const nx = nlx * s.cos + nlz * s.sin, nz = -nlx * s.sin + nlz * s.cos;
   const len = Math.hypot(lx1 - lx0, lz1 - lz0);
-  const u0 = uOff / tileW, u1 = (uOff + len) / tileW;
+  // mirror: farba odbita w poziomie (ta sama tekstura wygląda inaczej na sąsiednich ścianach)
+  const u0 = (mirror ? uOff + len : uOff) / tileW, u1 = (mirror ? uOff : uOff + len) / tileW;
   const P = TX.wallMeters;
   const p0 = uOff / P, p1 = (uOff + len) / P;
   const i = buf.count;
@@ -152,10 +153,10 @@ function addSolid(paintBuf, plainBuf, s, rng) {
   const { hx, hz, y0, y1 } = s;
   const base = rng() * tileW * 4;
   const off = [base, base + 2 * hz + rng() * tileW, base + rng() * tileW * 2, base + rng() * tileW * 3];
-  addSide(paintBuf, s, hx, hz, hx, -hz, 1, 0, y0, y1, off[0], tileW, tileH);
-  addSide(paintBuf, s, -hx, -hz, -hx, hz, -1, 0, y0, y1, off[1], tileW, tileH);
-  addSide(paintBuf, s, -hx, hz, hx, hz, 0, 1, y0, y1, off[2], tileW, tileH);
-  addSide(paintBuf, s, hx, -hz, -hx, -hz, 0, -1, y0, y1, off[3], tileW, tileH);
+  addSide(paintBuf, s, hx, hz, hx, -hz, 1, 0, y0, y1, off[0], tileW, tileH, rng() < 0.5);
+  addSide(paintBuf, s, -hx, -hz, -hx, hz, -1, 0, y0, y1, off[1], tileW, tileH, rng() < 0.5);
+  addSide(paintBuf, s, -hx, hz, hx, hz, 0, 1, y0, y1, off[2], tileW, tileH, rng() < 0.5);
+  addSide(paintBuf, s, hx, -hz, -hx, -hz, 0, -1, y0, y1, off[3], tileW, tileH, rng() < 0.5);
   const w = plainBuf.cur.wash, sw = A.capWash;
   const saved = [w[0], w[1], w[2]];
   w[0] *= sw; w[1] *= sw; w[2] *= sw;
@@ -264,11 +265,17 @@ function boundaryTrims(buf, s, col, world) {
 }
 
 // gumowe odboje: listwa przypodłogowa (pętla) + narożniki pionowe
-function rubberFor(buf, s, world) {
+function rubberFor(buf, trimBuf, s, world, dim) {
   if (s.y0 > 0.001) return;
   const R = A.rubber;
-  if (s.boundary) { innerLine(buf, s, world, R.baseHeight / 2, R.baseDepth, R.baseHeight, R.baseDepth / 2, WHITE); return; }
+  // przygaszona linia na listwie przypodłogowej (styk ściana/podłoga czytelny), gdy brak jasnej listwy dolnej
+  const lineY = R.baseHeight + R.lineSize / 2;
+  if (s.boundary) {
+    innerLine(buf, s, world, R.baseHeight / 2, R.baseDepth, R.baseHeight, R.baseDepth / 2, WHITE);
+    return;
+  }
   loop(buf, s, R.baseHeight / 2, R.baseDepth, R.baseHeight, R.baseDepth / 2, WHITE, R.baseDepth / 2);
+  if (dim && !s.trimBottom) loop(trimBuf, s, lineY, R.lineSize, R.lineSize, R.baseDepth - R.lineSize / 2, dim, R.lineSize / 2);
   if (s.kind === 'pillar') return;
   const top = s.y1 - A.trimSize - 0.04;
   const o = R.cornerSize / 2 - R.cornerInset;
@@ -280,7 +287,7 @@ function rubberFor(buf, s, world) {
 const WHITE = { r: 1, g: 1, b: 1 };
 
 // panel bazy drużyny na ścianie obwodowej za spawnem: ciemna płyta + rama w kolorze drużyny
-function spawnPanel(rubberBuf, trimBuf, world, sp, teamColor) {
+function spawnPanel(rubberBuf, trimBuf, world, sp, frameColor, teamColor) {
   const bx = Math.sin(sp.yaw), bz = Math.cos(sp.yaw); // „za plecami" (przód = (−sin, −cos))
   const b = world.bounds;
   let px, pz, nx = 0, nz = 0;
@@ -308,14 +315,14 @@ function spawnPanel(rubberBuf, trimBuf, world, sp, teamColor) {
     P.depth, P.height);
   const t = A.trimSize * 0.8, fx = cx + nx * (P.depth / 2 + t / 2), fz = cz + nz * (P.depth / 2 + t / 2);
   const hw = P.width / 2, hh = P.height / 2;
-  const c = teamColor;
+  const c = frameColor;
   addBar(trimBuf, fx - tx * hw, P.y + hh, fz - tz * hw, fx + tx * hw, P.y + hh, fz + tz * hw, t, t, c.r, c.g, c.b);
   addBar(trimBuf, fx - tx * hw, P.y - hh, fz - tz * hw, fx + tx * hw, P.y - hh, fz + tz * hw, t, t, c.r, c.g, c.b);
   addBar(trimBuf, fx - tx * hw, P.y - hh, fz - tz * hw, fx - tx * hw, P.y + hh, fz - tz * hw, t, t, c.r, c.g, c.b);
   addBar(trimBuf, fx + tx * hw, P.y - hh, fz + tz * hw, fx + tx * hw, P.y + hh, fz + tz * hw, t, t, c.r, c.g, c.b);
-  // „strzałka" bazy: krótki pasek w środku
-  addBar(trimBuf, fx - tx * hw * 0.35, P.y, fz - tz * hw * 0.35, fx + tx * hw * 0.35, P.y, fz + tz * hw * 0.35, t, t * 2,
-    c.r * 0.7, c.g * 0.7, c.b * 0.7);
+  // znacznik drużyny: mały kwadrat w środku panelu (kolor drużyny tylko tu)
+  const m = P.marker / 2, tcol = teamColor;
+  addBar(trimBuf, fx - tx * m, P.y, fz - tz * m, fx + tx * m, P.y, fz + tz * m, t, P.marker, tcol.r, tcol.g, tcol.b);
 }
 
 // ---------------------------------------------------------------- shadery
@@ -349,7 +356,13 @@ varying float vWY;`)
       .replace('#include <emissivemap_fragment>', `
 #ifdef USE_EMISSIVEMAP
   vec3 pm = texture2D( emissiveMap, vEmissiveMapUv ).rgb;
-  totalEmissiveRadiance = ( pm.r * vPaintA + pm.g * vPaintB + pm.b * uAccent ) * emissive;
+  // farba w „panelu": margines od pionowych krawędzi, nad listwą przypodłogową i przy listwach (nie ucina się przypadkiem)
+  float pe = min( vWall.x, vWall.y - vWall.x );
+  float pmask = smoothstep( ${A.paintMargin.edge.toFixed(3)}, ${(A.paintMargin.edge + 0.012).toFixed(3)}, pe );
+  pmask *= smoothstep( ${A.paintMargin.bottom.toFixed(3)}, ${(A.paintMargin.bottom + 0.012).toFixed(3)}, vWY );
+  pmask *= smoothstep( ${A.paintMargin.strip.toFixed(3)}, ${(A.paintMargin.strip + 0.012).toFixed(3)}, abs( vWY - vWall.z ) );
+  if ( vWall.w > -0.5 ) pmask *= smoothstep( ${A.paintMargin.strip.toFixed(3)}, ${(A.paintMargin.strip + 0.012).toFixed(3)}, abs( vWY - vWall.w ) );
+  totalEmissiveRadiance = ( pm.r * vPaintA + pm.g * vPaintB + pm.b * uAccent ) * emissive * pmask;
 #else
   totalEmissiveRadiance = vec3( 0.0 );
 #endif
@@ -404,6 +417,58 @@ uniform float reflOn;`)
   mat.customProgramCacheKey = () => 'lt-floor';
 }
 
+// neon: bliskie listwy przygaszone (bez płaskiej, grubej plamy bloomu), mgła działa częściowo (zarys w oddali)
+function patchNeonMaterial(mat) {
+  const N = A.neon;
+  mat.onBeforeCompile = (sh) => {
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying float vNearK;\nvarying float vNDepth;')
+      .replace('#include <fog_vertex>', `#include <fog_vertex>
+  vNDepth = -mvPosition.z;
+  vNearK = mix( ${N.nearMin.toFixed(3)}, 1.0, smoothstep( ${N.near[0].toFixed(2)}, ${N.near[1].toFixed(2)}, vNDepth ) );`);
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', '#include <common>\nvarying float vNearK;\nvarying float vNDepth;')
+      .replace('#include <color_fragment>', '#include <color_fragment>\n  diffuseColor.rgb *= vNearK;')
+      .replace('#include <fog_fragment>', `
+#ifdef USE_FOG
+#ifdef FOG_EXP2
+  float nFog = 1.0 - exp( - fogDensity * fogDensity * vNDepth * vNDepth );
+  gl_FragColor.rgb = mix( gl_FragColor.rgb, fogColor, nFog * ${N.fog.toFixed(3)} );
+#endif
+#endif`);
+  };
+  mat.customProgramCacheKey = () => 'lt-neon';
+}
+
+// sufit: plamy światła od lamp na panelach (strop ledwo widoczny, ale nie czarna pustka)
+function patchCeilingMaterial(mat, lamps) {
+  mat.onBeforeCompile = (sh) => {
+    sh.uniforms.lampPos = { value: lamps.pos };
+    sh.uniforms.lampCol = { value: lamps.col };
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vCWPos;')
+      .replace('#include <fog_vertex>', '#include <fog_vertex>\n  vCWPos = ( modelMatrix * vec4( transformed, 1.0 ) ).xyz;');
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', `#include <common>
+varying vec3 vCWPos;
+uniform vec3 lampPos[ ${MAX_LAMPS} ];
+uniform vec3 lampCol[ ${MAX_LAMPS} ];`)
+      .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+  {
+    vec3 pool = vec3( 0.0 );
+    for ( int i = 0; i < ${MAX_LAMPS}; i ++ ) {
+      vec2 d = vCWPos.xz - lampPos[ i ].xz;
+      float k = 1.0 / ( 1.0 + dot( d, d ) / ${(A.ceilingPool.radius * A.ceilingPool.radius).toFixed(3)} );
+      pool += lampCol[ i ] * k * k;
+    }
+    // panel (tekstura) moduluje plamę; normalizacja do średniej jasności paneli
+    totalEmissiveRadiance += pool * ( diffuseColor.rgb / ${A.ceilingPool.panelRef.toFixed(4)} ) * ${A.ceilingPool.strength.toFixed(4)};
+  }`);
+  };
+  mat.customProgramCacheKey = () => 'lt-ceiling';
+}
+const MAX_LAMPS = 8;
+
 const CONE_VERT = /* glsl */`
 attribute vec3 color;
 varying vec3 vColor;
@@ -433,8 +498,8 @@ varying float vH;
 varying float vFogDepth;
 void main() {
   float facing = abs(dot(normalize(vNormalV), normalize(vViewV)));
-  float edge = pow(facing, 2.0);                         // krawędzie stożka znikają (fresnel)
-  float fall = pow(vH, 1.4) * smoothstep(0.0, 0.3, vH);  // jasno pod lampą, 0 przy podłodze
+  float edge = smoothstep(0.15, 0.9, facing); edge *= edge;  // krawędzie stożka znikają miękko (fresnel)
+  float fall = pow(vH, 2.2) * smoothstep(0.0, 0.45, vH);  // jasno pod lampą, wygasa długo przed podłogą
   float near = smoothstep(0.4, 2.2, vFogDepth);          // nie oślepia przy kamerze
   float fogF = exp(-fogDensity * fogDensity * vFogDepth * vFogDepth * 0.6);
   float a = opacity * edge * fall * near * fogF * (0.92 + 0.08 * sin(time * 1.7 + vH * 6.0));
@@ -497,6 +562,8 @@ export function buildArena(world, preset, textures, opts = {}) {
     return Math.min(1.7, Math.max(0.55, Math.sqrt(A.trimLumRef / Math.max(l, 1e-3))));
   };
   for (const k of MAIN_KEYS) trimCol[k] = saturate(lin(pal[k], A.trimIntensity * lumNorm(pal[k])), A.trimSaturation);
+  const dimCol = {};
+  for (const k of MAIN_KEYS) dimCol[k] = lin(pal[k], A.rubber.lineIntensity * lumNorm(pal[k]));
   const accentLin = lin(pal.accent, A.paintIntensity * A.accentPaintScale);
   // akcent z danych → kolor główny (deterministycznie per bryła)
   const mainKey = (key, i) => (MAIN_KEYS.includes(key) ? key : (key === 'accent' ? (i % 2 ? 'secondary' : 'primary') : null));
@@ -532,7 +599,7 @@ export function buildArena(world, preset, textures, opts = {}) {
     setCur(buf, aKey, bKey, tk, top, bot);
     setCur(plainBuf, aKey, bKey, tk, top, bot);
     addSolid(buf, plainBuf, s, rng);
-    rubberFor(rubberBuf, s, world);
+    rubberFor(rubberBuf, trimBuf, s, world, tk ? dimCol[tk] : dimCol.uv);
     if (!tk) return;
     const col = trimCol[tk];
     if (s.boundary) { boundaryTrims(trimBuf, s, col, world); return; }
@@ -550,7 +617,7 @@ export function buildArena(world, preset, textures, opts = {}) {
   const teams = CONFIG.colors.teams;
   for (const sp of world.spawns || []) {
     const tc = lin(teams[(sp.team || 0) % teams.length], A.spawnPanel.intensity);
-    spawnPanel(rubberBuf, trimBuf, world, sp, tc);
+    spawnPanel(rubberBuf, trimBuf, world, sp, trimCol[MAIN_KEYS[(sp.team || 0) % 2]], tc);
   }
 
   // --- materiały ścian
@@ -597,6 +664,16 @@ export function buildArena(world, preset, textures, opts = {}) {
       color: 0xffffff, map: tex, roughness: 0.95, metalness: 0,
       emissive: new THREE.Color(pal.uv), emissiveMap: tex, emissiveIntensity: A.ceilingGlow,
     }));
+    const lamps = { pos: [], col: [] };
+    for (let i = 0; i < MAX_LAMPS; i++) {
+      const L0 = (world.lights || [])[i];
+      if (L0) {
+        const L = lampPosition(world, L0, _lamp);
+        lamps.pos.push(new THREE.Vector3(L.x, ceil, L.z));
+        lamps.col.push(lin(lightColorHex(world, L0.color)));
+      } else { lamps.pos.push(new THREE.Vector3(0, -1000, 0)); lamps.col.push(new THREE.Color(0, 0, 0)); }
+    }
+    patchCeilingMaterial(mat, lamps);
     const m = new THREE.Mesh(geo, mat);
     m.name = 'ceiling';
     group.add(m);
@@ -623,6 +700,8 @@ export function buildArena(world, preset, textures, opts = {}) {
     }
     for (let x = b.minX + A.trussSpacing; x < b.maxX - 0.5; x += A.trussSpacing) {
       addBar(trussBuf, x, yTop + tw, b.minZ, x, yTop + tw, b.maxZ, tw * 1.2, tw * 1.6);
+      // zawiesia dźwigarów do stropu (kratownica nie „pływa")
+      for (const z of trussZ) addBar(trussBuf, x, yTop, z, x, ceil, z, 0.035, 0.035);
     }
   }
   // świetlówki UV: w oprawach przykręconych pod pasem dolnym dźwigara
@@ -693,6 +772,7 @@ export function buildArena(world, preset, textures, opts = {}) {
       geo.deleteAttribute('uv');
       geo.deleteAttribute('normal');
       const mat = own(new THREE.MeshBasicMaterial({ vertexColors: true, fog: true }));
+      patchNeonMaterial(mat);
       const m = new THREE.Mesh(own(geo), mat);
       m.name = 'neon';
       group.add(m);
@@ -731,7 +811,11 @@ export function buildArena(world, preset, textures, opts = {}) {
       const L = lampPosition(world, L0, _lamp);
       const top = lampY[i];
       const h = top - A.coneBottom;
-      const g = new THREE.CylinderGeometry(A.coneTopRadius, A.coneBottomRadius, h, 24, 1, true);
+      // stożek nie może przecinać brył (twarda linia przecięcia): promień dołu ≤ prześwit pod lampą
+      const clear = clearanceXZ(world, L.x, L.z, top);
+      const rb = Math.min(A.coneBottomRadius, clear - A.coneMargin);
+      if (rb < A.coneMinRadius) return;
+      const g = new THREE.CylinderGeometry(A.coneTopRadius, rb, h, 24, 1, true);
       g.translate(L.x, A.coneBottom + h / 2, L.z);
       const c = new THREE.Color(lightColorHex(world, L.color));
       const n = g.attributes.position.count;
@@ -740,7 +824,7 @@ export function buildArena(world, preset, textures, opts = {}) {
       g.setAttribute('color', new THREE.BufferAttribute(col, 3));
       list.push(g);
     });
-    const geo = own(mergeGeometries(list));
+    const geo = list.length ? own(mergeGeometries(list)) : null;
     for (const g of list) g.dispose();
     coneMat = own(new THREE.ShaderMaterial({
       uniforms: {
@@ -751,11 +835,13 @@ export function buildArena(world, preset, textures, opts = {}) {
       vertexShader: CONE_VERT, fragmentShader: CONE_FRAG,
       transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
     }));
-    coneMesh = new THREE.Mesh(geo, coneMat);
+    coneMesh = geo ? new THREE.Mesh(geo, coneMat) : null;
+    if (coneMesh) {
     coneMesh.name = 'lightCones';
     coneMesh.renderOrder = 2;
     coneMesh.layers.set(LAYER_NO_REFLECT);
     group.add(coneMesh);
+    }
   }
 
   // --- envMap podłogi (raz): PMREM z samej areny — słaby połysk ogólny (główne odbicia robi RT)
@@ -837,6 +923,20 @@ export function buildArena(world, preset, textures, opts = {}) {
 function scaleUv(geo, su, sv) {
   const uv = geo.attributes.uv;
   for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * su, uv.getY(i) * sv);
+}
+
+// odległość w XZ od (x,z) do najbliższej bryły sięgającej poniżej y (i do granic areny)
+function clearanceXZ(world, x, z, y) {
+  const b = world.bounds;
+  let best = Math.min(x - b.minX, b.maxX - x, z - b.minZ, b.maxZ - z);
+  for (const s of world.solids) {
+    if (s.y0 > y) continue;
+    const dx = x - s.cx, dz = z - s.cz;
+    const lx = Math.abs(dx * s.cos - dz * s.sin) - s.hx, lz = Math.abs(dx * s.sin + dz * s.cos) - s.hz;
+    const d = Math.hypot(Math.max(lx, 0), Math.max(lz, 0));
+    if (d < best) best = d;
+  }
+  return best;
 }
 
 function insideSolid(world, x, z, y, m) {

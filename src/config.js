@@ -155,7 +155,7 @@ export const CONFIG = Object.freeze({
     bloomFactors: [1.0, 0.5, 0.2, 0.07, 0.02],  // wagi 5 mipów UnrealBloomPass (domyślnie 1/.8/.6/.4/.2)
     // Oświetlenie (render/graphics.js): ciemność dominuje — ambient/hemi bardzo słabe.
     lights: {
-      hemiIntensity: 0.9,     // HemisphereLight w kolorze palette.ambient
+      hemiIntensity: 0.3,     // HemisphereLight w kolorze palette.ambient
       hemiGround: 0.35,       // ziemia = ambient × to
       pointScale: 0.65,       // intensywność PointLight = light.intensity × to (decay 2)
       rangeScale: 1.0,
@@ -172,14 +172,14 @@ export const CONFIG = Object.freeze({
     },
     // Arena (render/arenaBuilder.js)
     arena: {
-      wallColor: '#15132a',         // bardzo ciemny granat (× faktura sklejki)
+      wallColor: '#090a18',         // prawie czarny granat (× faktura sklejki)
       wallRoughness: 0.85,
       paintIntensity: 0.75,         // emisja farby UV (maski × kolor bryły; HDR → bloom)
       accentPaintScale: 0.8,        // akcent (limonka) tylko w drobnych elementach farby
       uvBoost: 1.45,                // fiolet jest ciemny percepcyjnie (listwy, farba, poświata)
       boundaryPaintScale: 1.875,    // ściany obwodowe: kafel 11.25 × 4.5 m (duże murale)
       // poświata UV/neonu na licu ściany (× kolor listwy bryły × faktura): mocna przy listwie, gaśnie w dół
-      wash: { top: 0.065, fall: 0.5, bottom: 0.04, base: 0.005, edge: 0.04, edgeWidth: 0.035 },
+      wash: { top: 0.06, fall: 0.38, bottom: 0.035, base: 0.0, edge: 0.03, edgeWidth: 0.03 },
       capWash: 0.2,                 // poświata na wierzchu brył (× wash)
       trimSize: 0.05,
       trimGap: 0.006,               // odsunięcie listwy od ściany (bez z-fightingu)
@@ -190,20 +190,23 @@ export const CONFIG = Object.freeze({
       lampClearance: 0.7,           // oprawa lampy min. tyle od bryły sięgającej sufitu (filar)
       pillarTrimTop: 2.4,           // filar: ramka neonowa do wysokości ścian, wyżej czysty słup
       boundaryTrimHeights: [0.12, 2.6],
-      rubber: { color: '#0b0a12', baseHeight: 0.1, baseDepth: 0.022, cornerSize: 0.06, cornerInset: 0.012 },
-      spawnPanel: { width: 1.6, height: 0.9, depth: 0.04, y: 1.45, intensity: 1.0 },
+      rubber: { color: '#0b0a12', baseHeight: 0.1, baseDepth: 0.022, cornerSize: 0.06, cornerInset: 0.012, lineSize: 0.014, lineIntensity: 0.3 },
+      paintMargin: { edge: 0.09, bottom: 0.17, strip: 0.09 },   // farba nie dochodzi do krawędzi/listew (m)
+      neon: { nearMin: 0.6, near: [0.6, 3.5], fog: 0.65 },      // przygaszenie bliskich listew; udział mgły na listwach
+      ceilingPool: { radius: 2.8, strength: 0.06, panelRef: 0.006 },            // plamy światła lamp na stropie
+      spawnPanel: { width: 1.6, height: 0.9, depth: 0.04, y: 1.45, intensity: 0.9, marker: 0.16 },
       floorRoughness: 0.75,         // × roughnessMap (≈0.6) → ~0.45 (półpołysk)
       floorMetalness: 0.2,
       floorEmissiveIntensity: 0.16,
       floorEnvIntensity: 0.25,      // PMREM (ogólny połysk); odbicia neonów robi RT (reflect)
       // odbicie planarne podłogi (preset.envReflections): RT w skali rozdz., rozmycie mipmapą + smuga pionowa
-      reflect: { scale: 0.5, mipBias: 2.2, streak: 10, strength: 0.55, f0: 0.18 },
+      reflect: { scale: 0.5, mipBias: 2.0, streak: 5, strength: 0.55, f0: 0.18 },
       envBakeHeight: 1.6,
       envBlur: 0.02,
       ceilingTile: 4.8,
-      ceilingGlow: 0.6,             // emisja paneli sufitu (tekstura × palette.uv)
+      ceilingGlow: 0.9,             // emisja paneli sufitu (tekstura × palette.uv)
       trussColor: '#2a2638',
-      trussGlow: 0.06,              // emisja kratownicy (palette.uv) — sylwetki belek czytelne w ciemności
+      trussGlow: 0.035,             // emisja kratownicy (palette.uv) — sylwetki belek czytelne w ciemności
       trussSpacing: 4,
       trussWidth: 0.4,
       trussDepth: 0.4,
@@ -218,6 +221,8 @@ export const CONFIG = Object.freeze({
       coneBottomRadius: 1.7,
       coneBottom: 0.0,
       coneOpacity: 0.5,
+      coneMargin: 0.25,             // stożek ≥ tyle od brył (brak twardych przecięć)
+      coneMinRadius: 0.45,
     },
   },
 
@@ -263,6 +268,9 @@ export const CONFIG = Object.freeze({
     nearFade: [1.2, 3.5],   // zanik przy kamerze (m, głębia środka kłębu)
     margin: 1.0,
     wallClearance: 0.6,     // min. odstęp środka kłębu od bryły
+    planeFade: 0.6,         // zanik kłębu przy podłodze i suficie (m)
+    sizeFloor: 0.9,         // min. rozmiar kłębu w ciasnych miejscach
+    sizePerClearance: 2.4,  // rozmiar ≤ (prześwit − dryf) × to (brak przecięć ze ścianami)
     lowBand: [0.3, 1.3],    // warstwa dolna (m)
     highBand: [3.0, 4.2],   // warstwa podsufitowa (m)
     lowShare: 0.45,
@@ -272,43 +280,43 @@ export const CONFIG = Object.freeze({
   // Efekty strzału (render/beams.js). Jasności > 1 = HDR → bloom.
   fx: {
     beamWidth: 0.11,          // szerokość wstęgi poświaty (m)
-    beamCore: 0.22,           // względna szerokość białego rdzenia (0..1 szerokości)
-    beamCoreIntensity: 3.5,
-    beamGlowIntensity: 2.8,
+    beamCore: 0.15,           // względna szerokość białego rdzenia (0..1 szerokości)
+    beamCoreIntensity: 3.0,
+    beamGlowIntensity: 1.5,       // poświata nasycona (Neutral TM wybiela wartości ≫ 1)
     beamTaper: 1.6,           // m od lufy, na których wstęga rośnie od beamTaperMin do pełnej szerokości
     beamTaperMin: 0.15,
     beamNearFade: [0.4, 2.5], // m od kamery: wstęga przygaszona przy samej kamerze (własne strzały nie oślepiają)
     muzzleFlashSize: 0.16,    // m
     muzzleFlashTime: 0.06,    // s
     flashNearDist: 2.5,       // m — bliżej kamery błyski maleją (do 30% przy samej lufie FPP)
-    muzzleFlashIntensity: 4.0,
+    muzzleFlashIntensity: 2.2,
     endFlashSize: 0.22,       // poświata w punkcie końca wiązki (ściana)
-    endFlashIntensity: 2.0,
+    endFlashIntensity: 1.4,
     sparkLife: 0.42,          // s
     sparkFragments: 12,       // odłamków na trafienie (geometria, nie CPU)
     sparkSpeed: [2.0, 6.0],   // m/s
     sparkGravity: 9.0,
     sparkStreak: 0.03,        // s — długość smugi = prędkość × to
     sparkWidth: 0.014,        // m
-    sparkIntensity: 5.0,
+    sparkIntensity: 3.0,
     hitFlashSize: 0.6,        // m — rozbłysk w punkcie trafienia
     hitFlashTime: 0.16,
-    hitFlashIntensity: 5.0,
+    hitFlashIntensity: 2.6,
     wallPower: 0.35,          // siła iskier przy trafieniu w ścianę (hit=false) względem trafienia w uczestnika
   },
 
   // Awatary uczestników (render/avatars.js).
   avatar: {
     bodyColor: '#0c0a14',     // ciemny matowy korpus (× kolor drużyny przez instanceColor)
-    bodyTint: 0.3,            // ile koloru drużyny w diffuse korpusu (0 = sam bodyColor, 1 = bodyColor × kolor)
+    bodyTint: 0.1,            // ile koloru drużyny w diffuse korpusu (0 = sam bodyColor, 1 = bodyColor × kolor)
     roughness: 0.8,
-    rimIntensity: 0.42,       // poświata krawędzi (fresnel) w kolorze drużyny
-    rimPower: 2.6,
-    visorIntensity: 3.0,
-    trimIntensity: 1.1,       // pasek na broni (pas = × 0.6)
-    sensorLit: 3.2,
+    rimIntensity: 0.3,        // poświata krawędzi (fresnel) w kolorze drużyny
+    rimPower: 4.0,
+    visorIntensity: 1.3,      // wizjer/końcówka lufy — nasycone, bez przepalenia do bieli z bliska
+    trimIntensity: 0.8,       // pasek na broni (pas = × 0.6)
+    sensorLit: 1.8,
     sensorOff: 0.035,
-    sensorFlash: 6.0,
+    sensorFlash: 4.0,
     elimBlinkHz: 6,
     elimDim: 0.12,            // jasność w fazie „zgaszonej” mrugania
     protectPulseHz: 3,
@@ -317,16 +325,19 @@ export const CONFIG = Object.freeze({
 
   // Broń FPP (render/viewModel.js). Lufa kończy się w CONFIG.weapon.muzzleOffset.
   viewModel: {
-    scale: 0.62,              // skala względem wylotu lufy
-    bodyColor: '#14121e',
-    trimIntensity: 0.9,
-    rimIntensity: 0.12,       // fresnel w kolorze gracza
-    fillColor: '#120e22',     // sztuczne światło wypełniające (emisja, układ kamery) — liniowe ≈ 0.01–0.03
-    heatIntensity: 3.0,
+    scale: 0.42,              // skala względem wylotu lufy
+    offset: [0.015, -0.035, 0.0], // przesunięcie broni względem CONFIG.weapon.muzzleOffset (niżej w kadrze); viewModel.muzzleWorld() zwraca faktyczny wylot
+    bodyColor: '#0e0c16',
+    roughness: 0.75,
+    metalness: 0.1,
+    trimIntensity: 0.45,      // cienkie akcenty — nasycone, nie białe
+    rimIntensity: 0.06,       // fresnel w kolorze gracza
+    fillColor: '#0b0816',     // sztuczne światło wypełniające (emisja, układ kamery) — liniowe ≈ 0.01–0.03
+    heatIntensity: 0.9,
     hotColor: '#ff2a12',
-    flashIntensity: 6.0,
+    flashIntensity: 2.0,
     flashTime: 0.07,
-    recoilKick: 0.045,        // m do tyłu
+    recoilKick: 0.03,         // m do tyłu
     recoilPitch: 0.09,        // rad
     recoilReturn: 18,         // 1/s
     bobAmp: 0.012,

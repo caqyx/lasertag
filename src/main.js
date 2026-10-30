@@ -85,7 +85,13 @@ if (params.cam !== null) {
   if (!debugCam) console.info(`[lasertag] brak kamery debug "${params.cam}" na mapie "${world.id}"`);
 }
 const showHud = !params.nohud;
-if (!showHud) hudEl.classList.add('hidden');
+
+/** HUD i broń FPP tylko w meczu, bez ?nohud i bez kamery debug (czyste kadry dla screens.mjs). */
+function refreshVisibility() {
+  const fpp = app !== 'menu' && showHud && !debugCam;
+  viewModel.group.visible = fpp;
+  hudEl.classList.toggle('hidden', !fpp);
+}
 
 // --- Wejście ---
 const uiInput = createInputState();
@@ -174,7 +180,7 @@ function startMatch(cfgIn) {
   menu.hide();
   endScreen.hide();
   matchBar.show(true);
-  viewModel.group.visible = showHud && !debugCam;
+  refreshVisibility();
   paused = false;
   updatePause();
   if (!params.autostart && !debugCam) km.requestLock(); // wołane z gestu (Enter/klik)
@@ -197,7 +203,7 @@ function goMenu() {
   endScreen.hide();
   matchBar.show(false);
   if (match !== null) scoreboard.update(match, sim, false);
-  viewModel.group.visible = false;
+  refreshVisibility();
   if (hud !== null) { hud.dispose(); hud = null; }
   sim = null;
   match = null;
@@ -317,11 +323,11 @@ window.__lt = {
   setCam(i) {
     if (i === null || i === undefined) {
       debugCam = false;
-      viewModel.group.visible = app !== 'menu' && showHud;
+      refreshVisibility();
       return true;
     }
     const ok = applyDebugCam(camera, world, i);
-    if (ok) { debugCam = true; viewModel.group.visible = false; }
+    if (ok) { debugCam = true; refreshVisibility(); }
     return ok;
   },
   setPreset: (n) => graphics.setPreset(n),
@@ -332,6 +338,7 @@ window.__lt = {
 // Start: ?autostart=1 lub ?cam= → mecz od razu z parametrów URL; inaczej menu.
 if (params.autostart || debugCam) startMatch(params);
 else menu.show();
+refreshVisibility();
 
 const loop = createLoop({ hz: CONFIG.sim.hz, maxSubSteps: CONFIG.sim.maxSubSteps, step, frame });
 graphics.resize();

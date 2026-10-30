@@ -124,7 +124,7 @@ void main() {
     float hot = exp(-r * r * 30.0);
     float fade = (1.0 - vK) * (1.0 - vK);
     float I = vKind < 1.5 ? uMuzzleI : uEndI;
-    col = (vCol * g + vec3(hot)) * I * fade;
+    col = (vCol * g + vec3(hot) * 0.6) * I * fade;
   }
   float fogF = exp(-fogDensity * fogDensity * vDepth * vDepth);
   gl_FragColor = vec4(col * fogF, 1.0);
@@ -206,7 +206,7 @@ void main() {
     float g = exp(-r * r * 5.0) * (1.0 - r);
     float hot = exp(-r * r * 26.0);
     float fade = (1.0 - vK) * (1.0 - vK) * (1.0 - vK);
-    col = (vCol * g + vec3(hot) * 1.5) * uFlashI * fade * vPow;
+    col = (vCol * g + vec3(hot) * 0.8) * uFlashI * fade * vPow;
   } else {
     float a = abs(vQ.y);
     float across = (1.0 - a) * (1.0 - a);
