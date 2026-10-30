@@ -11,17 +11,31 @@ const TYPES = {
   '.css': 'text/css; charset=utf-8', '.json': 'application/json', '.png': 'image/png', '.svg': 'image/svg+xml', '.ico': 'image/x-icon',
 };
 
-const server = createServer(async (req, res) => {
-  const path = decodeURIComponent(new URL(req.url, 'http://x').pathname);
+const BASE = ROOT.endsWith(sep) ? ROOT : ROOT + sep;
+
+function resolvePath(url) {
+  let path;
+  try { path = decodeURIComponent(new URL(url, 'http://x').pathname); } catch { return null; }
+  if (path.split('/').some((seg) => seg.startsWith('.'))) return null; // .git, .env, ukryte pliki
   const file = normalize(join(ROOT, path.endsWith('/') ? path + 'index.html' : path));
-  if (!file.startsWith(ROOT.endsWith(sep) ? ROOT : ROOT + sep)) { res.writeHead(403).end(); return; }
+  return file.startsWith(BASE) ? file : null;
+}
+
+const server = createServer(async (req, res) => {
+  const file = resolvePath(req.url);
+  if (file === null) { res.writeHead(404).end('not found'); return; }
   try {
     const body = await readFile(file);
-    res.writeHead(200, { 'content-type': TYPES[extname(file)] || 'application/octet-stream', 'cache-control': 'no-store' });
+    res.writeHead(200, {
+      'content-type': TYPES[extname(file)] || 'application/octet-stream',
+      'cache-control': 'no-store',
+      'x-content-type-options': 'nosniff',
+    });
     res.end(body);
   } catch {
     res.writeHead(404).end('not found');
   }
 });
 
-server.listen(PORT, () => console.log(`serving ${ROOT} on http://localhost:${PORT}`));
+// Tylko localhost — serwer deweloperski nie wystawia repo w sieci lokalnej.
+server.listen(PORT, '127.0.0.1', () => console.log(`serving ${ROOT} on http://localhost:${PORT}`));
