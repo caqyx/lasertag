@@ -27,6 +27,7 @@ mecze 5-minutowe z botami. Architektura gotowa na tryb online (M5, poza tą sesj
 - 0 HP → **eliminacja**: uczestnik wyłączony na **3 s** (kamizelka miga, nie może strzelać ani się ruszać,
   gracz widzi kamerę „death cam" uniesioną nad ciałem).
 - **Respawn** w punkcie startowym najdalszym od widocznych przeciwników (w TDM — tylko spawny drużyny).
+- **Hit stun:** trafienie (bez eliminacji) wyłącza fazer celu na **0.45 s** — kto trafi pierwszy, wygrywa wymianę (nagradza zasadzki, nie „nawalanie się”).
 - **Ochrona** po respawnie: **2 s** nietykalności (kamizelka pulsuje). Oddanie strzału kończy ochronę natychmiast.
 
 ### 2.3 Broń (fazer)
@@ -178,7 +179,7 @@ tests/                unit/*.test.mjs (node --test), smoke/*.mjs (Playwright), t
 - Symulacja nie zna Three.js; warstwa render czyta stan i rysuje.
 
 ## 9. Sterowanie i UI
-- WASD ruch, mysz celowanie (pointer lock), LPM strzał, Shift sprint, Spacja skok, Tab tablica wyników, Esc pauza/menu.
+- WASD ruch (chód 3.8 m/s, sprint 5.6 m/s), C kucanie (wysokość 1.15 m, oko 1.0 m, ×0.45 prędkości), mysz celowanie (pointer lock), LPM strzał, Shift sprint, Spacja skok, Tab tablica wyników, Esc pauza/menu.
 - HUD: celownik, HP jako 4 segmenty, pasek ciepła, timer, wynik, feed eliminacji, wskaźnik trafienia, ekran eliminacji.
 - Parametry URL: `?preset=&map=&mode=&bots=&diff=&cam=&nohud=1&stats=1&seed=&autostart=1`.
 
@@ -225,3 +226,6 @@ tests/                unit/*.test.mjs (node --test), smoke/*.mjs (Playwright), t
 | D-012 | 2026-10-30 | Gorąca ścieżka przekazuje współrzędne przez bufory Float64Array (SEG/RAYARG/NEAR/BOX). | V8 pakuje double w HeapNumber przy nie-inline'owanych wywołaniach → alokacje. |
 | D-013 | 2026-10-30 | Sprint tylko gdy moveZ > 0 i moveZ ≥ |moveX|. | Brak sprintu bokiem przy wejściu analogowym/botach. |
 | D-014 | 2026-10-30 | Obwód areny: ściany 1 m na zewnątrz bounds; spawny team = strona (N0,S1,E2,W3); tdm2 używa team%2. | Jedna konwencja danych dla wszystkich trybów. |
+| D-015 | 2026-10-30 | Prędkości: chód 3.8 m/s, sprint 5.6 m/s (było 5.2/7.6). | Feedback z gry: „za szybko”; hala laser tag = tempo chodu. |
+| D-016 | 2026-10-30 | Hit stun 0.45 s + boty w stylu zasadzkowym (HOLD przy osłonie, flankowanie na dźwięk, patrol chodem, krótszy dystans ognia). | Feedback: „chodzi o atakowanie nagle zamiast nawalania się”. |
+| D-017 | 2026-10-30 | Kolizje uczestnik–uczestnik (koło vs koło) + ukrywanie awatara przy kamerze; kucanie (C). | Feedback: „czarny klocek” = kamera w korpusie bota; brak kucania. |
