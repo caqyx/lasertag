@@ -32,3 +32,19 @@ Elementy M1: +5 draw calli (wiązki 1, iskry 1, korpusy awatarów 1, sensory 1, 
 | raycastWorld | 0 | 0.08 |
 | segmentClear | 0 | 0.12 |
 | stepSim (4 uczestników, ciągły ogień) | — | przyrost sterty po gc 47.8 KB / 100k kroków (przed poprawką fizyki) |
+
+## M0 iteracja 3 + M2/M3/M4 (smoke, 8 uczestników, wszystkie mapy)
+
+Smoke (tester, przed iteracją 3 grafiki) — calls / triangles / textures / geometries:
+
+| Mapa | low | medium | high | ultra |
+|---|---|---|---|---|
+| uvmaze | 16 / 53k / 11 / 16 | 31 / 56k / 23 / 17 | 43 / 111k / 25 / 17 | 43 / 111k / 25 / 17 |
+| neonhive | 16 / 64k / 11 / 16 | 31 / 67k / 23 / 17 | 43 / 134k / 25 / 17 | 43 / 134k / 25 / 17 |
+| reactor | 16 / 48k / 11 / 16 | 31 / 49k / 23 / 17 | 43 / 98k / 25 / 17 | 43 / 98k / 25 / 17 |
+
+Po iteracji 3 + render M4 (Ultra, gra, `npm run screens`): uvmaze 39 / 61.5k / 25 / 17, neonhive 39 / 85.4k / 25 / 17, reactor 49 / 54.5k / 26 / 22
+(rdzeń reaktora +4 calle; awatar 2.1k → 1.5k tris).
+
+Wycieki: 6 zmian map (menu → mecz) i 2 cykle presetów → textures/geometries wracają do wartości startowych.
+Symulacja: 8 botów 8–11 µs/krok; `stepSim` z 8 botami na 3 mapach: 0 GC / 100k kroków (noalloc.test.mjs).
