@@ -62,7 +62,9 @@ export const CONFIG = Object.freeze({
     },
     loseOrder: ['back', 'left', 'right', 'front'],
     eventCapacity: 256,     // pierścień zdarzeń symulacji (core/events.js); czyszczony raz na klatkę renderu
+    maxParticipants: 16,    // pojemność instancji awatarów
     dummy: {                // manekin treningowy (game/input/dummyInput.js)
+      count: 3,             // manekiny w trybie treningowym M1 (zastąpione botami w M2)
       strafePeriod: 2.0,    // s — pełny cykl lewo → prawo
       strafeMove: 0.4,      // moveX (× walkSpeed) podczas chodzenia
     },

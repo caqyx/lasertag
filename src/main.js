@@ -6,8 +6,15 @@ import { MAPS } from './world/maps/index.js';
 import { buildWorld } from './world/mapgen.js';
 import { createGraphics } from './render/graphics.js';
 import { applyDebugCam, listDebugCams } from './render/debugCams.js';
-import { createBody, stepMovement } from './game/movement.js';
-import { createInputState } from './game/input/inputState.js';
+import { resetInputState } from './game/input/inputState.js';
+import { createParticipant } from './game/participant.js';
+import { createSim, addParticipant, stepSim, findParticipant } from './game/sim.js';
+import { createDummyInput } from './game/input/dummyInput.js';
+import { EV } from './core/events.js';
+import { createBeams } from './render/beams.js';
+import { createAvatars } from './render/avatars.js';
+import { createViewModel } from './render/viewModel.js';
+import { createHud } from './ui/hud.js';
 import { createKeyboardMouse } from './game/input/keyboardMouse.js';
 import { createStatsOverlay } from './ui/statsOverlay.js';
 
@@ -32,18 +39,19 @@ graphics.setWorld(world);
 const camera = graphics.camera;
 camera.rotation.order = 'YXZ';
 
-// --- Gracz ---
-const body = createBody();
-const input = createInputState();
-const spawn = world.spawns && world.spawns[0];
-if (spawn) {
-  body.x = spawn.x; body.y = spawn.y || 0; body.z = spawn.z;
-  body.yaw = spawn.yaw || 0;
+// --- Symulacja: gracz + manekiny (M1) ---
+const sim = createSim({ world, seed: params.seed === null ? world.seed : params.seed });
+const playerSource = { sample: samplePlayer };
+const player = addParticipant(sim, createParticipant({
+  id: 0, name: 'Ty', team: -1, color: CONFIG.colors.ffa[1], isPlayer: true, inputSource: playerSource,
+}));
+for (let i = 1; i <= CONFIG.combat.dummy.count; i++) {
+  addParticipant(sim, createParticipant({
+    id: i, name: `Manekin ${i}`, team: -1, color: CONFIG.colors.ffa[(i + 1) % CONFIG.colors.ffa.length],
+    inputSource: createDummyInput({ strafe: i % 2 === 1 }),
+  }));
 }
-body.pitch = 0;
-input.yaw = body.yaw;
-input.pitch = 0;
-let prevX = body.x, prevY = body.y, prevZ = body.z;
+const body = player.body;
 
 // --- Debug cam / UI ---
 let debugCam = false;
@@ -66,6 +74,11 @@ const km = createKeyboardMouse(canvas, {
 });
 km.setAngles(body.yaw, 0);
 
+function samplePlayer(P, ctx, out) {
+  if (controlActive()) km.sample(P, ctx, out);
+  else resetInputState(out);
+}
+
 if (params.nohud) hudEl.classList.add('hidden');
 if (params.nohud || debugCam || params.autostart) setStartVisible(false);
 startEl.addEventListener('click', () => km.requestLock());
@@ -75,35 +88,65 @@ startEl.addEventListener('keydown', (e) => {
 
 const stats = params.stats ? createStatsOverlay(graphics) : null;
 
+// --- Efekty i HUD (M1) ---
+const beams = createBeams(graphics.scene);
+const avatars = createAvatars(graphics.scene, CONFIG.combat.maxParticipants);
+const viewModel = createViewModel(camera, graphics.scene);
+const hud = createHud(hudEl);
+if (params.nohud || debugCam) viewModel.group.visible = false;
+
 // --- Pętla ---
 function controlActive() {
   return !debugCam && (km.locked || params.autostart);
 }
 
 function step(dt) {
-  prevX = body.x; prevY = body.y; prevZ = body.z;
-  if (!controlActive()) return;
-  km.sample(null, null, input);
-  stepMovement(body, input, dt, world);
+  stepSim(sim, dt);
 }
 
 let time = 0;
 let rendered = 0;
 const eyeHeight = CONFIG.player.eyeHeight;
 
+/** Zdarzenia symulacji → efekty; zwraca true, jeśli gracz strzelił w tej klatce. */
+function consumeEvents() {
+  const q = sim.events;
+  let fired = false;
+  for (let i = 0; i < q.count; i++) {
+    const e = q.at(i);
+    if (e.type === EV.SHOT) {
+      const shooter = findParticipant(sim, e.a);
+      if (shooter !== null) beams.spawn(e.x, e.y, e.z, e.x2, e.y2, e.z2, shooter.color, e.value === 1);
+      if (e.a === player.id) fired = true;
+    } else if (e.type === EV.RESPAWN && e.a === player.id) {
+      km.setAngles(body.yaw, 0);
+    }
+  }
+  return fired;
+}
+
+function placeCamera(alpha) {
+  if (debugCam) return;
+  camera.position.set(
+    player.prevX + (body.x - player.prevX) * alpha,
+    player.prevY + (body.y - player.prevY) * alpha + eyeHeight,
+    player.prevZ + (body.z - player.prevZ) * alpha,
+  );
+  // Kąty na żywo z myszy (mniejsze opóźnienie); bez sterowania — z ciała.
+  if (controlActive() && player.state === 'alive') camera.rotation.set(km.pitch, km.yaw, 0);
+  else camera.rotation.set(body.pitch, body.yaw, 0);
+}
+
 function frame(alpha, frameDt) {
   if (stats) stats.begin();
   time += frameDt;
-  if (!debugCam) {
-    camera.position.set(
-      prevX + (body.x - prevX) * alpha,
-      prevY + (body.y - prevY) * alpha + eyeHeight,
-      prevZ + (body.z - prevZ) * alpha,
-    );
-    // Kąty na żywo z myszy (mniejsze opóźnienie); bez sterowania — z ciała.
-    if (controlActive()) camera.rotation.set(km.pitch, km.yaw, 0);
-    else camera.rotation.set(body.pitch, body.yaw, 0);
-  }
+  placeCamera(alpha);
+  const fired = consumeEvents();
+  avatars.sync(sim.participants, alpha, time, debugCam ? -1 : player.id);
+  beams.update(frameDt, camera);
+  viewModel.update(frameDt, player.weapon, fired, player.color, Math.hypot(body.vx, body.vz));
+  if (!params.nohud && !debugCam) hud.update(player, sim, frameDt);
+  sim.events.clear();
   graphics.update(frameDt, time);
   graphics.render();
   if (stats) stats.end();
@@ -117,14 +160,15 @@ window.__lt = {
   params,
   info: () => graphics.info(),
   setCam(i) {
-    if (i === null || i === undefined) { debugCam = false; return true; }
+    if (i === null || i === undefined) { debugCam = false; viewModel.group.visible = !params.nohud; return true; }
     const ok = applyDebugCam(camera, world, i);
-    if (ok) debugCam = true;
+    if (ok) { debugCam = true; viewModel.group.visible = false; }
     return ok;
   },
   setPreset: (n) => graphics.setPreset(n),
   cams: () => listDebugCams(world).map((c) => c.name),
   world: { id: world.id, solids: world.solids.length },
+  sim,
 };
 
 const loop = createLoop({ hz: CONFIG.sim.hz, maxSubSteps: CONFIG.sim.maxSubSteps, step, frame });
