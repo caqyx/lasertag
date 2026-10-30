@@ -1,0 +1,131 @@
+:root {
+  --bg: #05030a;
+  --neon-cyan: #22e8ff;
+  --neon-magenta: #ff2bd6;
+  --neon-uv: #7a3cff;
+  --neon-acid: #a6ff00;
+  --text: #d8d4ff;
+  --font: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+#game {
+  position: fixed;
+  inset: 0;
+  display: block;
+  width: 100vw;
+  height: 100vh;
+  outline: none;
+  cursor: crosshair;
+}
+
+/* ---------- HUD ---------- */
+#hud {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.crosshair {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 0;
+  height: 0;
+}
+.ch-line, .ch-dot {
+  position: absolute;
+  background: var(--neon-cyan);
+  box-shadow: 0 0 4px var(--neon-cyan), 0 0 9px rgba(34, 232, 255, 0.55);
+  border-radius: 1px;
+}
+.ch-t, .ch-b { width: 2px; height: 8px; left: -1px; }
+.ch-l, .ch-r { width: 8px; height: 2px; top: -1px; }
+.ch-t { top: -14px; }
+.ch-b { top: 6px; }
+.ch-l { left: -14px; }
+.ch-r { left: 6px; }
+.ch-dot {
+  width: 3px; height: 3px; left: -1.5px; top: -1.5px;
+  border-radius: 50%;
+  background: var(--neon-magenta);
+  box-shadow: 0 0 5px var(--neon-magenta);
+}
+
+/* ---------- Ekran startowy / pauza ---------- */
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(ellipse at center, rgba(40, 10, 70, 0.55) 0%, rgba(5, 3, 10, 0.85) 70%);
+  cursor: pointer;
+}
+.hidden { display: none !important; }
+
+.start-card {
+  text-align: center;
+  padding: 32px 44px;
+  border: 1px solid rgba(122, 60, 255, 0.6);
+  border-radius: 6px;
+  background: rgba(8, 4, 18, 0.7);
+  box-shadow: 0 0 24px rgba(122, 60, 255, 0.35), inset 0 0 18px rgba(122, 60, 255, 0.15);
+}
+.title {
+  margin: 0 0 18px;
+  font-size: 44px;
+  letter-spacing: 0.18em;
+  color: var(--neon-cyan);
+  text-shadow: 0 0 6px var(--neon-cyan), 0 0 18px rgba(34, 232, 255, 0.6);
+}
+.title span {
+  color: var(--neon-magenta);
+  text-shadow: 0 0 6px var(--neon-magenta), 0 0 18px rgba(255, 43, 214, 0.6);
+}
+.cta {
+  margin: 0 0 14px;
+  font-size: 20px;
+  color: var(--neon-acid);
+  text-shadow: 0 0 8px rgba(166, 255, 0, 0.7);
+  animation: pulse 1.6s ease-in-out infinite;
+}
+.keys {
+  margin: 0;
+  font-size: 12px;
+  opacity: 0.7;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+
+/* ---------- Statystyki (?stats=1) ---------- */
+#stats-info {
+  position: fixed;
+  top: 52px;
+  left: 0;
+  z-index: 10000;
+  padding: 4px 6px;
+  font: 11px/1.35 var(--font);
+  color: var(--neon-cyan);
+  background: rgba(0, 0, 20, 0.8);
+  white-space: pre;
+  pointer-events: none;
+}
