@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-const R = '/home/user/lasertag/src/';
+const R = new URL('../../src/', import.meta.url).href;
 const { CONFIG } = await import(R + 'config.js');
 const { setupRoster, spawnTeamCount, MODES } = await import(R + 'game/modes.js');
 const { createMatch, stepMatch, standings, createStandings, matchRunning, outcomeFor } = await import(R + 'game/match.js');
