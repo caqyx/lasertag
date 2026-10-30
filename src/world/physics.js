@@ -105,7 +105,7 @@ function circleOverlaps(o) {
 
 /**
  * Wewnętrzne groundHeight: koło z CIRC/BOX (ustawione wcześniej), feet z feetSrc[feetIdx]. Wynik → OUT[O_GROUND].
- * Rampa liczy się, gdy środek koła leży w jej obrysie (wysokość liniowa wzdłuż lokalnego Z).
+ * Rampa liczy się, gdy koło nachodzi na jej obrys (wysokość liniowa wzdłuż lokalnego Z w punkcie przyciętym do obrysu).
  */
 function groundInternal(world, feetSrc, feetIdx) {
   const limit = feetSrc[feetIdx] + CONFIG.player.stepHeight;
@@ -129,9 +129,10 @@ function groundInternal(world, feetSrc, feetIdx) {
       const rp = ramps[outR[k]];
       const dx = x - rp.cx;
       const dz = z - rp.cz;
-      const lx = dx * rp.cos - dz * rp.sin;
-      const lz = dx * rp.sin + dz * rp.cos;
-      if (lx < -rp.hx || lx > rp.hx || lz < -rp.hz || lz > rp.hz) continue;
+      if (!circleOverlaps(rp)) continue;
+      // koło nachodzi na obrys: wysokość w punkcie środka przyciętym do obrysu (spójnie z bryłami — podpiera całe koło)
+      let lz = dx * rp.sin + dz * rp.cos;
+      lz = lz < -rp.hz ? -rp.hz : lz > rp.hz ? rp.hz : lz;
       const h = rp.y0 + (rp.y1 - rp.y0) * ((lz + rp.hz) / (2 * rp.hz));
       if (h <= limit && h > best) best = h;
     }
