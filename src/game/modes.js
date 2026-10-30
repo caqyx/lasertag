@@ -22,7 +22,7 @@ function mode(id, name, short, desc) {
 export const MODES = Object.freeze({
   ffa: mode('ffa', 'Każdy na każdego', 'FFA', 'Ty + 7 botów. Wygrywa najwyższy wynik.'),
   tdm2: mode('tdm2', 'Drużyny 4 v 4', 'TDM 2', 'Czerwoni kontra Niebiescy. Wynik drużyny = suma wyników.'),
-  tdm4: mode('tdm4', '4 drużyny 2 v 2 v 2 v 2', 'TDM 4', 'Cztery dwuosobowe drużyny. Chaos kontrolowany.'),
+  tdm4: mode('tdm4', '4 drużyny po 2', 'TDM 4', 'Cztery dwuosobowe drużyny. Chaos kontrolowany.'),
 });
 
 export function getMode(modeId) {
