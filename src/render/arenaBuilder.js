@@ -291,6 +291,7 @@ function isSteel(s) {
 }
 
 // prostopadłościan bryły do bufora stali; UV w metrach / kafel kratki (góra: x/z, boki: wzdłuż/wysokość)
+const PLATE_U = 0.04, PLATE_V = 0.1;
 function steelBox(buf, s) {
   const G = A.steel.tile;
   const sides = [
@@ -301,11 +302,12 @@ function steelBox(buf, s) {
     toWorld(s, lx0, lz0, _wa); toWorld(s, lx1, lz1, _wb);
     const nx = nlx * s.cos + nlz * s.sin, nz = -nlx * s.sin + nlz * s.cos;
     const len = Math.hypot(lx1 - lx0, lz1 - lz0);
+    // boki = pełna blacha: UV w jednym punkcie otworu kratki (ciemna, gładka płyta zamiast kratki)
     const i = buf.count;
-    buf.vert(_wa[0], s.y0, _wa[1], nx, 0, nz, 0, s.y0 / G);
-    buf.vert(_wb[0], s.y0, _wb[1], nx, 0, nz, len / G, s.y0 / G);
-    buf.vert(_wb[0], s.y1, _wb[1], nx, 0, nz, len / G, s.y1 / G);
-    buf.vert(_wa[0], s.y1, _wa[1], nx, 0, nz, 0, s.y1 / G);
+    buf.vert(_wa[0], s.y0, _wa[1], nx, 0, nz, PLATE_U, PLATE_V);
+    buf.vert(_wb[0], s.y0, _wb[1], nx, 0, nz, PLATE_U, PLATE_V);
+    buf.vert(_wb[0], s.y1, _wb[1], nx, 0, nz, PLATE_U, PLATE_V);
+    buf.vert(_wa[0], s.y1, _wa[1], nx, 0, nz, PLATE_U, PLATE_V);
     buf.quad(i, i + 1, i + 2, i + 3);
   }
   for (const up of [true, false]) {
@@ -359,10 +361,10 @@ function addSteelRamp(steelBuf, beamBuf, trimBuf, r, warnCol, sideCol) {
     const nx = side * r.cos, nz = -side * r.sin;
     const L = 2 * hz;
     const i = steelBuf.count;
-    steelBuf.vert(_wa[0], 0, _wa[1], nx, 0, nz, 0, 0);
-    steelBuf.vert(_wb[0], 0, _wb[1], nx, 0, nz, L / G, 0);
-    steelBuf.vert(_wb[0], yb, _wb[1], nx, 0, nz, L / G, yb / G);
-    steelBuf.vert(_wa[0], ya, _wa[1], nx, 0, nz, 0, ya / G);
+    steelBuf.vert(_wa[0], 0, _wa[1], nx, 0, nz, PLATE_U, PLATE_V);
+    steelBuf.vert(_wb[0], 0, _wb[1], nx, 0, nz, PLATE_U, PLATE_V);
+    steelBuf.vert(_wb[0], yb, _wb[1], nx, 0, nz, PLATE_U, PLATE_V);
+    steelBuf.vert(_wa[0], ya, _wa[1], nx, 0, nz, PLATE_U, PLATE_V);
     steelBuf.quad(i, i + 1, i + 2, i + 3);
   }
   for (const [lz, yTop, nlz] of [[hz, y1, 1], [-hz, y0, -1]]) {
@@ -371,10 +373,10 @@ function addSteelRamp(steelBuf, beamBuf, trimBuf, r, warnCol, sideCol) {
     toWorld(r, xa, lz, _wa); toWorld(r, xb, lz, _wb);
     const nx = nlz * r.sin, nz = nlz * r.cos;
     const i = steelBuf.count;
-    steelBuf.vert(_wa[0], 0, _wa[1], nx, 0, nz, 0, 0);
-    steelBuf.vert(_wb[0], 0, _wb[1], nx, 0, nz, 2 * hx / G, 0);
-    steelBuf.vert(_wb[0], yTop, _wb[1], nx, 0, nz, 2 * hx / G, yTop / G);
-    steelBuf.vert(_wa[0], yTop, _wa[1], nx, 0, nz, 0, yTop / G);
+    steelBuf.vert(_wa[0], 0, _wa[1], nx, 0, nz, PLATE_U, PLATE_V);
+    steelBuf.vert(_wb[0], 0, _wb[1], nx, 0, nz, PLATE_U, PLATE_V);
+    steelBuf.vert(_wb[0], yTop, _wb[1], nx, 0, nz, PLATE_U, PLATE_V);
+    steelBuf.vert(_wa[0], yTop, _wa[1], nx, 0, nz, PLATE_U, PLATE_V);
     steelBuf.quad(i, i + 1, i + 2, i + 3);
   }
   const len = Math.hypot(2 * hz, y1 - y0);

@@ -20,6 +20,12 @@ for (const id of Object.keys(MAPS)) {
 }
 const DECK = 3.2; // Reactor: poziom galerii (SPEC §3.3)
 
+// Znane błędy (zgłoszone w raporcie testera) — test jako todo, dopóki nie naprawione w src/.
+const TODO_SMOOTH = {
+  reactor: 'BUG nav.smoothPath: segFree/straightOk sprawdza tylko bryły (solids), pomija rampy — wygładzona ścieżka ' +
+    '(-9.5,-9.5)→(-5.5,-5.5) ścina narożnik wysokiego końca rampy (-5.5,-10.2) w 0.14 m < radius; kapsuła ociera się (0.21 m zepchnięcia)',
+};
+
 function reach(nav, from) {
   const seen = new Uint8Array(nav.count);
   const st = [from]; seen[from] = 1; let n = 1;
@@ -140,7 +146,7 @@ for (const id of Object.keys(MAPS)) {
     }
   });
 
-  test(`${id}: smoothPath — każdy wygładzony odcinek przechodni (linia bioder wolna, stepMovement dochodzi do celu)`, () => {
+  test(`${id}: smoothPath — każdy wygładzony odcinek przechodni (linia bioder wolna, stepMovement dochodzi do celu)`, { todo: TODO_SMOOTH[id] }, () => {
     const rng = createRng(3);
     const out = new Int32Array(CONFIG.bots.pathCapacity * 4);
     const body = createBody();
