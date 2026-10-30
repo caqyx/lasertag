@@ -61,6 +61,7 @@ export function createParticipant(o) {
     state: 'alive',
     stateTimer: 0.5,
     protectTimer: 0.5,
+    stunTimer: 0.5,           // D-016: hit stun — broń nieaktywna (s)
     weapon: createWeapon(),
     sensorFlash: new Float32Array(4),
     sensorsLit: C.maxHp,
@@ -84,6 +85,7 @@ export function resetVitals(P) {
   P.state = 'alive';
   P.stateTimer = 0;
   P.protectTimer = 0;
+  P.stunTimer = 0;
   const f = P.sensorFlash;
   f[0] = 0; f[1] = 0; f[2] = 0; f[3] = 0;
 }
@@ -95,6 +97,8 @@ export function placeAt(P, x, y, z, yaw) {
   b.vx = 0; b.vy = 0; b.vz = 0;
   b.yaw = yaw; b.pitch = 0;
   b.onGround = true;
+  b.crouch = 0; b.height = CONFIG.player.height; b.eyeHeight = CONFIG.player.eyeHeight; // respawn na stojąco
+  P.input.crouch = false;
   P.prevX = x; P.prevY = y; P.prevZ = z;
   P.input.yaw = yaw;
   P.input.pitch = 0;

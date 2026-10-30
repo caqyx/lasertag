@@ -1,5 +1,6 @@
 // Broń FPP — stylizowany fazer w prawym dolnym rogu (PLAN §7.7).
-// createViewModel(camera, scene?) → { update(dt, weapon, firedThisFrame, color, speed?), muzzleWorld(out), dispose(), group }
+// createViewModel(camera, scene?) → { update(dt, weapon, firedThisFrame, color, speed?, stunned?), muzzleWorld(out), dispose(), group }
+//   stunned: true/1 podczas „hit stun” (P.stunTimer > 0) — akcenty, pasek ciepła i wylot przygaszone.
 //
 // Grupa jest dzieckiem kamery; aby dzieci kamery były renderowane, kamera musi być w scenie —
 // gdy camera.parent jest pusty i podano `scene`, kamera jest do niej dodawana.
@@ -76,7 +77,7 @@ function buildMaterial(uniforms) {
         'uniform vec3 uColor; uniform vec3 uHot; uniform float uHeat; uniform float uBlink; uniform float uFlash;',
         'uniform float uTrimI; uniform float uHeatI; uniform float uFlashI; uniform float uRimI; uniform vec3 uFill;',
         'uniform float uRimPow; uniform float uFillBase; uniform float uTrimFlash; uniform vec2 uHeatRamp;',
-        'uniform float uBarOff; uniform float uFlashWhite; uniform float uFlashIdle;',
+        'uniform float uBarOff; uniform float uFlashWhite; uniform float uFlashIdle; uniform float uDim;',
         'varying float vPart; varying float vBar;',
       ].join('\n'))
       .replace('#include <emissivemap_fragment>', [
@@ -84,12 +85,12 @@ function buildMaterial(uniforms) {
         // sztuczne światło od góry (układ widoku = układ kamery) + fresnel w kolorze gracza: bryła czytelna w ciemności
         'float vmRim = pow(1.0 - clamp(dot(normal, normalize(vViewPosition)), 0.0, 1.0), uRimPow);',
         'totalEmissiveRadiance += uFill * (uFillBase + (1.0 - uFillBase) * clamp(normal.y, 0.0, 1.0)) + uColor * vmRim * uRimI;',
-        'if (vPart > 0.5 && vPart < 1.5) totalEmissiveRadiance += uColor * uTrimI * (1.0 + uTrimFlash * uFlash);',
+        'if (vPart > 0.5 && vPart < 1.5) totalEmissiveRadiance += uColor * uTrimI * (1.0 + uTrimFlash * uFlash) * uDim;',
         'else if (vPart > 1.5 && vPart < 2.5) {',
         '  float on = step(vBar, uHeat);',
         '  vec3 hc = mix(uColor, uHot, smoothstep(uHeatRamp.x, uHeatRamp.y, uHeat));',
-        '  totalEmissiveRadiance += mix(uColor * uBarOff, hc * uHeatI * uBlink, on);',
-        '} else if (vPart > 2.5) totalEmissiveRadiance += (uColor + vec3(uFlashWhite * uFlash)) * uFlashI * (uFlashIdle + uFlash);',
+        '  totalEmissiveRadiance += mix(uColor * uBarOff, hc * uHeatI * uBlink, on) * uDim;',
+        '} else if (vPart > 2.5) totalEmissiveRadiance += (uColor + vec3(uFlashWhite * uFlash)) * uFlashI * (uFlashIdle + uFlash) * uDim;',
       ].join('\n'));
   };
   mat.customProgramCacheKey = () => 'lt-viewmodel';
@@ -120,6 +121,7 @@ export function createViewModel(camera, scene) {
     uFlashWhite: { value: VM.flashWhite },
     uFlashIdle: { value: VM.flashIdle },
     uDepthK: { value: VM.depthRange },
+    uDim: { value: 1 },
   };
   const geo = buildGeometry();
   const mat = buildMaterial(uniforms);
@@ -142,7 +144,7 @@ export function createViewModel(camera, scene) {
   let bobAmt = 0;
   let time = 0;
 
-  function update(dt, weapon, fired, color, speed = 0) {
+  function update(dt, weapon, fired, color, speed = 0, stunned = 0) {
     time += dt;
     if (color !== lastColor) {
       lastColor = color;
@@ -157,6 +159,9 @@ export function createViewModel(camera, scene) {
     uniforms.uHeat.value = heat;
     uniforms.uBlink.value = over ? (Math.sin(time * TAU * VM.overheatBlinkHz) > 0 ? VM.overheatBlink[0] : VM.overheatBlink[1]) : 1;
     uniforms.uFlash.value = flash;
+    // stun: szybkie przygaszenie, powrót płynny
+    const dimT = stunned ? VM.stunDim : 1;
+    uniforms.uDim.value += (dimT - uniforms.uDim.value) * Math.min(1, dt * VM.stunFade);
 
     // bob proporcjonalny do prędkości (opcjonalny argument)
     const k = Math.min(1, speed / CONFIG.player.walkSpeed);

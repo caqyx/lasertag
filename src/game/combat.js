@@ -1,8 +1,9 @@
 // Walka (PLAN §7.4, SPEC §2.1–§2.2): hitscan, kapsuła trafień, sensory kamizelki, HP, eliminacja, respawn, ochrona.
 // Czysty JS, bez three, bez alokacji (scratch na poziomie modułu).
 //
-// Kapsuła trafień: pionowa, promień hitCapsuleRadius, zajmuje wysokości [body.y + hitCapsuleBottom, body.y + hitCapsuleTop]
-// (całkowity zasięg łącznie z półsferami; odcinek osi = [bottom + r, top − r]).
+// Kapsuła trafień: pionowa, promień hitCapsuleRadius, zajmuje wysokości [body.y + hitCapsuleBottom, body.y + hitCapsuleTop·s]
+// (całkowity zasięg łącznie z półsferami; odcinek osi = [bottom + r, top·s − r]); s = body.height / player.height (kucanie).
+// Hit stun (D-016): trafienie bez eliminacji → P.stunTimer = CONFIG.combat.hitStun (broń celu nieaktywna; bramkuje sim).
 // Sojusznicy (ten sam team ≥ 0) przy !sim.friendlyFire: wiązka przez nich przelatuje. Wyeliminowani: nie trafiani, nie blokują.
 // Ochrona celu: wiązka zatrzymuje się na nim, SHOT.value = 2, brak HIT i brak zmian HP/punktów.
 
@@ -12,6 +13,24 @@ import { EV } from '../core/events.js';
 import { SENSOR_OFFSETS, resetVitals, placeAt } from './participant.js';
 import { resetWeapon } from './weapon.js';
 import { awardHit, awardElim } from './scoring.js';
+import * as MV from './movement.js';
+
+// Kucanie (D-016+): oko z movement.eyeHeightOf(body), gdy coder fizyki je doda; do tego czasu interpolacja
+// wg body.crouch (0..1) między CONFIG.player.eyeHeight a crouchEyeHeight (domyślnie 1.0 m).
+const EYE_FN = typeof MV.eyeHeightOf === 'function' ? MV.eyeHeightOf : null;
+const CROUCH_EYE = CONFIG.player.crouchEyeHeight !== undefined ? CONFIG.player.crouchEyeHeight : 1.0;
+
+/** Wysokość oka nad stopami dla aktualnej postawy. */
+export function eyeOf(b) {
+  if (EYE_FN !== null) return EYE_FN(b);
+  const c = b.crouch > 0 ? b.crouch : 0;
+  return CONFIG.player.eyeHeight + (CROUCH_EYE - CONFIG.player.eyeHeight) * c;
+}
+
+/** Skala wysokości postaci (kucanie): body.height / CONFIG.player.height. */
+export function heightScale(b) {
+  return b.height / CONFIG.player.height;
+}
 
 const EPS = 1e-9;
 
@@ -52,7 +71,7 @@ export function eyeRay(P, out) {
   const b = P.body;
   const cp = Math.cos(b.pitch);
   out.ox = b.x;
-  out.oy = b.y + CONFIG.player.eyeHeight;
+  out.oy = b.y + eyeOf(b);
   out.oz = b.z;
   out.dx = -Math.sin(b.yaw) * cp;
   out.dy = Math.sin(b.pitch);
@@ -75,7 +94,7 @@ export function muzzlePoint(P, out) {
   const fx = -sy * cp, fy = sp, fz = -cy * cp;
   const ox = o[0], oy = o[1], of = -o[2];
   out.x = b.x + rx * ox + ux * oy + fx * of;
-  out.y = b.y + CONFIG.player.eyeHeight + uy * oy + fy * of;
+  out.y = b.y + eyeOf(b) + uy * oy + fy * of;
   out.z = b.z + rz * ox + uz * oy + fz * of;
   return out;
 }
@@ -95,7 +114,7 @@ function capsuleHitS(P) {
   const ox = S[S_OX], oy = S[S_OY], oz = S[S_OZ];
   const dx = S[S_DX], dy = S[S_DY], dz = S[S_DZ];
   let ya = b.y + C.hitCapsuleBottom + R;
-  let yb = b.y + C.hitCapsuleTop - R;
+  let yb = b.y + C.hitCapsuleTop * heightScale(b) - R;   // kucanie: kapsuła niższa
   if (yb < ya) { const m = (ya + yb) * 0.5; ya = m; yb = m; }
   const mx = ox - b.x;
   const mz = oz - b.z;
@@ -150,7 +169,7 @@ export function rayVsParticipant(P, ox, oy, oz, dx, dy, dz, maxDist) {
 function nearestSensorS(P) {
   const b = P.body;
   const sy = Math.sin(b.yaw), cy = Math.cos(b.yaw);
-  const lx = HP3[0] - b.x, ly = HP3[1] - b.y, lz = HP3[2] - b.z;
+  const lx = HP3[0] - b.x, ly = (HP3[1] - b.y) / heightScale(b), lz = HP3[2] - b.z;   // sensory skalowane z wysokością
   let bestI = 0;
   let bestD = Infinity;
   for (let i = 0; i < 4; i++) {
@@ -239,6 +258,7 @@ function applyHitS(sim, shooter, target, sensor) {
   if (target.hp < 0) target.hp = 0;
   target.sensorsLit = target.hp;
   target.sensorFlash[sensor] = C.hitFlashTime;
+  if (target.hp > 0) target.stunTimer = C.hitStun;   // D-016: trafienie dezaktywuje broń celu na chwilę
   target.lastHitBy = shooter.id;
   target.lastHitTime = sim.time;
   const ddx = shooter.body.x - target.body.x;
@@ -295,6 +315,7 @@ export function stepParticipantState(sim, P, dt) {
     if (P.stateTimer <= 0) respawn(sim, P);
     return;
   }
+  if (P.stunTimer > 0) { P.stunTimer -= dt; if (P.stunTimer < 0) P.stunTimer = 0; }
   if (P.protectTimer > 0) {
     P.protectTimer -= dt;
     if (P.protectTimer <= 0) {

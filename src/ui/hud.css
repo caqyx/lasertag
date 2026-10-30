@@ -230,3 +230,36 @@
 
 @keyframes lt-blink { 0% { opacity: 1; } 50% { opacity: 0.25; } 100% { opacity: 1; } }
 @keyframes lt-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
+
+/* ---------- hit stun (P.stunTimer > 0) ---------- */
+.lt-stun {
+  position: absolute;
+  left: 50%;
+  top: calc(50% + 36px);
+  transform: translateX(-50%);
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+.lt-stun.show { display: flex; }
+.lt-stun-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.25em;
+  color: #c9c6d8;
+  text-shadow: 0 0 5px rgba(255, 255, 255, 0.35);
+}
+.lt-stun-track { width: 64px; height: 2px; background: var(--dim); }
+.lt-stun-fill { height: 100%; background: #c9c6d8; transform-origin: left center; }
+.lt-heat-stun {
+  display: none;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  color: #c9c6d8;
+}
+.lt-heat.stun { filter: grayscale(1) brightness(0.6); }
+.lt-heat.stun .lt-heat-warn { display: none; }
+.lt-heat.stun .lt-heat-stun { display: block; }
+.lt-hud.dead .lt-stun { display: none; }

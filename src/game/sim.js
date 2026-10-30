@@ -5,6 +5,7 @@ import { CONFIG } from '../config.js';
 import { createRng } from '../core/rng.js';
 import { createEventQueue, EV } from '../core/events.js';
 import { stepMovement } from './movement.js';
+import { resolveBodyWalls } from '../world/physics.js';
 import { stepWeapon, resetWeapon } from './weapon.js';
 import { resetVitals, placeAt } from './participant.js';
 import { resolveShot, stepParticipantState, pickSpawn } from './combat.js';
@@ -71,6 +72,7 @@ export function sanitizeInput(P) {
   inp.fire = inp.fire === true;
   inp.jump = inp.jump === true;
   inp.sprint = inp.sprint === true;
+  inp.crouch = inp.crouch === true;
 }
 
 /** Faza 1: zapamiętaj pozycję sprzed kroku, pobierz i zsanityzuj wejście. */
@@ -88,12 +90,67 @@ function moveOne(sim, P, dt) {
   stepMovement(P.body, P.input, dt, sim.world);
 }
 
+const SEPARATION_PASSES = 3;   // iteracje rozpychania (n ≤ 16 → O(n²) tanio)
+const SEP_EPS = 1e-4;          // m — zapas po rozepchnięciu
+
+/**
+ * Separacja ciał uczestników: koło vs koło w XZ, gdy zakresy Y [y, y+height] się nakładają. Żywi rozpychani po połowie
+ * (wyeliminowany stoi — żywy dostaje całe przesunięcie), składowa prędkości „w siebie" usuwana, potem ponowne
+ * rozwiązanie kolizji ze ścianami (żeby nie wepchnąć w ścianę). Bez alokacji.
+ */
+function separateParticipants(sim) {
+  const ps = sim.participants;
+  const n = ps.length;
+  for (let pass = 0; pass < SEPARATION_PASSES; pass++) {
+    let any = false;
+    for (let i = 0; i < n; i++) {
+      const A = ps[i];
+      const a = A.body;
+      const aMov = A.state === 'alive';
+      for (let j = i + 1; j < n; j++) {
+        const B = ps[j];
+        const bMov = B.state === 'alive';
+        if (!aMov && !bMov) continue;
+        const b = B.body;
+        if (a.y >= b.y + b.height || b.y >= a.y + a.height) continue;
+        let dx = a.x - b.x;
+        let dz = a.z - b.z;
+        const rr = a.radius + b.radius;
+        const d2 = dx * dx + dz * dz;
+        if (d2 >= rr * rr) continue;
+        let d = Math.sqrt(d2);
+        if (d < 1e-9) { dx = A.id < B.id ? 1 : -1; dz = 0; d = 1; } // pokrywające się środki: deterministyczny kierunek
+        const nx = dx / d;
+        const nz = dz / d;
+        const pen = rr - (d2 < 1e-18 ? 0 : d) + SEP_EPS;
+        const wa = aMov ? (bMov ? 0.5 : 1) : 0;
+        const wb = bMov ? (aMov ? 0.5 : 1) : 0;
+        if (wa > 0) {
+          a.x += nx * pen * wa; a.z += nz * pen * wa;
+          const vn = a.vx * nx + a.vz * nz;
+          if (vn < 0) { a.vx -= vn * nx; a.vz -= vn * nz; }
+          resolveBodyWalls(sim.world, a);
+        }
+        if (wb > 0) {
+          b.x -= nx * pen * wb; b.z -= nz * pen * wb;
+          const vn = b.vx * nx + b.vz * nz;
+          if (vn > 0) { b.vx -= vn * nx; b.vz -= vn * nz; }
+          resolveBodyWalls(sim.world, b);
+        }
+        any = true;
+      }
+    }
+    if (!any) break;
+  }
+}
+
 /** Faza 3: broń i strzał (hitscan po ruchu wszystkich). */
 function fireOne(sim, P, dt) {
   if (P.state !== 'alive') return;
   const W = P.weapon;
   const wasOver = W.overheated;
-  if (stepWeapon(W, P.input.fire, dt)) resolveShot(sim, P);
+  // hit stun (D-016): trafiony ma fazer nieaktywny, dopóki P.stunTimer > 0 (brak pola = 0)
+  if (stepWeapon(W, P.input.fire && !(P.stunTimer > 0), dt)) resolveShot(sim, P);
   if (!wasOver && W.overheated) {
     const r = sim.events.push(EV.OVERHEAT);
     r.time = sim.time;
@@ -105,7 +162,8 @@ function fireOne(sim, P, dt) {
 
 /**
  * Jeden stały krok w trzech fazach (bez przewagi kolejności uczestników w ruchu/celowaniu):
- *   1) wejście wszystkich (na stanie z poprzedniego kroku), 2) stan + ruch wszystkich, 3) broń/strzały wszystkich.
+ *   1) wejście wszystkich (na stanie z poprzedniego kroku), 2) stan + ruch wszystkich + rozepchnięcie ciał,
+ *   3) broń/strzały wszystkich.
  * W fazie 3 uczestnik wyeliminowany strzałem wcześniejszego w tablicy nie strzela już w tym kroku.
  */
 export function stepSim(sim, dt) {
@@ -113,5 +171,6 @@ export function stepSim(sim, dt) {
   const ps = sim.participants;
   for (let i = 0; i < ps.length; i++) sampleOne(sim, ps[i]);
   for (let i = 0; i < ps.length; i++) moveOne(sim, ps[i], dt);
+  separateParticipants(sim);
   for (let i = 0; i < ps.length; i++) fireOne(sim, ps[i], dt);
 }

@@ -134,7 +134,7 @@ export function createMenu(rootEl, opts, onStart) {
   play.addEventListener('mouseenter', () => setRow(playIndex));
   play.addEventListener('click', () => start());
 
-  el(inner, 'lt-mn-foot', 'WASD ruch · Mysz celowanie · LPM strzał · Shift sprint · Spacja skok · Tab tablica · Esc pauza');
+  el(inner, 'lt-mn-foot', 'WASD ruch · Mysz celowanie · LPM strzał · Shift sprint · Spacja skok · C kucanie · Tab tablica · Esc pauza');
 
   let rowIdx = 0;
   let visible = false;

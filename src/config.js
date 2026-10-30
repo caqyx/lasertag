@@ -11,8 +11,12 @@ export const CONFIG = Object.freeze({
     radius: 0.35,
     height: 1.8,
     eyeHeight: 1.65,
-    walkSpeed: 5.2,
-    sprintSpeed: 7.6,
+    walkSpeed: 3.8,         // D-015: tempo chodu w hali laser tag
+    sprintSpeed: 5.6,
+    crouchHeight: 1.15,     // wysokość ciała w kucu
+    crouchEyeHeight: 1.0,   // oko w kucu
+    crouchTime: 0.15,       // s — pełne przejście stanie ↔ kuc
+    crouchSpeedMul: 0.45,   // mnożnik prędkości w pełnym kucu (bez sprintu i skoku)
     accelGround: 60,
     accelAir: 12,
     friction: 12,
@@ -61,6 +65,7 @@ export const CONFIG = Object.freeze({
       right: [0.28, 1.55, 0],
     },
     loseOrder: ['back', 'left', 'right', 'front'],
+    hitStun: 0.45,          // D-016: s bez broni po trafieniu (nie eliminującym) — kto trafi pierwszy, wygrywa wymianę
     eventCapacity: 256,     // pierścień zdarzeń symulacji (core/events.js); czyszczony raz na klatkę renderu
     maxParticipants: 16,    // pojemność instancji awatarów
     dummy: {                // manekin treningowy (game/input/dummyInput.js — tylko testy)
@@ -80,6 +85,15 @@ export const CONFIG = Object.freeze({
     tdm4: { teams: 4, perTeam: 2, timeLimit: 300, elimLimit: 30 },
   },
 
+  // Kamera gracza (main.js): wygładzanie wysokości oka (kucanie) i death cam (SPEC §2.2).
+  camera: {
+    eyeSmoothing: 14,       // 1/s — wykładnicze dążenie wysokości oka do eyeHeightOf(body)
+    deathHeight: 2.6,       // m nad stopami ciała
+    deathRise: 1.1,         // s — czas uniesienia (ease-out)
+    deathLookRate: 4,       // 1/s — obrót w stronę zabójcy
+    ceilingClearance: 0.25, // m odstępu od sufitu / spodu bryły nad ciałem
+  },
+
   // Mecz (game/match.js) i UI meczu (ui/matchBar.js, ui/scoreboard.js).
   match: {
     countdown: 3.0,         // s odliczania przed startem (uczestnicy zamrożeni)
@@ -96,9 +110,12 @@ export const CONFIG = Object.freeze({
 
   bots: {
     levels: {
-      easy:   { reaction: 0.65, aimSigmaDeg: 5.5, turnDegPerSec: 160, viewDist: 28, fovDeg: 100, strafe: 0,   coverHp: 1, coverOnOverheat: false, heatLimit: 1.0 },
-      normal: { reaction: 0.40, aimSigmaDeg: 3.0, turnDegPerSec: 260, viewDist: 38, fovDeg: 120, strafe: 0.5, coverHp: 2, coverOnOverheat: false, heatLimit: 0.9 },
-      hard:   { reaction: 0.24, aimSigmaDeg: 1.6, turnDegPerSec: 400, viewDist: 48, fovDeg: 140, strafe: 0.8, coverHp: 2, coverOnOverheat: true, heatLimit: 0.8 },
+      easy:   { reaction: 0.65, aimSigmaDeg: 5.5, turnDegPerSec: 160, viewDist: 28, fovDeg: 100, strafe: 0,   coverHp: 1, coverOnOverheat: false, heatLimit: 1.0,
+                retreatFirstHit: false, holdChance: 0.15, holdTime: [2, 4], maxFireDist: 25, flankChance: 0.3, sprintChase: false },
+      normal: { reaction: 0.40, aimSigmaDeg: 3.0, turnDegPerSec: 260, viewDist: 38, fovDeg: 120, strafe: 0.5, coverHp: 2, coverOnOverheat: false, heatLimit: 0.9,
+                retreatFirstHit: true, holdChance: 0.4, holdTime: [3, 6], maxFireDist: 30, flankChance: 0.7, sprintChase: false },
+      hard:   { reaction: 0.24, aimSigmaDeg: 1.6, turnDegPerSec: 400, viewDist: 48, fovDeg: 140, strafe: 0.8, coverHp: 2, coverOnOverheat: true, heatLimit: 0.8,
+                retreatFirstHit: true, holdChance: 0.5, holdTime: [4, 8], maxFireDist: 35, flankChance: 0.9, sprintChase: true },
     },
     chaseTime: 4.0,
     burstShots: [2, 5],
@@ -124,6 +141,20 @@ export const CONFIG = Object.freeze({
     coverCooldown: 5.0,     // s przerwy przed kolejnym szukaniem osłony
     coverRadius: 12,        // m — promień szukania węzła osłony
     coverChecks: 24,        // maks. testów linii wzroku przy szukaniu osłony
+    // zasadzki (HOLD) — level.holdChance / holdTime [s]
+    holdCooldown: 6,        // s po zasadzce, zanim bot znów jej szuka
+    holdCandidates: 8,      // kandydaci (węzły nav.cover) na pozycję zasadzki
+    holdViewSamples: 6,     // próbki widoku na kandydata (linia wzroku do losowych węzłów)
+    holdView: [6, 25],      // m — zakres odległości widocznych węzłów liczonych jako „widok na przejście"
+    holdRange: [4, 20],     // m — odległość pozycji zasadzki od bota
+    holdSweep: 0.35,        // rad — amplituda rozglądania się w zasadzce
+    halfCover: [0.9, 1.4],  // m — wysokość osłony połówkowej (kucanie za nią)
+    halfCoverDist: 1.2,     // m — maks. odległość krawędzi osłony od węzła
+    // słuch: strzały w promieniu → podejście (z flanki: level.flankChance)
+    hearRadius: 15,
+    hearMemory: 1.0,        // s — jak długo usłyszany strzał jest „świeży"
+    investigateTime: 8,     // s — limit podchodzenia do źródła dźwięku
+    flankOffset: 6,         // m — boczne przesunięcie węzła pośredniego flanki
     adapt: {
       evalInterval: 30,
       window: 60,
@@ -388,6 +419,11 @@ export const CONFIG = Object.freeze({
     sensorOff: 0.035,
     sensorFlash: 4.0,
     shoulderTilt: 0.75,       // rad — pochylenie padów na ramionach ku górze
+    hideDist: 0.6,            // m (XZ) — kamera bliżej osi awatara → awatar pominięty (bot przechodzi przez gracza)
+    hideMarginY: 0.3,         // m — zapas pionowy zakresu ukrywania (stopy − to … głowa + to)
+    headBase: 1.6,            // m — powyżej: hełm przesuwany sztywno przy kucaniu; poniżej: skalowanie w pionie
+    hipHeight: 0.86,          // m — biodra (kolana wypychane poniżej)
+    kneeBend: 0.16,           // m — wypchnięcie kolan do przodu przy pełnym kucnięciu
     elimBlinkHz: 6,
     elimDim: 0.12,            // jasność w fazie „zgaszonej” mrugania
     protectPulseHz: 3,
@@ -425,6 +461,8 @@ export const CONFIG = Object.freeze({
     bobSmooth: 8,             // 1/s — wygładzanie amplitudy kołysania
     bobMinRate: 0.2,          // min. tempo fazy kołysania (× bobFreq)
     bobSide: 0.6,             // amplituda boczna kołysania (× bobAmp)
+    stunDim: 0.15,            // jasność akcentów broni podczas hit stun (P.stunTimer > 0)
+    stunFade: 20,             // 1/s — tempo przejścia do/z przygaszenia
     depthRange: 0.05,         // broń zajmuje przednie depthRange zakresu głębi NDC (nie wbija się w ściany)
   },
 

@@ -8,6 +8,8 @@ import { createLoop } from './core/loop.js';
 import { MAPS } from './world/maps/index.js';
 import { buildWorld } from './world/mapgen.js';
 import { buildNav } from './world/nav.js';
+import { raycastWorld, createHit } from './world/physics.js';
+import * as movement from './game/movement.js';
 import { createGraphics } from './render/graphics.js';
 import { applyDebugCam, listDebugCams } from './render/debugCams.js';
 import { resetInputState } from './game/input/inputState.js';
@@ -209,6 +211,8 @@ function boot(graphics) {
     hud = createHud(hudEl);
     km.setAngles(player.body.yaw, 0);
     playerWasAlive = true;
+    deadCam = false;
+    eyeY = eyeHeight;
 
     app = 'match';
     menu.hide();
@@ -301,24 +305,75 @@ function boot(graphics) {
     camera.lookAt(px + rx * 10, py + dy * 10, pz + rz * 10);
   }
 
-  function placeCamera(alpha) {
+  // --- Kamera gracza: wygładzona wysokość oka (kucanie) + death cam ---
+  const CC = CONFIG.camera;
+  const upHit = createHit();
+  let eyeY = eyeHeight;          // wygładzony offset oka nad stopami
+  let deadCam = false;           // death cam aktywna (wykrycie przejścia alive → eliminated)
+  let deathT = 0, deathYaw = 0, deathPitch = 0, deathTopH = 0;
+
+  /** Docelowa wysokość oka: movement.eyeHeightOf(body) (kucanie), do czasu jego dodania — CONFIG.player.eyeHeight. */
+  function eyeTarget(b) {
+    return typeof movement.eyeHeightOf === 'function' ? movement.eyeHeightOf(b) : eyeHeight;
+  }
+
+  function placeCamera(alpha, dt) {
     if (debugCam) return;
     const b = player.body;
-    camera.position.set(
-      player.prevX + (b.x - player.prevX) * alpha,
-      player.prevY + (b.y - player.prevY) * alpha + eyeHeight,
-      player.prevZ + (b.z - player.prevZ) * alpha,
-    );
+    const x = player.prevX + (b.x - player.prevX) * alpha;
+    const y = player.prevY + (b.y - player.prevY) * alpha;
+    const z = player.prevZ + (b.z - player.prevZ) * alpha;
+    eyeY += (eyeTarget(b) - eyeY) * (1 - Math.exp(-CC.eyeSmoothing * dt));
+    if (player.state !== 'alive') { deathCamera(x, y, z, dt); return; }
+    deadCam = false;
+    camera.position.set(x, y + eyeY, z);
     // Kąty na żywo z myszy (mniejsze opóźnienie); bez sterowania — z ciała.
-    if (controlActive() && !paused && player.state === 'alive') camera.rotation.set(km.pitch, km.yaw, 0);
+    if (controlActive() && !paused) camera.rotation.set(km.pitch, km.yaw, 0);
     else camera.rotation.set(b.pitch, b.yaw, 0);
   }
 
+  /** Death cam (SPEC §2.2): powolne uniesienie nad ciało (clamp pod sufitem/spodem bryły) i obrót w stronę zabójcy. */
+  function deathCamera(x, y, z, dt) {
+    if (!deadCam) {
+      deadCam = true;
+      deathT = 0;
+      deathYaw = camera.rotation.y;
+      deathPitch = camera.rotation.x;
+      let top = CC.deathHeight;
+      if (raycastWorld(sim.world, x, y + eyeY, z, 0, 1, 0, CC.deathHeight, upHit) && upHit.hit) {
+        const lim = eyeY + upHit.dist - CC.ceilingClearance;
+        if (lim < top) top = lim;
+      }
+      deathTopH = top > eyeY ? top : eyeY;
+    }
+    deathT += dt;
+    const u = deathT >= CC.deathRise ? 1 : deathT / CC.deathRise;
+    const e = 1 - (1 - u) * (1 - u); // ease-out
+    const cy = y + eyeY + (deathTopH - eyeY) * e;
+    camera.position.set(x, cy, z);
+    const K = player.lastHitBy >= 0 ? findParticipant(sim, player.lastHitBy) : null;
+    if (K !== null && K !== player) {
+      const kb = K.body;
+      const dx = kb.x - x, dz = kb.z - z;
+      const hz = Math.hypot(dx, dz);
+      if (hz > 1e-3) {
+        const k = 1 - Math.exp(-CC.deathLookRate * dt);
+        let d = Math.atan2(-dx, -dz) - deathYaw;
+        while (d > Math.PI) d -= Math.PI * 2;
+        while (d < -Math.PI) d += Math.PI * 2;
+        deathYaw += d * k;
+        deathPitch += (Math.atan2(kb.y + eyeHeight - cy, hz) - deathPitch) * k;
+      }
+    }
+    camera.rotation.set(deathPitch, deathYaw, 0);
+  }
+
   function frameMatch(alpha, frameDt) {
-    placeCamera(alpha);
+    placeCamera(alpha, frameDt);
     const fired = consumeEvents();
     recordFromEvents(adapt, sim.events, player.id);
-    avatars.sync(sim.participants, alpha, time, debugCam ? -1 : player.id);
+    // localId + pozycja kamery: avatars ukrywa lokalnego gracza i awatary zbyt blisko kamery
+    avatars.sync(sim.participants, alpha, time, debugCam ? -1 : player.id, camera.position);
     const b = player.body;
     viewModel.update(frameDt, player.weapon, fired, player.color, Math.hypot(b.vx, b.vz));
     if (showHud && !debugCam) {
@@ -357,6 +412,7 @@ function boot(graphics) {
     startMatch: (cfg) => startMatch(cfg === undefined ? lastCfg || params : cfg),
     goMenu: () => goMenu(),
     info: () => graphics.info(),
+    camera: () => ({ x: camera.position.x, y: camera.position.y, z: camera.position.z, yaw: camera.rotation.y, pitch: camera.rotation.x }),
     setCam(i) {
       if (i === null || i === undefined) {
         debugCam = false;

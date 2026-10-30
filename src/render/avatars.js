@@ -1,5 +1,7 @@
 // Awatary uczestników (SPEC §2.1/§2.2/§4; PLAN §7.7).
-// createAvatars(scene, maxCount) → { sync(participants, alpha, time, localId), dispose() }
+// createAvatars(scene, maxCount) → { sync(participants, alpha, time, localId, camera?), dispose() }
+//   camera: awatar, w którego kapsule (XZ < avatar.hideDist, w zakresie wysokości) jest kamera, jest pomijany.
+//   Kucanie: body.height (wys. kapsuły) i body.crouch (0..1) — undefined = stojący.
 //
 // 2 draw calle:
 //  • korpus — jedna scalona geometria na uczestnika (nogi, tors, ramiona, hełm z wizjerem, broń w dłoni, pas),
@@ -21,6 +23,9 @@ const AV = CONFIG.avatar;
 // scratch
 const _m = new THREE.Matrix4();
 const _ms = new THREE.Matrix4();
+const _l = new THREE.Matrix4();
+const STAND = CONFIG.player.height;
+const HIDE2 = CONFIG.avatar.hideDist * CONFIG.avatar.hideDist;
 const _q = new THREE.Quaternion();
 const _p = new THREE.Vector3();
 const _s = new THREE.Vector3(1, 1, 1);
@@ -131,12 +136,32 @@ function buildBodyMaterial() {
     uTint: { value: AV.bodyTint },
     uRimI: { value: AV.rimIntensity },
     uRimPow: { value: AV.rimPower },
+    uHeadBase: { value: AV.headBase },
+    uHip: { value: AV.hipHeight },
+    uKnee: { value: AV.kneeBend },
   };
   mat.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, uniforms);
     shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nattribute float aEmit;\nattribute float aFx;\nvarying float vEmit;\nvarying float vFx;')
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvEmit = aEmit;\nvFx = aFx;');
+      .replace('#include <common>', '#include <common>\nattribute float aEmit;\nattribute float aFx;\nattribute vec2 aShape;\nuniform float uHeadBase;\nuniform float uHip;\nuniform float uKnee;\nvarying float vEmit;\nvarying float vFx;')
+      // kucanie: wszystko poniżej podstawy hełmu skalowane w pionie (aShape.x = height/standHeight — te same
+      // wysokości sensorów co w combat), hełm przesunięty sztywno; kolana wypchnięte do przodu (aShape.y = crouch)
+      .replace('#include <beginnormal_vertex>', [
+        '#include <beginnormal_vertex>',
+        'if (position.y < uHeadBase) objectNormal = normalize(vec3(objectNormal.x, objectNormal.y / max(aShape.x, 0.2), objectNormal.z));',
+      ].join('\n'))
+      .replace('#include <begin_vertex>', [
+        '#include <begin_vertex>',
+        'if (position.y < uHeadBase) {',
+        '  transformed.y = position.y * aShape.x;',
+        '  float leg = clamp(position.y / uHip, 0.0, 1.0);',
+        '  transformed.z -= aShape.y * uKnee * sin(3.14159265 * leg) * step(position.y, uHip);',
+        '} else {',
+        '  transformed.y = position.y - uHeadBase * (1.0 - aShape.x);',
+        '}',
+        'vEmit = aEmit;',
+        'vFx = aFx;',
+      ].join('\n'));
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', '#include <common>\nuniform float uTint;\nuniform float uRimI;\nuniform float uRimPow;\nvarying float vEmit;\nvarying float vFx;')
       .replace('#include <color_fragment>', 'diffuseColor.rgb *= mix(vec3(1.0), vColor, uTint);')
@@ -157,6 +182,8 @@ export function createAvatars(scene, maxCount) {
   const bodyGeo = buildBodyGeometry();
   const fxAttr = new THREE.InstancedBufferAttribute(new Float32Array(maxCount).fill(1), 1).setUsage(THREE.DynamicDrawUsage);
   bodyGeo.setAttribute('aFx', fxAttr);
+  const shapeAttr = new THREE.InstancedBufferAttribute(new Float32Array(maxCount * 2).fill(1), 2).setUsage(THREE.DynamicDrawUsage);
+  bodyGeo.setAttribute('aShape', shapeAttr);
   const bodyMat = buildBodyMaterial();
   const body = new THREE.InstancedMesh(bodyGeo, bodyMat, maxCount);
   body.name = 'avatars:body';
@@ -188,7 +215,8 @@ export function createAvatars(scene, maxCount) {
 
   const TAU = Math.PI * 2;
 
-  function sync(participants, alpha, time, localId) {
+  function sync(participants, alpha, time, localId, camera) {
+    const cp = camera ? camera.position : null; // kamera jest dzieckiem sceny (bez rodzica z transformacją) → position = świat
     let j = 0;
     const n = participants.length;
     for (let i = 0; i < n && j < maxCount; i++) {
@@ -200,6 +228,15 @@ export function createAvatars(scene, maxCount) {
         P.prevY + (b.y - P.prevY) * alpha,
         P.prevZ + (b.z - P.prevZ) * alpha,
       );
+      const h = b.height > 0 ? b.height : STAND;
+      // kamera w (lub tuż przy) korpusie → pomiń instancję (nigdy pełnoekranowy ciemny blok)
+      if (cp !== null) {
+        const dx = cp.x - _p.x, dz = cp.z - _p.z;
+        if (dx * dx + dz * dz < HIDE2 && cp.y > _p.y - AV.hideMarginY && cp.y < _p.y + h + AV.hideMarginY) continue;
+      }
+      const sY = h / STAND;
+      shapeAttr.array[j * 2] = sY;
+      shapeAttr.array[j * 2 + 1] = b.crouch > 0 ? b.crouch : 0;
       _q.setFromAxisAngle(_up, b.yaw);
       _m.compose(_p, _q, _s);
       body.setMatrixAt(j, _m);
@@ -221,7 +258,10 @@ export function createAvatars(scene, maxCount) {
       const cr = colRGB[j * 3], cg = colRGB[j * 3 + 1], cb = colRGB[j * 3 + 2];
       for (let s = 0; s < 4; s++) {
         const k = j * 4 + s;
-        _ms.multiplyMatrices(_m, locals[s]);
+        // sensor na wysokości y × height/standHeight (spójnie z combat)
+        _l.copy(locals[s]);
+        _l.elements[13] *= sY;
+        _ms.multiplyMatrices(_m, _l);
         sensors.setMatrixAt(k, _ms);
         let I;
         if (elim) I = AV.sensorLit * fx;
@@ -244,6 +284,7 @@ export function createAvatars(scene, maxCount) {
     sensors.instanceMatrix.needsUpdate = true;
     sensors.instanceColor.needsUpdate = true;
     fxAttr.needsUpdate = true;
+    shapeAttr.needsUpdate = true;
   }
 
   function dispose() {

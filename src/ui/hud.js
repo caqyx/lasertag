@@ -3,7 +3,7 @@
 // tylko przy zmianie. Zdarzenia czytane z sim.events (count/at(i)) — kolejkę czyści main po klatce.
 // Elementy: 4 segmenty HP (kolor gracza, błysk przy utracie), pasek ciepła (+ ostrzeżenie, PRZEGRZANIE),
 // hitmarker, wskaźnik kierunku obrażeń (łuk wokół celownika), ekran eliminacji z odliczaniem,
-// wskaźnik ochrony, feed eliminacji (ostatnie N, znikają), wynik gracza.
+// wskaźnik ochrony, feed eliminacji (ostatnie N, znikają), wynik gracza, hit stun (P.stunTimer > 0 → „FAZER OFF”).
 import { CONFIG } from '../config.js';
 import { EV } from '../core/events.js';
 import { findParticipant } from '../game/sim.js';
@@ -24,6 +24,10 @@ export function createHud(rootEl) {
   for (let i = 0; i < 4; i++) el(hit, 'lt-hm lt-hm' + i);
   const dmg = el(center, 'lt-dmgdir');
   el(dmg, 'lt-dmgarc');
+  // hit stun (P.stunTimer > 0): krótki napis + pasek pod celownikiem
+  const stun = el(root, 'lt-stun');
+  el(stun, 'lt-stun-label', 'FAZER OFF');
+  const stunBar = el(el(stun, 'lt-stun-track'), 'lt-stun-fill');
   const protect = el(root, 'lt-protect');
   el(protect, 'lt-protect-label', 'OCHRONA');
   const protectBar = el(el(protect, 'lt-protect-track'), 'lt-protect-fill');
@@ -42,7 +46,8 @@ export function createHud(rootEl) {
   const heat = el(root, 'lt-heat');
   const heatHead = el(heat, 'lt-heat-head');
   el(heatHead, 'lt-label', 'CIEPŁO');
-  const heatWarn = el(heatHead, 'lt-heat-warn', 'PRZEGRZANIE');
+  el(heatHead, 'lt-heat-warn', 'PRZEGRZANIE');
+  el(heatHead, 'lt-heat-stun', 'FAZER OFF');
   const heatFill = el(el(heat, 'lt-heat-track'), 'lt-heat-fill');
 
   // --- prawa góra: feed eliminacji
@@ -71,6 +76,7 @@ export function createHud(rootEl) {
   let cColor = null, cHp = -1, cScore = -1, cHeat = -1, cWarn = -1, cOver = -1;
   let cDead = -1, cElimBy = -2, cCount = -1, cProt = -1, cProtW = -1;
   let cHitOp = -1, cHitKill = -1, cDmgOp = -1, cDmgAng = 1e9;
+  let cStun = -1, cStunW = -1, stunPeak = 0;
   let hitT = 0, hitKill = 0, dmgT = 0, lastHitTime = -1e9;
   const segFlashT = new Float32Array(MAX_HP);
   const segState = new Int8Array(MAX_HP).fill(-1); // 0 off, 1 on, 2 błysk
@@ -136,6 +142,22 @@ export function createHud(rootEl) {
     const warn = !over && h > H.heatWarn ? 1 : 0;
     if (warn !== cWarn) { cWarn = warn; heat.classList.toggle('warn', warn === 1); }
     if (over !== cOver) { cOver = over; heat.classList.toggle('over', over === 1); }
+  }
+
+  function updateStun(player) {
+    const st = player.state === 'alive' && player.stunTimer > 0 ? player.stunTimer : 0;
+    if (st > stunPeak) stunPeak = st;          // początek stunu (lub przedłużenie) — długość całkowita bez zależności od CONFIG
+    const on = st > 0 ? 1 : 0;
+    if (!on) stunPeak = 0;
+    if (on !== cStun) {
+      cStun = on;
+      stun.classList.toggle('show', on === 1);
+      heat.classList.toggle('stun', on === 1);
+    }
+    if (on) {
+      const w = q(st / stunPeak, 0.05);
+      if (w !== cStunW) { cStunW = w; stunBar.style.transform = 'scaleX(' + w + ')'; }
+    }
   }
 
   function updateCenter(player) {
@@ -226,6 +248,7 @@ export function createHud(rootEl) {
     readEvents(player, sim);
     updateVitals(player);
     updateHeat(player);
+    updateStun(player);
     updateCenter(player);
     updateElim(player, sim);
     updateFeed();

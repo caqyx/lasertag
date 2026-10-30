@@ -287,6 +287,29 @@ function ceilingInternal(world, body) {
   OUT[O_CEIL] = best;
 }
 
+/**
+ * Kolizje poziome ze ścianami + granice areny dla body w bieżącej pozycji (np. po rozepchnięciu uczestników).
+ * Zwraca true, gdy pozycja końcowa jest wolna od penetracji. Bez alokacji.
+ */
+export function resolveBodyWalls(world, body) {
+  const ok = resolveHorizontal(world, body);
+  clampBounds(world, body);
+  return ok;
+}
+
+/** Bufor: HEAD[0] = docelowa wysokość ciała dla headroomOk. */
+export const HEAD = new Float64Array(1);
+
+/**
+ * Czy ciało może urosnąć do wysokości HEAD[0] (wstawanie z kuca): spód brył nad głową (y0 > stopy + stepHeight,
+ * nachodzących na koło) i sufit muszą być ≥ stopy + HEAD[0]. Bez alokacji.
+ */
+export function headroomOk(world, body) {
+  setCircleBody(body);
+  ceilingInternal(world, body);
+  return OUT[O_CEIL] >= body.y + HEAD[0] - 1e-9;
+}
+
 // stan kroku moveBody: [feetQuery, sdt]
 const MB = new Float64Array(2);
 
