@@ -56,12 +56,12 @@ test('map: format identyfikatora; nieznana, ale poprawna nazwa przechodzi (walid
   assert.equal(parseParams(`?map=${'x'.repeat(32)}`).map, 'x'.repeat(32));
 });
 
-test('bots: 0..31 przyjmowane, reszta → domyślne', () => {
+test('bots: 0..15 (maxParticipants-1) przyjmowane, reszta → domyślne', () => {
   const def = CONFIG.defaults.bots ?? null;
   assert.equal(parseParams('?bots=0').bots, 0);
-  assert.equal(parseParams('?bots=31').bots, 31);
+  assert.equal(parseParams('?bots=15').bots, 15);
   assert.equal(parseParams('?bots=07').bots, 7);
-  for (const v of ['32', '99', '100', '-1', '1.5', 'abc', '', ' 3', '1e1', '0x3']) {
+  for (const v of ['16', '31', '32', '99', '100', '-1', '1.5', 'abc', '', ' 3', '1e1', '0x3']) {
     assert.equal(parseParams(`?bots=${encodeURIComponent(v)}`).bots, def, JSON.stringify(v));
   }
 });

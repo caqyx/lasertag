@@ -5,7 +5,7 @@ import { CONFIG } from '../config.js';
 
 const ID_RE = /^[a-z0-9_-]{1,32}$/;
 const INT_RE = /^-?\d{1,10}$/;
-const MAX_BOTS = 31;
+const MAX_BOTS = CONFIG.combat.maxParticipants - 1;
 
 function pick(value, allowed, fallback) {
   return value !== null && Object.prototype.hasOwnProperty.call(allowed, value) ? value : fallback;

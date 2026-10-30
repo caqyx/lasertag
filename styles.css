@@ -130,3 +130,7 @@ html, body {
   white-space: pre;
   pointer-events: none;
 }
+
+/* błąd krytyczny (brak WebGL, utrata kontekstu) */
+.overlay.lt-fatal { cursor: default; }
+.overlay.lt-fatal .cta { animation: none; color: #ff3355; text-shadow: 0 0 8px rgba(255, 51, 85, 0.7); }

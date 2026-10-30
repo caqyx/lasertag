@@ -25,14 +25,19 @@ function keyIndex(code) {
 
 /**
  * @param {HTMLCanvasElement} canvas
- * @param {{ onLockChange?: (locked:boolean) => void }} [opts]
+ * @param {{ onLockChange?: (locked:boolean) => void, onLockError?: () => void, captureUnlocked?: () => boolean }} [opts]
+ *   Klawisze zapisywane (i Tab/Spacja/strzałki blokowane) tylko przy pointer locku albo gdy captureUnlocked() → true
+ *   (np. ?autostart=1) — menu i ekran końca dostają klawisze normalnie.
  */
 export function createKeyboardMouse(canvas, opts = {}) {
   const sens = CONFIG.player.mouseSensitivity;
   const pitchLimit = CONFIG.player.pitchLimit;
   const keys = new Uint8Array(K_COUNT);
   const onLockChange = opts.onLockChange || null;
-  let fire = false;
+  const onLockErrorCb = opts.onLockError || null;
+  const captureUnlocked = opts.captureUnlocked || null;
+  let fire = false;        // poziom (LPM trzymany)
+  let firePressed = false; // zbocze — krótkie kliknięcie między krokami sim nie ginie (czyszczone w sample)
   let yaw = 0;
   let pitch = 0;
   let locked = false;
@@ -40,11 +45,16 @@ export function createKeyboardMouse(canvas, opts = {}) {
   function clearKeys() {
     keys.fill(0);
     fire = false;
+    firePressed = false;
+  }
+
+  function capturing() {
+    return locked || (captureUnlocked !== null && captureUnlocked());
   }
 
   function onKeyDown(e) {
     const i = keyIndex(e.code);
-    if (i < 0) return;
+    if (i < 0 || !capturing()) return;
     // Tab nie przenosi fokusu, Spacja/strzałki nie przewijają strony
     e.preventDefault();
     keys[i] = 1;
@@ -53,7 +63,7 @@ export function createKeyboardMouse(canvas, opts = {}) {
   function onKeyUp(e) {
     const i = keyIndex(e.code);
     if (i < 0) return;
-    e.preventDefault();
+    if (capturing()) e.preventDefault();
     keys[i] = 0;
   }
 
@@ -69,7 +79,7 @@ export function createKeyboardMouse(canvas, opts = {}) {
 
   function onMouseDown(e) {
     if (e.button !== 0) return;
-    if (locked) fire = true;
+    if (capturing()) { fire = true; firePressed = true; }
   }
 
   function onMouseUp(e) {
@@ -89,7 +99,8 @@ export function createKeyboardMouse(canvas, opts = {}) {
   }
 
   function onLockError() {
-    // Np. zbyt szybkie ponowne żądanie po Esc — cicho ignorujemy, użytkownik kliknie ponownie.
+    // Np. zbyt szybkie ponowne żądanie po Esc (Chrome wymaga ~1 s przerwy) — informujemy, użytkownik kliknie ponownie.
+    if (onLockErrorCb) onLockErrorCb();
   }
 
   function onBlur() {
@@ -132,7 +143,8 @@ export function createKeyboardMouse(canvas, opts = {}) {
       out.moveZ = mz;
       out.yaw = yaw;
       out.pitch = pitch;
-      out.fire = fire;
+      out.fire = fire || firePressed;
+      firePressed = false;
       out.jump = keys[K_JUMP] === 1;
       out.sprint = keys[K_SPRINT] === 1;
       out.scoreboard = keys[K_SCORE] === 1;
@@ -146,6 +158,8 @@ export function createKeyboardMouse(canvas, opts = {}) {
     exitLock() {
       if (locked && document.exitPointerLock) document.exitPointerLock();
     },
+    /** Tab trzymany (dla UI; nie zużywa zbocza strzału jak sample). */
+    get scoreboard() { return keys[K_SCORE] === 1; },
     get yaw() { return yaw; },
     get pitch() { return pitch; },
     get locked() { return locked; },

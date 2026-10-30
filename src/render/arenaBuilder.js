@@ -166,48 +166,6 @@ function addSolid(paintBuf, plainBuf, s, rng) {
   w[0] = saved[0]; w[1] = saved[1]; w[2] = saved[2];
 }
 
-// ---------------------------------------------------------------- rampa (klin)
-
-function addRamp(paintBuf, plainBuf, trimBuf, r, col) {
-  const s = r;
-  const { hx, hz, y0, y1 } = r;
-  const tileW = TX.paintMeters[0], tileH = TX.paintMeters[1], P = TX.wallMeters;
-  paintBuf.cur.top = y1; paintBuf.cur.bot = -1;
-  for (const side of [1, -1]) {
-    const lx = side * hx;
-    const za = side > 0 ? hz : -hz, zb = -za;
-    const ya = side > 0 ? y1 : y0, yb = side > 0 ? y0 : y1;
-    toWorld(s, lx, za, _wa); toWorld(s, lx, zb, _wb);
-    const nx = side * r.cos, nz = -side * r.sin;
-    const L = 2 * hz;
-    const i = paintBuf.count;
-    paintBuf.wvert(_wa[0], 0, _wa[1], nx, 0, nz, 0, 0, 0, L, 0, 0);
-    paintBuf.wvert(_wb[0], 0, _wb[1], nx, 0, nz, L / tileW, 0, L, L, L / P, 0);
-    paintBuf.wvert(_wb[0], yb, _wb[1], nx, 0, nz, L / tileW, yb / tileH, L, L, L / P, yb / P);
-    paintBuf.wvert(_wa[0], ya, _wa[1], nx, 0, nz, 0, ya / tileH, 0, L, 0, ya / P);
-    paintBuf.quad(i, i + 1, i + 2, i + 3);
-  }
-  addSide(paintBuf, s, -hx, hz, hx, hz, 0, 1, 0, y1, 0, tileW, tileH);
-  if (y0 > 0.001) addSide(paintBuf, s, hx, -hz, -hx, -hz, 0, -1, 0, y0, 0, tileW, tileH);
-  const len = Math.hypot(2 * hz, y1 - y0);
-  const ny = (2 * hz) / len, nzl = -(y1 - y0) / len;
-  const nX = nzl * r.sin, nZ = nzl * r.cos;
-  const ys = [y0, y0, y1, y1];
-  const lz = [-hz, -hz, hz, hz], lx = [-hx, hx, hx, -hx];
-  plainBuf.cur.top = y1;
-  const i = plainBuf.count;
-  for (let k = 0; k < 4; k++) {
-    toWorld(s, lx[k], lz[k], _wa);
-    plainBuf.wvert(_wa[0], ys[k], _wa[1], nX, ny, nZ, 0, 0, 1, 2, _wa[0] / P, _wa[1] / P);
-  }
-  plainBuf.quad(i, i + 3, i + 2, i + 1);
-  const t = A.trimSize;
-  for (const side of [1, -1]) {
-    toWorld(s, side * (hx + t / 2 + A.trimGap), -hz, _wa); toWorld(s, side * (hx + t / 2 + A.trimGap), hz, _wb);
-    addBar(trimBuf, _wa[0], y0 - t / 2, _wa[1], _wb[0], y1 - t / 2, _wb[1], t, t, col.r, col.g, col.b);
-  }
-}
-
 // ---------------------------------------------------------------- listwy, odboje
 
 // pętla wokół bryły na wysokości y: pręty o przekroju tw × th, odsunięte o off od ściany
@@ -325,6 +283,126 @@ function spawnPanel(rubberBuf, trimBuf, world, sp, frameColor, teamColor) {
   addBar(trimBuf, fx - tx * m, P.y, fz - tz * m, fx + tx * m, P.y, fz + tz * m, t, P.marker, tcol.r, tcol.g, tcol.b);
 }
 
+// ---------------------------------------------------------------- stal (galerie, kładki, barierki, rampy)
+
+/** bryła wyniesiona (platforma lub barierka na galerii) → wygląd stalowej konstrukcji zamiast ściany z farbą */
+function isSteel(s) {
+  return !s.boundary && s.y0 > A.steelMinY && (s.kind === 'platform' || s.kind === 'half' || s.kind === 'wall');
+}
+
+// prostopadłościan bryły do bufora stali; UV w metrach / kafel kratki (góra: x/z, boki: wzdłuż/wysokość)
+function steelBox(buf, s) {
+  const G = A.steel.tile;
+  const sides = [
+    [s.hx, s.hz, s.hx, -s.hz, 1, 0], [-s.hx, -s.hz, -s.hx, s.hz, -1, 0],
+    [-s.hx, s.hz, s.hx, s.hz, 0, 1], [s.hx, -s.hz, -s.hx, -s.hz, 0, -1],
+  ];
+  for (const [lx0, lz0, lx1, lz1, nlx, nlz] of sides) {
+    toWorld(s, lx0, lz0, _wa); toWorld(s, lx1, lz1, _wb);
+    const nx = nlx * s.cos + nlz * s.sin, nz = -nlx * s.sin + nlz * s.cos;
+    const len = Math.hypot(lx1 - lx0, lz1 - lz0);
+    const i = buf.count;
+    buf.vert(_wa[0], s.y0, _wa[1], nx, 0, nz, 0, s.y0 / G);
+    buf.vert(_wb[0], s.y0, _wb[1], nx, 0, nz, len / G, s.y0 / G);
+    buf.vert(_wb[0], s.y1, _wb[1], nx, 0, nz, len / G, s.y1 / G);
+    buf.vert(_wa[0], s.y1, _wa[1], nx, 0, nz, 0, s.y1 / G);
+    buf.quad(i, i + 1, i + 2, i + 3);
+  }
+  for (const up of [true, false]) {
+    const y = up ? s.y1 : s.y0, ny = up ? 1 : -1;
+    const corners = up ? [[-1, 1], [1, 1], [1, -1], [-1, -1]] : [[-1, -1], [1, -1], [1, 1], [-1, 1]];
+    const i = buf.count;
+    for (const [ix, iz] of corners) {
+      toWorld(s, ix * s.hx, iz * s.hz, _wa);
+      buf.vert(_wa[0], y, _wa[1], 0, ny, 0, (ix * s.hx) / G, (iz * s.hz) / G);
+    }
+    buf.quad(i, i + 1, i + 2, i + 3);
+  }
+}
+
+function addSteelSolid(steelBuf, beamBuf, trimBuf, s, col, warnCol, dimCol) {
+  steelBox(steelBuf, s);
+  const t = A.trimSize;
+  if (s.kind === 'platform') {
+    // krawędź galerii: listwa ostrzegawcza u góry, przygaszona u dołu
+    loop(trimBuf, s, s.y1 - t / 2, t, t, t / 2 + A.trimGap, warnCol);
+    loop(trimBuf, s, s.y0 + t / 2, t * 0.6, t * 0.6, t * 0.3 + A.trimGap, dimCol, t * 0.3);
+    // dźwigary pod spodem (poprzecznie do dłuższego boku), co A.steel.beamSpacing
+    const longX = s.hx >= s.hz;
+    const L = longX ? s.hx : s.hz, Wd = longX ? s.hz : s.hx;
+    const B = A.steel.beam;
+    for (let u = -L + B.spacing / 2; u <= L - B.spacing / 4; u += B.spacing) {
+      if (longX) { toWorld(s, u, -Wd, _wa); toWorld(s, u, Wd, _wb); } else { toWorld(s, -Wd, u, _wa); toWorld(s, Wd, u, _wb); }
+      addBar(beamBuf, _wa[0], s.y0 - B.depth / 2, _wa[1], _wb[0], s.y0 - B.depth / 2, _wb[1], B.width, B.depth);
+    }
+    // podłużnice po brzegach
+    for (const side of [-1, 1]) {
+      if (longX) { toWorld(s, -s.hx, side * (Wd - B.width), _wa); toWorld(s, s.hx, side * (Wd - B.width), _wb); }
+      else { toWorld(s, side * (Wd - B.width), -s.hz, _wa); toWorld(s, side * (Wd - B.width), s.hz, _wb); }
+      addBar(beamBuf, _wa[0], s.y0 - B.depth / 2, _wa[1], _wb[0], s.y0 - B.depth / 2, _wb[1], B.width, B.depth);
+    }
+  } else {
+    // barierka / ścianka na galerii: pochwyt neonowy u góry
+    loop(trimBuf, s, s.y1 - t / 2, t, t, t / 2 + A.trimGap, col);
+  }
+}
+
+function addSteelRamp(steelBuf, beamBuf, trimBuf, r, warnCol, sideCol) {
+  const { hx, hz, y0, y1 } = r;
+  const G = A.steel.tile;
+  // boki (trapezy), tył, przód (gdy y0 > 0), powierzchnia skośna z kratką
+  for (const side of [1, -1]) {
+    const lx = side * hx;
+    const za = side > 0 ? hz : -hz, zb = -za;
+    const ya = side > 0 ? y1 : y0, yb = side > 0 ? y0 : y1;
+    toWorld(r, lx, za, _wa); toWorld(r, lx, zb, _wb);
+    const nx = side * r.cos, nz = -side * r.sin;
+    const L = 2 * hz;
+    const i = steelBuf.count;
+    steelBuf.vert(_wa[0], 0, _wa[1], nx, 0, nz, 0, 0);
+    steelBuf.vert(_wb[0], 0, _wb[1], nx, 0, nz, L / G, 0);
+    steelBuf.vert(_wb[0], yb, _wb[1], nx, 0, nz, L / G, yb / G);
+    steelBuf.vert(_wa[0], ya, _wa[1], nx, 0, nz, 0, ya / G);
+    steelBuf.quad(i, i + 1, i + 2, i + 3);
+  }
+  for (const [lz, yTop, nlz] of [[hz, y1, 1], [-hz, y0, -1]]) {
+    if (yTop < 0.001) continue;
+    const xa = nlz > 0 ? -hx : hx, xb = -xa;
+    toWorld(r, xa, lz, _wa); toWorld(r, xb, lz, _wb);
+    const nx = nlz * r.sin, nz = nlz * r.cos;
+    const i = steelBuf.count;
+    steelBuf.vert(_wa[0], 0, _wa[1], nx, 0, nz, 0, 0);
+    steelBuf.vert(_wb[0], 0, _wb[1], nx, 0, nz, 2 * hx / G, 0);
+    steelBuf.vert(_wb[0], yTop, _wb[1], nx, 0, nz, 2 * hx / G, yTop / G);
+    steelBuf.vert(_wa[0], yTop, _wa[1], nx, 0, nz, 0, yTop / G);
+    steelBuf.quad(i, i + 1, i + 2, i + 3);
+  }
+  const len = Math.hypot(2 * hz, y1 - y0);
+  const ny = (2 * hz) / len, nzl = -(y1 - y0) / len;
+  const nX = nzl * r.sin, nZ = nzl * r.cos;
+  const ys = [y0, y0, y1, y1], lzs = [-hz, -hz, hz, hz], lxs = [-hx, hx, hx, -hx];
+  const vs = [0, 0, len, len];
+  const i = steelBuf.count;
+  for (let k = 0; k < 4; k++) {
+    toWorld(r, lxs[k], lzs[k], _wa);
+    steelBuf.vert(_wa[0], ys[k], _wa[1], nX, ny, nZ, lxs[k] / G, vs[k] / G);
+  }
+  steelBuf.quad(i, i + 3, i + 2, i + 1);
+  // listwy: ostrzegawcze na krawędziach bocznych skosu, boczne na dole
+  const t = A.trimSize;
+  for (const side of [1, -1]) {
+    const lx = side * (hx + t / 2 + A.trimGap);
+    toWorld(r, lx, -hz, _wa); toWorld(r, lx, hz, _wb);
+    addBar(trimBuf, _wa[0], y0 - t / 2, _wa[1], _wb[0], y1 - t / 2, _wb[1], t, t, warnCol.r, warnCol.g, warnCol.b);
+  }
+  // pasy ostrzegawcze w poprzek na początku i końcu rampy (krawędź stopnia)
+  for (const [lz, y] of [[-hz + 0.08, y0 + 0.01], [hz - 0.08, y1 + 0.01]]) {
+    const yy = y + (lz < 0 ? 0 : -0.02);
+    toWorld(r, -hx, lz, _wa); toWorld(r, hx, lz, _wb);
+    addBar(trimBuf, _wa[0], yy, _wa[1], _wb[0], yy, _wb[1], 0.06, 0.012, warnCol.r * 0.6, warnCol.g * 0.6, warnCol.b * 0.6);
+  }
+}
+
 // ---------------------------------------------------------------- shadery
 
 // ściany: maski farby (R/G/B) → kolory per bryła; poświata UV od listwy gasnąca w dół; delikatne krawędzie pionowe
@@ -360,6 +438,7 @@ varying float vWY;`)
   float pe = min( vWall.x, vWall.y - vWall.x );
   float pmask = smoothstep( ${A.paintMargin.edge.toFixed(3)}, ${(A.paintMargin.edge + 0.012).toFixed(3)}, pe );
   pmask *= smoothstep( ${A.paintMargin.bottom.toFixed(3)}, ${(A.paintMargin.bottom + 0.012).toFixed(3)}, vWY );
+  pmask *= 1.0 - smoothstep( ${A.paintMargin.maxY.toFixed(2)}, ${(A.paintMargin.maxY + 0.012).toFixed(3)}, vWY );
   pmask *= smoothstep( ${A.paintMargin.strip.toFixed(3)}, ${(A.paintMargin.strip + 0.012).toFixed(3)}, abs( vWY - vWall.z ) );
   if ( vWall.w > -0.5 ) pmask *= smoothstep( ${A.paintMargin.strip.toFixed(3)}, ${(A.paintMargin.strip + 0.012).toFixed(3)}, abs( vWY - vWall.w ) );
   totalEmissiveRadiance = ( pm.r * vPaintA + pm.g * vPaintB + pm.b * uAccent ) * emissive * pmask;
@@ -367,7 +446,8 @@ varying float vWY;`)
   totalEmissiveRadiance = vec3( 0.0 );
 #endif
   {
-    float dTop = max( vWall.z - vWY, 0.0 );
+    float dTop = vWall.z - vWY;
+    dTop = dTop >= 0.0 ? dTop : -dTop * 2.5;   // nad listwą (ściany obwodowe) poświata gaśnie szybciej
     float wash = ${A.wash.top.toFixed(4)} * exp( -dTop / ${A.wash.fall.toFixed(3)} ) + ${A.wash.base.toFixed(4)};
     if ( vWall.w > -0.5 ) wash += ${A.wash.bottom.toFixed(4)} * exp( -max( vWY - vWall.w, 0.0 ) / ${(A.wash.fall * 0.5).toFixed(3)} );
     float e = min( vWall.x, vWall.y - vWall.x );
@@ -388,11 +468,29 @@ varying float vWY;`)
 function patchFloorMaterial(mat, uniforms) {
   mat.onBeforeCompile = (sh) => {
     Object.assign(sh.uniforms, uniforms);
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec2 vFW;')
+      .replace('#include <fog_vertex>', '#include <fog_vertex>\n  vFW = ( modelMatrix * vec4( transformed, 1.0 ) ).xz;');
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', `#include <common>
 uniform sampler2D tReflect;
 uniform vec2 reflRes;
-uniform float reflOn;`)
+uniform float reflOn;
+uniform vec4 maskRect[ ${MAX_MASK} ];   // cx, cz, hx, hz
+uniform vec2 maskRot[ ${MAX_MASK} ];    // cos, sin
+varying vec2 vFW;
+// 1 pod platformą (z miękkim brzegiem) — tam lustro y=0 dawałoby błędne odbicia
+float floorMask() {
+  float m = 0.0;
+  for ( int i = 0; i < ${MAX_MASK}; i ++ ) {
+    vec2 d = vFW - maskRect[ i ].xy;
+    vec2 l = vec2( d.x * maskRot[ i ].x - d.y * maskRot[ i ].y, d.x * maskRot[ i ].y + d.y * maskRot[ i ].x );
+    vec2 q = abs( l ) - maskRect[ i ].zw;
+    float sd = max( q.x, q.y );
+    m = max( m, 1.0 - smoothstep( -${A.reflect.maskSoft.toFixed(2)}, ${A.reflect.maskSoft.toFixed(2)}, sd ) );
+  }
+  return m;
+}`)
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
   if ( reflOn > 0.5 ) {
     vec2 ruv = gl_FragCoord.xy / reflRes;
@@ -410,7 +508,7 @@ uniform float reflOn;`)
     vec3 fN = normalize( ( viewMatrix * vec4( 0.0, 1.0, 0.0, 0.0 ) ).xyz );
     float ndv = clamp( abs( dot( fN, normalize( vViewPosition ) ) ), 0.0, 1.0 );
     float fres = ${A.reflect.f0.toFixed(3)} + ( 1.0 - ${A.reflect.f0.toFixed(3)} ) * pow( 1.0 - ndv, 5.0 );
-    totalEmissiveRadiance += rc * ${A.reflect.strength.toFixed(3)} * mix( 0.45, 1.0, gloss ) * fres;
+    totalEmissiveRadiance += rc * ${A.reflect.strength.toFixed(3)} * mix( 0.45, 1.0, gloss ) * fres * ( 1.0 - floorMask() );
   }
 `);
   };
@@ -468,6 +566,7 @@ uniform vec3 lampCol[ ${MAX_LAMPS} ];`)
   mat.customProgramCacheKey = () => 'lt-ceiling';
 }
 const MAX_LAMPS = 8;
+const MAX_MASK = 16;
 
 const CONE_VERT = /* glsl */`
 attribute vec3 color;
@@ -511,7 +610,14 @@ void main() {
 /** kolor światła/lampy: akcent palety mapowany na fiolet UV (akcent tylko w farbie) */
 export function lightColorHex(world, hex) {
   const p = world.palette;
+  if (accentMode(world) === 'full') return hex;
   return hex && p.accent && hex.toLowerCase() === p.accent.toLowerCase() ? p.uv : hex;
+}
+
+/** 'full' — akcent dozwolony na listwach/światłach (np. czerwień ostrzegawcza); 'paint' — tylko w farbie */
+export function accentMode(world) {
+  const P = A.accentPolicy;
+  return (P[world.id] !== undefined ? P[world.id] : P.default);
 }
 
 /**
@@ -546,8 +652,13 @@ export function buildArena(world, preset, textures, opts = {}) {
   const rng = makeRng((world.seed ^ 0xa11ce) >>> 0);
   const pal = world.palette;
   const lin = (hex, k = 1) => new THREE.Color(hex).multiplyScalar(k);
-  const palLin = { primary: lin(pal.primary), secondary: lin(pal.secondary), uv: lin(pal.uv) };
-  const boost = (key) => (key === 'uv' ? A.uvBoost : 1);
+  const palLin = { primary: lin(pal.primary), secondary: lin(pal.secondary), uv: lin(pal.uv), accent: lin(pal.accent) };
+  const fullAccent = accentMode(world) === 'full';
+  // jasne kolory (cyjan, bursztyn) przygaszone, ciemne (fiolet) podbite — wspólny poziom percepcyjny
+  const boost = (key) => (key ? lumNorm(pal[key]) : 1);
+  // dla emisji „tła" (sufit, siatka podłogi, świetlówki) w kolorze uv: jasny uv → mocno przygaszony
+  const lumOf = (hex) => { const c = lin(hex); return 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b; };
+  const darkNorm = Math.min(1, Math.max(A.darkNormMin, A.darkNormRef / Math.max(lumOf(pal.uv), 1e-3)));
   // listwy: kolor nasycony (ACES przy HDR wybiela — podbijamy nasycenie, rdzeń zostaje kolorowy)
   const saturate = (c, k) => {
     const l = 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
@@ -562,11 +673,13 @@ export function buildArena(world, preset, textures, opts = {}) {
     return Math.min(1.7, Math.max(0.55, Math.sqrt(A.trimLumRef / Math.max(l, 1e-3))));
   };
   for (const k of MAIN_KEYS) trimCol[k] = saturate(lin(pal[k], A.trimIntensity * lumNorm(pal[k])), A.trimSaturation);
+  trimCol.accent = saturate(lin(pal.accent, A.trimIntensity * lumNorm(pal.accent)), A.trimSaturation);
   const dimCol = {};
   for (const k of MAIN_KEYS) dimCol[k] = lin(pal[k], A.rubber.lineIntensity * lumNorm(pal[k]));
   const accentLin = lin(pal.accent, A.paintIntensity * A.accentPaintScale);
   // akcent z danych → kolor główny (deterministycznie per bryła)
-  const mainKey = (key, i) => (MAIN_KEYS.includes(key) ? key : (key === 'accent' ? (i % 2 ? 'secondary' : 'primary') : null));
+  const mainKey = (key, i) => (MAIN_KEYS.includes(key) ? key
+    : (key === 'accent' ? (fullAccent ? 'accent' : (i % 2 ? 'secondary' : 'primary')) : null));
 
   const paintBufs = {};
   for (const st of PAINT_STYLES) paintBufs[st] = new GeoBuf({ wall: true });
@@ -574,6 +687,9 @@ export function buildArena(world, preset, textures, opts = {}) {
   const trimBuf = new GeoBuf({ color: true });
   const trussBuf = new GeoBuf();
   const rubberBuf = new GeoBuf();
+  const steelBuf = new GeoBuf();   // galerie/kładki/barierki/rampy: stal z kratką
+  const covers = opts.covers || (() => false);
+  const warnKey = fullAccent ? 'accent' : 'secondary';
 
   const setCur = (buf, aKey, bKey, washKey, top, bot) => {
     const c = buf.cur;
@@ -586,10 +702,12 @@ export function buildArena(world, preset, textures, opts = {}) {
   };
 
   world.solids.forEach((s, i) => {
-    const style = PAINT_STYLES.includes(s.paint) ? s.paint : null;
+    if (covers(s)) return; // wizual dekoracji (np. rdzeń reaktora) zastępuje bryłę
     const tk = mainKey(s.trim, i);
+    if (isSteel(s)) { addSteelSolid(steelBuf, trussBuf, trimBuf, s, tk ? trimCol[tk] : trimCol[warnKey], trimCol[warnKey], dimCol.uv); return; }
+    const style = PAINT_STYLES.includes(s.paint) ? s.paint : null;
     // farba: kolor A = kolor listwy (lub losowy główny), B = inny główny
-    const aKey = tk || MAIN_KEYS[Math.floor(rng() * 3)];
+    const aKey = (tk && tk !== 'accent') ? tk : MAIN_KEYS[Math.floor(rng() * 3)];
     const others = MAIN_KEYS.filter((k) => k !== aKey);
     const bKey = others[Math.floor(rng() * 2)];
     const hasBottom = !!(tk && s.trimBottom) || (s.boundary && !!tk);
@@ -599,7 +717,7 @@ export function buildArena(world, preset, textures, opts = {}) {
     setCur(buf, aKey, bKey, tk, top, bot);
     setCur(plainBuf, aKey, bKey, tk, top, bot);
     addSolid(buf, plainBuf, s, rng);
-    rubberFor(rubberBuf, trimBuf, s, world, tk ? dimCol[tk] : dimCol.uv);
+    rubberFor(rubberBuf, trimBuf, s, world, tk && dimCol[tk] ? dimCol[tk] : dimCol.uv);
     if (!tk) return;
     const col = trimCol[tk];
     if (s.boundary) { boundaryTrims(trimBuf, s, col, world); return; }
@@ -607,11 +725,7 @@ export function buildArena(world, preset, textures, opts = {}) {
     trimLoop(trimBuf, s, s.y1 - A.trimSize / 2, col);
     if (s.trimBottom) trimLoop(trimBuf, s, s.y0 + A.trimSize / 2 + A.trimBottomLift, col);
   });
-  (world.ramps || []).forEach((r) => {
-    setCur(paintBufs.stripes, 'secondary', 'uv', 'secondary', r.y1, -1);
-    setCur(plainBuf, 'secondary', 'uv', 'secondary', r.y1, -1);
-    addRamp(paintBufs.stripes, plainBuf, trimBuf, r, trimCol.secondary);
-  });
+  (world.ramps || []).forEach((r) => addSteelRamp(steelBuf, trussBuf, trimBuf, r, trimCol[warnKey], trimCol.secondary));
 
   // panele baz przy spawnach (kolory drużyn, przygaszone)
   const teams = CONFIG.colors.teams;
@@ -662,7 +776,7 @@ export function buildArena(world, preset, textures, opts = {}) {
     const tex = textures.get('ceiling');
     const mat = own(new THREE.MeshStandardMaterial({
       color: 0xffffff, map: tex, roughness: 0.95, metalness: 0,
-      emissive: new THREE.Color(pal.uv), emissiveMap: tex, emissiveIntensity: A.ceilingGlow,
+      emissive: new THREE.Color(pal.uv), emissiveMap: tex, emissiveIntensity: A.ceilingGlow * darkNorm,
     }));
     const lamps = { pos: [], col: [] };
     for (let i = 0; i < MAX_LAMPS; i++) {
@@ -670,7 +784,7 @@ export function buildArena(world, preset, textures, opts = {}) {
       if (L0) {
         const L = lampPosition(world, L0, _lamp);
         lamps.pos.push(new THREE.Vector3(L.x, ceil, L.z));
-        lamps.col.push(lin(lightColorHex(world, L0.color)));
+        lamps.col.push(lin(lightColorHex(world, L0.color), darkNorm));
       } else { lamps.pos.push(new THREE.Vector3(0, -1000, 0)); lamps.col.push(new THREE.Color(0, 0, 0)); }
     }
     patchCeilingMaterial(mat, lamps);
@@ -709,7 +823,7 @@ export function buildArena(world, preset, textures, opts = {}) {
     const U = A.uvTube;
     const hy = yBot - A.trussChord / 2 - U.housing / 2;          // korytko przylega do pasa dolnego
     const yT = hy - U.housing / 2 - U.thickness / 2;
-    const c = lin(pal.uv, U.intensity);
+    const c = lin(pal.uv, U.intensity * Math.sqrt(darkNorm));
     const hl = U.length / 2;
     trussZ.forEach((z, row) => {
       const zz = z + (row % 2 ? 1 : -1) * A.trussWidth / 2;
@@ -765,6 +879,21 @@ export function buildArena(world, preset, textures, opts = {}) {
       group.add(m);
     }
   }
+  // stal galerii: kratka (mapa + słaba emisja w kolorze uv), półpołysk
+  {
+    const geo = steelBuf.toGeometry();
+    if (geo) {
+      const grate = textures.get('steel:grate');
+      const mat = own(new THREE.MeshStandardMaterial({
+        color: A.steel.color, map: grate, metalness: A.steel.metalness, roughness: A.steel.roughness,
+        emissive: new THREE.Color(pal.uv), emissiveMap: grate, emissiveIntensity: A.steel.glow * darkNorm,
+      }));
+      const m = new THREE.Mesh(own(geo), mat);
+      m.name = 'steel';
+      group.add(m);
+    }
+  }
+
   // listwy neonowe + lampy: jeden mesh, vertexColors HDR
   {
     const geo = trimBuf.toGeometry();
@@ -783,7 +912,16 @@ export function buildArena(world, preset, textures, opts = {}) {
   const reflOn = !!preset.envReflections;
   const floorUniforms = {
     tReflect: { value: null }, reflRes: { value: new THREE.Vector2(1, 1) }, reflOn: { value: 0 },
+    maskRect: { value: [] }, maskRot: { value: [] },
   };
+  {
+    const plats = world.solids.filter((sd) => sd.y0 > A.steelMinY && sd.kind === 'platform');
+    for (let i = 0; i < MAX_MASK; i++) {
+      const p = plats[i];
+      floorUniforms.maskRect.value.push(p ? new THREE.Vector4(p.cx, p.cz, p.hx, p.hz) : new THREE.Vector4(1e5, 1e5, 0, 0));
+      floorUniforms.maskRot.value.push(p ? new THREE.Vector2(p.cos, p.sin) : new THREE.Vector2(1, 0));
+    }
+  }
   let floorMat, floorMesh;
   {
     const geo = own(new THREE.PlaneGeometry(W, D));
@@ -794,7 +932,7 @@ export function buildArena(world, preset, textures, opts = {}) {
       color: 0xffffff, map: textures.get('floor:color'),
       roughness: A.floorRoughness, roughnessMap: textures.get('floor:rough'),
       metalness: A.floorMetalness,
-      emissive: 0xffffff, emissiveMap: textures.get('floor:emissive'), emissiveIntensity: A.floorEmissiveIntensity,
+      emissive: 0xffffff, emissiveMap: textures.get('floor:emissive'), emissiveIntensity: A.floorEmissiveIntensity * darkNorm,
     }));
     patchFloorMaterial(floorMat, floorUniforms);
     floorMesh = new THREE.Mesh(geo, floorMat);

@@ -51,6 +51,7 @@ export function createTextures({ size, anisotropy, palette, seed }) {
     const rng = makeRng((seed ^ hashString(name)) >>> 0);
     if (name.startsWith('paint:')) tex = finish(drawPaint(name.slice(6), S, palette, rng), { srgb: false });
     else if (name === 'wall:color') tex = finish(drawWallColor(S, rng));
+    else if (name === 'steel:grate') tex = finish(drawGrate(Math.min(S, 512), rng));
     else if (name === 'floor:color') tex = finish(drawFloorColor(S, rng));
     else if (name === 'floor:rough') tex = finish(drawFloorRough(S, rng), { srgb: false });
     else if (name === 'floor:emissive') tex = finish(drawFloorEmissive(S, palette));
@@ -394,6 +395,37 @@ function drawWallColor(S, rng) {
   g.fillRect(0, 0, seam, S); g.fillRect(S / 2, 0, seam, S); g.fillRect(0, 0, S, seam);
   g.fillStyle = 'rgba(255,255,255,0.25)';
   g.fillRect(seam, 0, seam, S); g.fillRect(S / 2 + seam, 0, seam, S); g.fillRect(0, seam, S, seam);
+  return c;
+}
+
+// ---------------------------------------------------------------- kratka stalowa (kafel = CONFIG.render.arena.steel.tile)
+
+function drawGrate(S, rng) {
+  // krata pomostowa: płaskowniki nośne co ~3 cm, poprzeczki co ~10 cm, otwory ciemne; lekkie przetarcia
+  const c = makeCanvas(S, S);
+  const g = c.getContext('2d');
+  g.fillStyle = 'rgb(10,10,14)';
+  g.fillRect(0, 0, S, S);
+  const n = 16, m = 5;                      // przy kaflu 0.5 m: 3.1 cm × 10 cm
+  const bw = Math.max(1, S / n * 0.28), cw = Math.max(1, S / m * 0.08);
+  for (let i = 0; i < n; i++) {
+    const v = 120 + Math.floor(rng() * 40);
+    g.fillStyle = `rgb(${v},${v},${v + 8})`;
+    g.fillRect(i * S / n, 0, bw, S);
+  }
+  for (let j = 0; j < m; j++) {
+    const v = 100 + Math.floor(rng() * 30);
+    g.fillStyle = `rgb(${v},${v},${v + 8})`;
+    g.fillRect(0, j * S / m, S, cw);
+  }
+  for (let k = 0; k < 30; k++) {
+    const x = rng() * S, y = rng() * S, r = rr(rng, 0.03, 0.12) * S;
+    const grd = g.createRadialGradient(x, y, 0, x, y, r);
+    grd.addColorStop(0, 'rgba(0,0,0,0.35)');
+    grd.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = grd;
+    g.fillRect(x - r, y - r, r * 2, r * 2);
+  }
   return c;
 }
 

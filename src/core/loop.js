@@ -7,6 +7,7 @@ export function createLoop({
   maxSubSteps = CONFIG.sim.maxSubSteps,
   step,
   frame,
+  onError = null,          // (err) => void — wyjątek w step/frame zatrzymuje pętlę i trafia tutaj (bez → rzucony dalej)
   raf = (typeof requestAnimationFrame === 'function' ? requestAnimationFrame : null),
   caf = (typeof cancelAnimationFrame === 'function' ? cancelAnimationFrame : null),
 }) {
@@ -44,7 +45,9 @@ export function createLoop({
     } catch (err) {
       running = false; // wyjątek zatrzymuje pętlę (jeden błąd zamiast lawiny); start() może ją wznowić
       handle = 0;
-      throw err;
+      if (onError === null) throw err;
+      onError(err);
+      return;
     }
     if (running) handle = raf(onFrame);
   }

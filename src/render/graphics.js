@@ -13,6 +13,7 @@ import { CONFIG } from '../config.js';
 import { createTextures, makeRng } from './textures.js';
 import { buildArena, lightColorHex, lampPosition, LAYER_NO_REFLECT } from './arenaBuilder.js';
 import { createSmoke } from './smoke.js';
+import { createDecor } from './decor.js';
 
 const R = CONFIG.render;
 
@@ -40,6 +41,7 @@ export function createGraphics({ canvas, presetName = CONFIG.defaults.preset }) 
   let world = null;
   let textures = null;
   let arena = null;
+  let decor = null;
   let smoke = null;
   let composer = null, bloomPass = null, fxaaPass = null, outputPass = null, renderPass = null;
   const size = new THREE.Vector2();
@@ -117,6 +119,7 @@ export function createGraphics({ canvas, presetName = CONFIG.defaults.preset }) 
   function disposeWorldContent() {
     if (smoke) { smoke.dispose(); smoke = null; }
     if (arena) { arena.dispose(); arena = null; }
+    if (decor) { decor.dispose(); decor = null; }
     if (textures) { textures.disposeAll(); textures = null; }
   }
 
@@ -127,7 +130,9 @@ export function createGraphics({ canvas, presetName = CONFIG.defaults.preset }) 
       size: preset.texSize, anisotropy: Math.min(preset.anisotropy, renderer.capabilities.getMaxAnisotropy()),
       palette: world.palette, seed: world.seed >>> 0,
     });
-    arena = buildArena(world, preset, textures, { renderer });
+    decor = createDecor(world, preset);
+    scene.add(decor.group);
+    arena = buildArena(world, preset, textures, { renderer, covers: decor.covers });
     scene.add(arena.group);
     renderer.getDrawingBufferSize(size);
     arena.setSize(size.x, size.y);
@@ -189,6 +194,7 @@ export function createGraphics({ canvas, presetName = CONFIG.defaults.preset }) 
   function update(dt, time) {
     if (smoke) smoke.update(dt, camera);
     if (arena) arena.update(time);
+    if (decor) decor.update(time);
   }
 
   function render() {

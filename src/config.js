@@ -63,8 +63,7 @@ export const CONFIG = Object.freeze({
     loseOrder: ['back', 'left', 'right', 'front'],
     eventCapacity: 256,     // pierścień zdarzeń symulacji (core/events.js); czyszczony raz na klatkę renderu
     maxParticipants: 16,    // pojemność instancji awatarów
-    dummy: {                // manekin treningowy (game/input/dummyInput.js)
-      count: 3,             // manekiny w trybie treningowym M1 (zastąpione botami w M2)
+    dummy: {                // manekin treningowy (game/input/dummyInput.js — tylko testy)
       strafePeriod: 2.0,    // s — pełny cykl lewo → prawo
       strafeMove: 0.4,      // moveX (× walkSpeed) podczas chodzenia
     },
@@ -170,6 +169,23 @@ export const CONFIG = Object.freeze({
       wallMeters: 2.44,       // kafel faktury ściany (2 płyty 1.22 m)
       accentShare: 0.08,      // udział akcentu wśród drobnych elementów farby
     },
+    // Dekoracje (render/decor.js)
+    decor: {
+      steelColor: '#2c2c36',
+      core: {
+        coverScale: 1.21,           // promień wizualu = r × to (ośmiokąt pokrywa gwiazdę 2 kwadratów kolizji)
+        columnRadius: 0.55,         // walec energii = R × to
+        intensity: 1.6,
+        plinth: 1.2,                // cokół stalowy (m)
+        collar: 0.6,                // kołnierz pod sufitem (m)
+        cageRings: [2.4, 4.4, 6.2],
+        glowRings: [1.6, 3.0, 3.8, 5.2, 6.8],
+        ringIntensity: 1.6,
+        warnIntensity: 1.4,
+        steelGlow: 0.04,
+        glassOpacity: 0.12,
+      },
+    },
     // Arena (render/arenaBuilder.js)
     arena: {
       wallColor: '#090a18',         // prawie czarny granat (× faktura sklejki)
@@ -191,7 +207,7 @@ export const CONFIG = Object.freeze({
       pillarTrimTop: 2.4,           // filar: ramka neonowa do wysokości ścian, wyżej czysty słup
       boundaryTrimHeights: [0.12, 2.6],
       rubber: { color: '#0b0a12', baseHeight: 0.1, baseDepth: 0.022, cornerSize: 0.06, cornerInset: 0.012, lineSize: 0.014, lineIntensity: 0.3 },
-      paintMargin: { edge: 0.09, bottom: 0.17, strip: 0.09 },   // farba nie dochodzi do krawędzi/listew (m)
+      paintMargin: { edge: 0.09, bottom: 0.17, strip: 0.09, maxY: 4.4 },   // farba nie dochodzi do krawędzi/listew (m)
       neon: { nearMin: 0.6, near: [0.6, 3.5], fog: 0.65 },      // przygaszenie bliskich listew; udział mgły na listwach
       ceilingPool: { radius: 2.8, strength: 0.06, panelRef: 0.006 },            // plamy światła lamp na stropie
       spawnPanel: { width: 1.6, height: 0.9, depth: 0.04, y: 1.45, intensity: 0.9, marker: 0.16 },
@@ -200,7 +216,13 @@ export const CONFIG = Object.freeze({
       floorEmissiveIntensity: 0.16,
       floorEnvIntensity: 0.25,      // PMREM (ogólny połysk); odbicia neonów robi RT (reflect)
       // odbicie planarne podłogi (preset.envReflections): RT w skali rozdz., rozmycie mipmapą + smuga pionowa
-      reflect: { scale: 0.5, mipBias: 2.0, streak: 5, strength: 0.55, f0: 0.18 },
+      reflect: { scale: 0.5, mipBias: 2.0, streak: 5, strength: 0.55, f0: 0.18, maskSoft: 0.45 }, // maskSoft: brzeg maski pod platformami (m)
+      accentPolicy: { default: 'full', uvmaze: 'paint' },   // 'paint' = akcent tylko w farbie; 'full' = też listwy/światła
+      darkNormRef: 0.15,            // emisja tła w kolorze uv × min(1, ref / luminancja uv) (jasny uv → ciemniej)
+      darkNormMin: 0.25,
+      steelMinY: 1.5,               // bryły z y0 > tego (galerie, barierki na galerii) → stalowa konstrukcja
+      steel: { color: '#8a8a9c', metalness: 0.35, roughness: 0.5, glow: 0.45, tile: 0.5,
+        beam: { spacing: 1.6, width: 0.1, depth: 0.16 } },
       envBakeHeight: 1.6,
       envBlur: 0.02,
       ceilingTile: 4.8,
@@ -385,5 +407,6 @@ export const CONFIG = Object.freeze({
     preset: 'high',
     mode: 'ffa',
     diff: 'normal',
+    bots: null,             // null → liczba z trybu (CONFIG.modes)
   },
 });
