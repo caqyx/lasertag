@@ -374,6 +374,11 @@ function scanNear(nav, ring) {
 export function nearestNode(nav, x, y, z) {
   if (nav.count === 0) return -1;
   Q[0] = x; Q[1] = y; Q[2] = z;
+  return nearestScan(nav);
+}
+
+/** Wspólna część nearestNode/nearestNodeBuf: punkt w Q[0..2]. */
+function nearestScan(nav) {
   scanNear(nav, NEAR_RING);
   if (Q[5] >= 0) return Q[5] | 0;
   const near = Q[3];
@@ -384,6 +389,16 @@ export function nearestNode(nav, x, y, z) {
   // ostatecznie: przegląd całości
   scanNear(nav, nav.cols > nav.rows ? nav.cols : nav.rows);
   return Q[5] >= 0 ? Q[5] | 0 : Q[3] | 0;
+}
+
+/** Bufor argumentów nearestNodeBuf: [x, y, z] (wołający zapisuje tu zamiast przekazywać świeże double). */
+export const NEAR = new Float64Array(3);
+
+/** nearestNode z argumentami w NEAR. Bez alokacji. */
+export function nearestNodeBuf(nav) {
+  if (nav.count === 0) return -1;
+  Q[0] = NEAR[0]; Q[1] = NEAR[1]; Q[2] = NEAR[2];
+  return nearestScan(nav);
 }
 
 /** Losowy węzeł (rng z core/rng.js). Bez alokacji. */

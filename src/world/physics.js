@@ -625,6 +625,34 @@ export function segmentClear(world, ax, ay, az, bx, by, bz) {
   return !raycastInternal(world, segHit);
 }
 
+/**
+ * Bufor argumentów dla wariantów bez boxingu (wołający zapisuje liczby tutaj zamiast przekazywać świeże double):
+ *   SEG    = [ax, ay, az, bx, by, bz]                 → segmentClearSeg(world)
+ *   RAYARG = [ox, oy, oz, dx, dy, dz, maxDist]        → raycastWorldBuf(world, outHit)
+ */
+export const SEG = new Float64Array(6);
+export const RAYARG = new Float64Array(7);
+
+/** segmentClear z argumentami w SEG. Bez alokacji. */
+export function segmentClearSeg(world) {
+  const ax = SEG[0]; const ay = SEG[1]; const az = SEG[2];
+  const dx = SEG[3] - ax;
+  const dy = SEG[4] - ay;
+  const dz = SEG[5] - az;
+  const len = Math.sqrt(dx * dx + dy * dy + dz * dz);
+  if (len < 1e-6) return true;
+  PT[0] = ax; PT[1] = ay; PT[2] = az;
+  if (pointInSolid(world)) return false;
+  RI[0] = ax; RI[1] = ay; RI[2] = az; RI[3] = dx; RI[4] = dy; RI[5] = dz; RI[6] = len - 1e-4;
+  return !raycastInternal(world, segHit);
+}
+
+/** raycastWorld z argumentami w RAYARG. Bez alokacji. */
+export function raycastWorldBuf(world, outHit) {
+  for (let i = 0; i < 7; i++) RI[i] = RAYARG[i];
+  return raycastInternal(world, outHit);
+}
+
 export function createHit() {
   return { hit: false, dist: 0, x: 0, y: 0, z: 0, nx: 0, ny: 0, nz: 0, index: -1 };
 }

@@ -6,8 +6,8 @@
 // Determinizm: losowość wyłącznie przez sim.rng.
 
 import { CONFIG } from '../../config.js';
-import { segmentClear } from '../../world/physics.js';
-import { nearestNode, findPath, randomNode, smoothPath } from '../../world/nav.js';
+import { segmentClearSeg, SEG } from '../../world/physics.js';
+import { nearestNodeBuf, NEAR, findPath, randomNode, smoothPath } from '../../world/nav.js';
 import { isEnemy, sameTeam } from '../combat.js';
 import { skillScale, stepAdapt } from './adapt.js';
 
@@ -216,7 +216,7 @@ function think(B, P, sim) {
     if (st !== BOT_STATE.ENGAGE) setEngage(B);
     if (B.repathTimer <= 0) {
       B.repathTimer = CONFIG.bots.engageRepath;
-      pathTo(B, P, B.lastKnownX, B.lastKnownY, B.lastKnownZ);
+      pathToLastKnown(B, P);
     }
     return;
   }
@@ -263,7 +263,8 @@ function perceive(B, P, sim) {
       const hl = Math.sqrt(dx * dx + dz * dz);
       if (hl > 1e-3 && (dx * fx + dz * fz) / hl < cosHalf) continue;
     }
-    if (!segmentClear(sim.world, b.x, b.y + eye, b.z, q.x, q.y + eye, q.z)) continue;
+    SEG[0] = b.x; SEG[1] = b.y + eye; SEG[2] = b.z; SEG[3] = q.x; SEG[4] = q.y + eye; SEG[5] = q.z;
+    if (!segmentClearSeg(sim.world)) continue;
     best = Q; bestD = d2; bestProt = prot;
   }
 
@@ -293,7 +294,7 @@ function setEngage(B) {
 function startChase(B, P, sim) {
   B.state = BOT_STATE.CHASE;
   B.chaseTimer = CONFIG.bots.chaseTime;
-  if (!pathTo(B, P, B.lastKnownX, B.lastKnownY, B.lastKnownZ)) { B.target = null; startPatrol(B, P, sim); }
+  if (!pathToLastKnown(B, P)) { B.target = null; startPatrol(B, P, sim); }
 }
 
 /** Cel patrolu: losowe węzły, preferencja nieodwiedzonych i odległych ≥ patrolMinDist. */
@@ -318,20 +319,26 @@ function startPatrol(B, P, sim) {
   B.goal = pick;
   B.pathLen = 0; B.pathIdx = 0;
   if (pick < 0) return;
-  const from = nearestNode(nav, b.x, b.y, b.z);
+  const from = nearestBody(nav, b);
   setPath(B, P, findPath(nav, from, pick, B.path));
 }
 
-/** Ścieżka do punktu (najbliższy węzeł). false = brak. */
-function pathTo(B, P, x, y, z) {
+/** Ścieżka do ostatniej znanej pozycji celu (najbliższy węzeł). false = brak. Współrzędne przez NEAR (bez boxingu). */
+function pathToLastKnown(B, P) {
   const nav = B.nav;
-  const b = P.body;
-  const to = nearestNode(nav, x, y, z);
-  const from = nearestNode(nav, b.x, b.y, b.z);
+  NEAR[0] = B.lastKnownX; NEAR[1] = B.lastKnownY; NEAR[2] = B.lastKnownZ;
+  const to = nearestNodeBuf(nav);
+  const from = nearestBody(nav, P.body);
   if (to < 0 || from < 0) { B.pathLen = 0; B.pathIdx = 0; return false; }
   B.goal = to;
   setPath(B, P, findPath(nav, from, to, B.path));
   return B.pathLen > 0;
+}
+
+/** Najbliższy węzeł do ciała (współrzędne przez NEAR — bez boxingu argumentów). */
+function nearestBody(nav, b) {
+  NEAR[0] = b.x; NEAR[1] = b.y; NEAR[2] = b.z;
+  return nearestNodeBuf(nav);
 }
 
 function setPath(B, P, len) {
@@ -369,12 +376,13 @@ function enterCover(B, P, sim) {
     let d2 = dx * dx + dz * dz;
     if (d2 > r2 || d2 >= bestD) continue;
     checks++;
-    if (segmentClear(sim.world, T.body.x, T.body.y + eye, T.body.z, nav.x[n], nav.y[n] + eye, nav.z[n])) continue;
+    SEG[0] = T.body.x; SEG[1] = T.body.y + eye; SEG[2] = T.body.z; SEG[3] = nav.x[n]; SEG[4] = nav.y[n] + eye; SEG[5] = nav.z[n];
+    if (segmentClearSeg(sim.world)) continue;
     if (nav.cover && nav.cover[n]) d2 *= 0.5;
     best = n; bestD = d2;
   }
   if (best < 0) { B.coverCooldown = C.coverCooldown * 0.5; return false; }
-  const from = nearestNode(nav, b.x, b.y, b.z);
+  const from = nearestBody(nav, b);
   const len = findPath(nav, from, best, B.path);
   if (len === 0) { B.coverCooldown = C.coverCooldown * 0.5; return false; }
   B.state = BOT_STATE.COVER;
@@ -511,7 +519,7 @@ function onStuck(B, P, sim) {
   if (B.state === BOT_STATE.PATROL) startPatrol(B, P, sim);
   else if (B.state === BOT_STATE.COVER) { B.coverCooldown = CONFIG.bots.coverCooldown; startPatrol(B, P, sim); }
   else if (B.state === BOT_STATE.CHASE) { B.target = null; startPatrol(B, P, sim); }
-  else pathTo(B, P, B.lastKnownX, B.lastKnownY, B.lastKnownZ);
+  else pathToLastKnown(B, P);
 }
 
 /** Świat → lokalne moveX/moveZ względem B.yaw (to samo yaw trafia do ciała w tym kroku). */

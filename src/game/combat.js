@@ -7,7 +7,7 @@
 // Ochrona celu: wiązka zatrzymuje się na nim, SHOT.value = 2, brak HIT i brak zmian HP/punktów.
 
 import { CONFIG } from '../config.js';
-import { raycastWorld, segmentClear, createHit } from '../world/physics.js';
+import { raycastWorldBuf, RAYARG, segmentClearSeg, SEG, createHit } from '../world/physics.js';
 import { EV } from '../core/events.js';
 import { SENSOR_OFFSETS, resetVitals, placeAt } from './participant.js';
 import { resetWeapon } from './weapon.js';
@@ -191,7 +191,9 @@ export function resolveShot(sim, shooter) {
   S[S_OX] = ER.ox; S[S_OY] = ER.oy; S[S_OZ] = ER.oz;
   S[S_DX] = ER.dx; S[S_DY] = ER.dy; S[S_DZ] = ER.dz;
   S[S_MAX] = CONFIG.weapon.range;
-  if (raycastWorld(sim.world, ER.ox, ER.oy, ER.oz, ER.dx, ER.dy, ER.dz, S[S_MAX], WHIT)) S[S_MAX] = WHIT.dist;
+  RAYARG[0] = ER.ox; RAYARG[1] = ER.oy; RAYARG[2] = ER.oz;
+  RAYARG[3] = ER.dx; RAYARG[4] = ER.dy; RAYARG[5] = ER.dz; RAYARG[6] = S[S_MAX];
+  if (raycastWorldBuf(sim.world, WHIT)) S[S_MAX] = WHIT.dist;
 
   let target = null;
   const ps = sim.participants;
@@ -350,8 +352,10 @@ export function pickSpawn(sim, P) {
       const dx = qb.x - sp.x, dy = qb.y - sp.y, dz = qb.z - sp.z;
       const d2 = dx * dx + dy * dy + dz * dz;
       if (d2 < any) any = d2;
-      if (d2 < vis && isEnemy(P, Q) &&
-          segmentClear(sim.world, qb.x, qb.y + eye, qb.z, sp.x, sp.y + eye, sp.z)) vis = d2;
+      if (d2 < vis && isEnemy(P, Q)) {
+        SEG[0] = qb.x; SEG[1] = qb.y + eye; SEG[2] = qb.z; SEG[3] = sp.x; SEG[4] = sp.y + eye; SEG[5] = sp.z;
+        if (segmentClearSeg(sim.world)) vis = d2;
+      }
     }
     if (best === null || vis > PS[0] || (vis === PS[0] && any > PS[1])) {
       best = sp; PS[0] = vis; PS[1] = any; PS[2] = 1;

@@ -221,8 +221,9 @@ export const CONFIG = Object.freeze({
       coneBottomRadius: 1.7,
       coneBottom: 0.0,
       coneOpacity: 0.5,
-      coneMargin: 0.25,             // stożek ≥ tyle od brył (brak twardych przecięć)
-      coneMinRadius: 0.45,
+      coneMargin: 0.15,             // stożek ≥ tyle od brył (brak twardych przecięć)
+      coneMinHeight: 0.8,
+      coneCheckRadius: 1.0,         // promień sprawdzania kolizji stożka z bryłami (m)
     },
   },
 

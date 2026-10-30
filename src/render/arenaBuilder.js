@@ -810,13 +810,19 @@ export function buildArena(world, preset, textures, opts = {}) {
     world.lights.forEach((L0, i) => {
       const L = lampPosition(world, L0, _lamp);
       const top = lampY[i];
-      const h = top - A.coneBottom;
-      // stożek nie może przecinać brył (twarda linia przecięcia): promień dołu ≤ prześwit pod lampą
-      const clear = clearanceXZ(world, L.x, L.z, top);
-      const rb = Math.min(A.coneBottomRadius, clear - A.coneMargin);
-      if (rb < A.coneMinRadius) return;
+      // stożek nie może przecinać brył (twarda linia przecięcia): kończy się nad najwyższą bryłą w jego zasięgu
+      let bottomY = A.coneBottom;
+      for (const sd of world.solids) {
+        if (sd.y1 + A.coneMargin <= bottomY || sd.y0 > top) continue;
+        const dx = L.x - sd.cx, dz = L.z - sd.cz;
+        const lx = Math.abs(dx * sd.cos - dz * sd.sin) - sd.hx, lz = Math.abs(dx * sd.sin + dz * sd.cos) - sd.hz;
+        if (Math.hypot(Math.max(lx, 0), Math.max(lz, 0)) < A.coneCheckRadius + A.coneMargin) bottomY = sd.y1 + A.coneMargin;
+      }
+      const h = top - bottomY;
+      if (h < A.coneMinHeight) return;
+      const rb = A.coneTopRadius + (A.coneBottomRadius - A.coneTopRadius) * h / (top - A.coneBottom);
       const g = new THREE.CylinderGeometry(A.coneTopRadius, rb, h, 24, 1, true);
-      g.translate(L.x, A.coneBottom + h / 2, L.z);
+      g.translate(L.x, bottomY + h / 2, L.z);
       const c = new THREE.Color(lightColorHex(world, L.color));
       const n = g.attributes.position.count;
       const col = new Float32Array(n * 3);
