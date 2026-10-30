@@ -350,7 +350,8 @@ export function moveBody(world, body, dt) {
     if (newY <= ground) {
       body.y = ground;
       if (body.vy <= 0) { body.vy = 0; grounded = true; } else grounded = false;
-    } else if (grounded && body.vy <= 0 && newY - ground <= PH.groundSnap) {
+    } else if (grounded && body.vy <= 0 && newY - ground <= (PH.groundSnap > P.stepHeight ? PH.groundSnap : P.stepHeight)) {
+      // zejście ze stopnia ≤ stepHeight (krawędź skrzyni, bok niskiej części rampy) bez fazy lotu — symetrycznie do wejścia
       body.y = ground;
       body.vy = 0;
     } else {

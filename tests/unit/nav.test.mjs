@@ -21,10 +21,8 @@ for (const id of Object.keys(MAPS)) {
 const DECK = 3.2; // Reactor: poziom galerii (SPEC §3.3)
 
 // Znane błędy (zgłoszone w raporcie testera) — test jako todo, dopóki nie naprawione w src/.
-const TODO_SMOOTH = {
-  reactor: 'BUG nav.smoothPath: segFree/straightOk sprawdza tylko bryły (solids), pomija rampy — wygładzona ścieżka ' +
-    '(-9.5,-9.5)→(-5.5,-5.5) ścina narożnik wysokiego końca rampy (-5.5,-10.2) w 0.14 m < radius; kapsuła ociera się (0.21 m zepchnięcia)',
-};
+// (było: todo reactor — smoothPath ścinał narożnik rampy; naprawione: segFree traktuje klin rampy jako przeszkodę)
+const TODO_SMOOTH = {};
 
 function reach(nav, from) {
   const seen = new Uint8Array(nav.count);

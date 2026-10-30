@@ -11,7 +11,7 @@
 // prealokowane Float64Array (świeży double jako argument / wynik nie-inline'owanej funkcji = HeapNumber).
 
 import { CONFIG } from '../config.js';
-import { querySolids, querySolidsBox, queryRamps } from './mapgen.js';
+import { querySolids, querySolidsBox, queryRamps, queryRampsBox } from './mapgen.js';
 import { groundHeight } from './physics.js';
 
 const EDGE_STEP = 0.2;        // m — gęstość próbkowania krawędzi
@@ -304,29 +304,48 @@ function segFree(world) {
   const n = querySolidsBox(g, BOXQ);
   const out = g.outSolids;
   const solids = world.solids;
-  const dx = bx - ax; const dz = bz - az;
   for (let k = 0; k < n; k++) {
     const s = solids[out[k]];
     if (!(s.y1 > lo && s.y0 < hi)) continue;
-    const c = s.cos; const sn = s.sin;
-    const rx = ax - s.cx; const rz = az - s.cz;
-    const ox = rx * c - rz * sn; const oz = rx * sn + rz * c;
-    const ldx = dx * c - dz * sn; const ldz = dx * sn + dz * c;
-    const hx = s.hx + r; const hz = s.hz + r;
-    let t0 = 0; let t1 = 1;
-    if (ldx > -1e-12 && ldx < 1e-12) { if (ox < -hx || ox > hx) continue; } else {
-      let u = (-hx - ox) / ldx; let v = (hx - ox) / ldx;
-      if (u > v) { const w = u; u = v; v = w; }
-      if (u > t0) t0 = u; if (v < t1) t1 = v;
-      if (t0 > t1) continue;
+    if (segHitsObb(s)) return false;
+  }
+  // rampy: klin od podłogi do powierzchni — przeszkoda (zachowawczo cały obrys), gdy jego wysoka część sięga
+  // ponad stopień na poziomie odcinka (odcinki płaskie obok ramp i pod nimi; na szczycie rampy klin nie przeszkadza)
+  if (world.ramps.length > 0) {
+    const nr = queryRampsBox(g, BOXQ);
+    const outR = g.outRamps;
+    for (let k = 0; k < nr; k++) {
+      const rp = world.ramps[outR[k]];
+      const top = rp.y0 > rp.y1 ? rp.y0 : rp.y1;
+      if (!(top > lo && 0 < hi)) continue;
+      if (segHitsObb(rp)) return false;
     }
-    if (ldz > -1e-12 && ldz < 1e-12) { if (oz < -hz || oz > hz) continue; } else {
-      let u = (-hz - oz) / ldz; let v = (hz - oz) / ldz;
-      if (u > v) { const w = u; u = v; v = w; }
-      if (u > t0) t0 = u; if (v < t1) t1 = v;
-      if (t0 > t1) continue;
-    }
-    return false;
+  }
+  return true;
+}
+
+/** Odcinek 2D SEG[0..3] vs prostokąt OBB poszerzony o SEG[5] (Minkowski, zachowawczo). */
+function segHitsObb(s) {
+  const ax = SEG[0]; const az = SEG[1];
+  const dx = SEG[2] - ax; const dz = SEG[3] - az;
+  const r = SEG[5];
+  const c = s.cos; const sn = s.sin;
+  const rx = ax - s.cx; const rz = az - s.cz;
+  const ox = rx * c - rz * sn; const oz = rx * sn + rz * c;
+  const ldx = dx * c - dz * sn; const ldz = dx * sn + dz * c;
+  const hx = s.hx + r; const hz = s.hz + r;
+  let t0 = 0; let t1 = 1;
+  if (ldx > -1e-12 && ldx < 1e-12) { if (ox < -hx || ox > hx) return false; } else {
+    let u = (-hx - ox) / ldx; let v = (hx - ox) / ldx;
+    if (u > v) { const w = u; u = v; v = w; }
+    if (u > t0) t0 = u; if (v < t1) t1 = v;
+    if (t0 > t1) return false;
+  }
+  if (ldz > -1e-12 && ldz < 1e-12) { if (oz < -hz || oz > hz) return false; } else {
+    let u = (-hz - oz) / ldz; let v = (hz - oz) / ldz;
+    if (u > v) { const w = u; u = v; v = w; }
+    if (u > t0) t0 = u; if (v < t1) t1 = v;
+    if (t0 > t1) return false;
   }
   return true;
 }
