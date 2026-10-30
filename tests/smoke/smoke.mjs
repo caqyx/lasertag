@@ -2,7 +2,8 @@
 // (CONFIG.budget); scenariusz rozgrywki (gracz eliminuje manekina, respawn po eliminatedTime z pełnym HP); brak wycieków
 // geometrii/tekstur przy zmianie presetu (low → ultra → low ×2).
 // Przepływ meczu (--flow, domyślnie włączony; --skip-flow wyłącza, --flow-only pomija sekcję mapa × preset): menu → start z menu
-// (klik mapy/trybu/poziomu/presetu + Enter) → mecz (8 uczestników, drużyny i spawny drużyn w tdm, odliczanie, boty strzelają)
+// (klik mapy/trybu/poziomu/presetu + Enter) → mecz (8 uczestników, drużyny i spawny drużyn w tdm, odliczanie: 0.3 s obserwacji
+// zamrożenia, reszta skrócona; boty strzelają)
 // → timeLeft = 1 → ekran końca → „Jeszcze raz" (Enter) → goMenu() → zmiana mapy; 3 tryby na uvmaze + neonhive/tdm2 +
 // reactor/tdm4; po powrocie na tę samą mapę renderer.info geometries/textures jak na początku. Zero błędów konsoli/HTTP.
 // Użycie: npm run smoke [-- --map uvmaze --preset low,ultra --skip-game --skip-leak --leak-all --jobs 3 --skip-flow --flow-only]
@@ -73,8 +74,8 @@ async function waitForServer(url, ms = 10000) {
 }
 
 /** Strona z nasłuchem problemów: console error/warning, pageerror, HTTP ≥ 400, requestfailed. */
-async function openPage(browser, url) {
-  const page = await browser.newPage({ viewport: VIEWPORT });
+async function openPage(browser, url, viewport = VIEWPORT) {
+  const page = await browser.newPage({ viewport });
   const problems = [];
   page.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warning') problems.push(`console.${m.type()}: ${m.text()}`); });
   page.on('pageerror', (e) => problems.push(`pageerror: ${e.message}`));
@@ -229,7 +230,10 @@ const FLOW_PLAN = [
   { name: 'flow-B', steps: [['neonhive', 'tdm2', true], ['reactor', 'tdm4', true], ['neonhive', 'tdm2', false]] },
 ];
 const flowRows = [];
-const FLOW_T = 180000; // ms — duże timeouty (SwiftShader na obciążonej maszynie: sim ~0.2–0.5× czasu rzeczywistego)
+const FLOW_T = 180000;
+// Mniejszy kadr = więcej klatek/s w SwiftShaderze = szybszy czas symulacji (pętla: maks. maxSubSteps kroków na klatkę).
+const FLOW_VIEWPORT = { width: 400, height: 225 };
+const COUNTDOWN_CHECK = 0.3; // s odliczania obserwowane „na żywo" (zamrożenie sim), resztę skracamy // ms — duże timeouty (SwiftShader na obciążonej maszynie: sim ~0.2–0.5× czasu rzeczywistego)
 const mapIds = Object.keys(MAPS);
 const modeIds = Object.keys(MODES);
 const diffIds = Object.keys(CONFIG.bots.levels);
@@ -271,14 +275,19 @@ async function menuStart(page, map, mode, diff, preset) {
  * „Kliknij, aby grać" — klikamy ją jak gracz. Zwraca { lock, retried, cta }.
  */
 async function waitLock(page) {
-  const has = () => page.waitForFunction(() => !!document.pointerLockElement, null, { timeout: 15000, polling: 100 }).then(() => true, () => false);
-  if (await has()) return { lock: true, retried: false };
+  const poll = () => page.waitForFunction(() => {
+    if (document.pointerLockElement) return 'lock';
+    const st = document.getElementById('start');
+    return !st.classList.contains('hidden') && /Nie udało/.test(document.getElementById('start-cta').textContent) ? 'error' : false;
+  }, null, { timeout: 15000, polling: 100 }).then((h) => h.jsonValue(), () => 'timeout');
+  const r1 = await poll();
+  if (r1 === 'lock') return { lock: true, retried: false };
   const cta = await page.evaluate(() => {
     const s = document.getElementById('start');
     return s.classList.contains('hidden') ? null : document.getElementById('start-cta').textContent;
   });
   if (cta !== null) await page.click('#start', { position: { x: 20, y: 20 } }).catch(() => {});
-  return { lock: await has(), retried: true, cta };
+  return { lock: (await poll()) === 'lock', retried: true, cta };
 }
 
 /** Sprawdzenia składu: liczba uczestników wg trybu, drużyny (team = id % teams, po perTeam), spawny drużyn (sp.team % teams). */
@@ -352,7 +361,23 @@ async function flowStep(page, L, [map, mode, full], k) {
   const row = { page: L.name, step: k + 1, map, mode, n: st.n, shots: '-', hits: '-', result: '-', restart: '-', ms: 0 };
   flowRows.push(row);
 
-  // odliczanie: zamrożeni (sim.time stoi) → playing
+  // odliczanie: uczestnicy zamrożeni (sim.time = 0, pozycje stoją) przez COUNTDOWN_CHECK s, potem skrócenie odliczania
+  // (oszczędność czasu; samo przejście countdown → playing zostaje naturalne) → playing
+  await page.evaluate(() => {
+    const lt = window.__lt;
+    window.__cdStart = lt.match().countdown;
+    window.__cdPos = lt.sim.participants.map((p) => `${p.body.x},${p.body.z}`).join(';');
+  });
+  const frozen = await page.waitForFunction((d) => {
+    const lt = window.__lt; const M = lt.match();
+    if (M.state !== 'countdown') return { early: M.state };
+    if (M.countdown > window.__cdStart - d) return false;
+    const moved = window.__cdPos !== lt.sim.participants.map((p) => `${p.body.x},${p.body.z}`).join(';');
+    return { t: lt.sim.time, cd: M.countdown, moved };
+  }, COUNTDOWN_CHECK, { timeout: FLOW_T, polling: 100 }).then((h) => h.jsonValue());
+  if (frozen.early) L.fail(`${tag}: odliczanie: stan ${frozen.early} przed upływem ${COUNTDOWN_CHECK} s`);
+  else if (frozen.t !== 0 || frozen.moved) L.fail(`${tag}: odliczanie: sim nie zamrożony (sim.time ${frozen.t}, ruch ${frozen.moved})`);
+  await page.evaluate(() => { const M = window.__lt.match(); if (M.state === 'countdown') M.countdown = Math.min(M.countdown, 0.05); });
   await page.waitForFunction(() => window.__lt.match().state === 'playing', null, { timeout: FLOW_T, polling: 100 });
   if (!full) {
     const ok = await page.evaluate(() => window.__lt.sim.time);
@@ -475,7 +500,7 @@ async function runFlowIn(browser, base, plan) {
   let page = null;
   let problems = [];
   try {
-    const o = await openPage(browser, `${base}/`);
+    const o = await openPage(browser, `${base}/`, FLOW_VIEWPORT);
     page = o.page; problems = o.problems;
     const st = await appState(page);
     if (st.app !== 'menu' || !st.menu || st.hud || st.n !== 0) L.fail(`start: app=${st.app}, menu=${st.menu}, hud=${st.hud}, sim=${st.n}`);

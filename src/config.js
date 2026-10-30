@@ -236,8 +236,8 @@ export const CONFIG = Object.freeze({
       floorEnvIntensity: 0.25,      // PMREM (ogólny połysk); odbicia neonów robi RT (reflect)
       // odbicie planarne podłogi (preset.envReflections): RT w skali rozdz., rozmycie mipmapą + smuga pionowa (taps),
       // zanik z odległością od podłogi (głębia RT), farba przygaszona w odbiciu (odbijają się głównie listwy)
-      reflect: { scale: 0.5, mipBias: 2.4, streak: 9, taps: 9, strength: 0.4, f0: 0.25, maskSoft: 0.45,
-        fadeLen: 2.6, paintInReflection: 0.25 },
+      reflect: { scale: 0.5, mipBias: 2.4, streak: 9, taps: 9, strength: 0.45, f0: 0.25, maskSoft: 0.45,
+        fadeLen: 5.0, paintInReflection: 0.25 },
       accentPolicy: { default: 'full', uvmaze: 'paint' },   // 'paint' = akcent tylko w farbie; 'full' = też listwy/światła
       darkNormRef: 0.15,            // emisja tła w kolorze uv × min(1, ref / luminancja uv) (jasny uv → ciemniej)
       darkNormMin: 0.25,
