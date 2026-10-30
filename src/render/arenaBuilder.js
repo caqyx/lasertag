@@ -415,6 +415,21 @@ function addSigns(buf, s, world, idx) {
   }
 }
 
+// podział bryły obwodowej wzdłuż dłuższego boku na panele ~A.boundaryPanel m (tylko wizual farby)
+function splitPanels(s) {
+  const longX = s.hx >= s.hz;
+  const L = 2 * (longX ? s.hx : s.hz);
+  const n = Math.max(1, Math.round(L / A.boundaryPanel));
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const u = -L / 2 + (i + 0.5) * (L / n);
+    const lx = longX ? u : 0, lz = longX ? 0 : u;
+    toWorld(s, lx, lz, _wa);
+    out.push({ ...s, cx: _wa[0], cz: _wa[1], hx: longX ? L / n / 2 : s.hx, hz: longX ? s.hz : L / n / 2 });
+  }
+  return out;
+}
+
 // barierka ażurowa: niska blacha (cokół), słupki, pochwyt + poprzeczka, siatka (alphaTest); neon na pochwycie
 function addRail(steelBuf, trimBuf, railBuf, s, col, warnCol) {
   const RL = A.rail;
@@ -827,6 +842,7 @@ export function buildArena(world, preset, textures, opts = {}) {
   const covers = opts.covers || (() => false);
   const reflPassU = { value: 1 };
   const cycle = A.boundaryCycle.includes(world.id);
+  const topLine = A.topLine.maps.includes(world.id);
   let boundaryIdx = 0;
   let signIdx = 0;
   const signBuf = new GeoBuf();   // 1 = normalny render; < 1 podczas renderu odbicia (wspólny uniform ścian)
@@ -861,11 +877,24 @@ export function buildArena(world, preset, textures, opts = {}) {
     const hasBottom = !!(tk && s.trimBottom) || (s.boundary && !!tk);
     const bot = hasBottom ? s.y0 + A.trimSize / 2 + A.trimBottomLift : -1;
     const top = s.boundary ? Math.min(s.y1, A.boundaryTrimHeights[A.boundaryTrimHeights.length - 1]) : s.y1;
-    const buf = style ? paintBufs[style] : plainBuf;
-    buf.curBoundary = !!s.boundary;
-    setCur(buf, aKey, bKey, tk, top, bot);
-    setCur(plainBuf, aKey, bKey, tk, top, bot);
-    addSolid(buf, plainBuf, s, rng);
+    if (s.boundary && cycle) {
+      // ściana obwodowa → kilka paneli (różne style i pary kolorów), granice paneli = pionowe fugi
+      for (const sub of splitPanels(s)) {
+        const st = PAINT_STYLES[(boundaryIdx++) % PAINT_STYLES.length];
+        const pa = MAIN_KEYS[boundaryIdx % 2], pb = pa === 'primary' ? 'secondary' : 'primary';
+        const pbuf = paintBufs[st];
+        pbuf.curBoundary = true;
+        setCur(pbuf, pa, pb, tk, top, bot);
+        setCur(plainBuf, pa, pb, tk, top, bot);
+        addSolid(pbuf, plainBuf, sub, rng);
+      }
+    } else {
+      const buf = style ? paintBufs[style] : plainBuf;
+      buf.curBoundary = !!s.boundary;
+      setCur(buf, aKey, bKey, tk, top, bot);
+      setCur(plainBuf, aKey, bKey, tk, top, bot);
+      addSolid(buf, plainBuf, s, rng);
+    }
     rubberFor(rubberBuf, trimBuf, s, world, tk && dimCol[tk] ? dimCol[tk] : dimCol.uv);
     if (!tk) return;
     const col = trimCol[tk];
@@ -876,6 +905,13 @@ export function buildArena(world, preset, textures, opts = {}) {
     }
     if (s.kind === 'pillar') { pillarTrims(trimBuf, s, pillarCol[tk] || col); return; }
     trimLoop(trimBuf, s, s.y1 - A.trimSize / 2, col);
+    if (topLine && s.kind === 'wall') {
+      // linia na wierzchu ściany (wzdłuż osi) — kontur komór czytelny z góry
+      const TL = A.topLine, longX = s.hx >= s.hz;
+      if (longX) { toWorld(s, -s.hx, 0, _wa); toWorld(s, s.hx, 0, _wb); } else { toWorld(s, 0, -s.hz, _wa); toWorld(s, 0, s.hz, _wb); }
+      addBar(trimBuf, _wa[0], s.y1 + TL.height / 2, _wa[1], _wb[0], s.y1 + TL.height / 2, _wb[1], TL.width, TL.height,
+        col.r * TL.k, col.g * TL.k, col.b * TL.k);
+    }
     if (s.trimBottom) trimLoop(trimBuf, s, s.y0 + A.trimSize / 2 + A.trimBottomLift, col);
   });
   (world.ramps || []).forEach((r) => {

@@ -237,7 +237,9 @@ export const CONFIG = Object.freeze({
       boundaryPaintScale: 1.4,      // ściany obwodowe: kafel 8.4 × 3.36 m (duże murale, ostre z bliska)
       boundaryPaintIntensity: 0.6,  // farba na ścianach obwodowych przygaszona (nie dominuje kadru)
       wallUScale: [0.85, 1.2],      // losowa skala farby wzdłuż ściany per bryła (mniej powtórzeń)
-      boundaryCycle: ['reactor'],   // mapy, w których ściany obwodowe dostają różne style farby per strona
+      boundaryCycle: ['reactor'],
+      topLine: { maps: ['neonhive'], width: 0.06, height: 0.012, k: 0.8 },   // neon na wierzchu ścian (plaster czytelny z góry)
+      boundaryPanel: 9,             // szerokość panelu farby na ścianie obwodowej (m) przy boundaryCycle   // mapy, w których ściany obwodowe dostają różne style farby per strona
       uvRemap: { reactor: 'secondary' },   // mapy bez fioletu w palecie: kolor 'uv' (listwy, lampy, stożki, sufit) → ten klucz
       coneTint: { neonhive: { key: 'primary', mix: 0.55 } }, // stożki światła podbarwione kolorem przewodnim mapy
       // poświata UV/neonu na licu ściany (× kolor listwy bryły × faktura): mocna przy listwie, gaśnie w dół
