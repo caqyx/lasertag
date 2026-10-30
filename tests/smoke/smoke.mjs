@@ -16,7 +16,7 @@ const ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const T0 = Date.now();
 const TOTAL_LIMIT_MS = 6 * 60 * 1000;
 const SETTLE_MS = 2000;
-const VIEWPORT = { width: 960, height: 540 };
+const VIEWPORT = { width: 640, height: 360 }; // liczby renderer.info nie zależą od rozdzielczości; mniejszy = szybciej w SwiftShaderze
 
 function arg(name, def) {
   const i = process.argv.indexOf('--' + name);
