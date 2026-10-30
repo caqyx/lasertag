@@ -373,9 +373,9 @@ function boot(graphics) {
     const fired = consumeEvents();
     recordFromEvents(adapt, sim.events, player.id);
     // localId + pozycja kamery: avatars ukrywa lokalnego gracza i awatary zbyt blisko kamery
-    avatars.sync(sim.participants, alpha, time, debugCam ? -1 : player.id, camera.position);
+    avatars.sync(sim.participants, alpha, time, debugCam ? -1 : player.id, camera);
     const b = player.body;
-    viewModel.update(frameDt, player.weapon, fired, player.color, Math.hypot(b.vx, b.vz));
+    viewModel.update(frameDt, player.weapon, fired, player.color, Math.hypot(b.vx, b.vz), player.stunTimer > 0);
     if (showHud && !debugCam) {
       hud.update(player, sim, frameDt);
       matchBar.update(match, sim);

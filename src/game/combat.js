@@ -13,18 +13,11 @@ import { EV } from '../core/events.js';
 import { SENSOR_OFFSETS, resetVitals, placeAt } from './participant.js';
 import { resetWeapon } from './weapon.js';
 import { awardHit, awardElim } from './scoring.js';
-import * as MV from './movement.js';
-
-// Kucanie (D-016+): oko z movement.eyeHeightOf(body), gdy coder fizyki je doda; do tego czasu interpolacja
-// wg body.crouch (0..1) między CONFIG.player.eyeHeight a crouchEyeHeight (domyślnie 1.0 m).
-const EYE_FN = typeof MV.eyeHeightOf === 'function' ? MV.eyeHeightOf : null;
-const CROUCH_EYE = CONFIG.player.crouchEyeHeight !== undefined ? CONFIG.player.crouchEyeHeight : 1.0;
+import { eyeHeightOf } from './movement.js';
 
 /** Wysokość oka nad stopami dla aktualnej postawy. */
 export function eyeOf(b) {
-  if (EYE_FN !== null) return EYE_FN(b);
-  const c = b.crouch > 0 ? b.crouch : 0;
-  return CONFIG.player.eyeHeight + (CROUCH_EYE - CONFIG.player.eyeHeight) * c;
+  return eyeHeightOf(b);   // movement.js: body.eyeHeight (zależne od kucania)
 }
 
 /** Skala wysokości postaci (kucanie): body.height / CONFIG.player.height. */
