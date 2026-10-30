@@ -77,7 +77,7 @@ test('sprint tylko do przodu: tył i czysty strafe → walkSpeed; przód-skos �
   }
 });
 
-test('WĄTPLIWE: sprint przy niemal czystym strafe (moveZ=0.05) daje pełne sprintSpeed bokiem', { todo: 'warunek sprintu to tylko mz > 0 — analogowe wejście / bot (M2) może sprintować bokiem; do decyzji (np. mz ≥ |mx|)' }, () => {
+test('WĄTPLIWE: sprint przy niemal czystym strafe (moveZ=0.05) daje pełne sprintSpeed bokiem', () => {
   const { body, input } = setup({ moveX: 1, moveZ: 0.05, sprint: true });
   const sp = run(body, input, 60);
   assert.ok(sp.at(-1) < P.sprintSpeed - 0.5, `sprint bokiem: ${sp.at(-1)}`);

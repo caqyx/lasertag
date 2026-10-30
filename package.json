@@ -6,7 +6,7 @@
   "description": "Neonowa gra laser tag 3D (HTML + Three.js)",
   "scripts": {
     "serve": "node tools/serve.mjs 8080",
-    "test": "node --test tests/unit/",
+    "test": "node --expose-gc --test \"tests/unit/*.test.mjs\"",
     "smoke": "NODE_PATH=$(npm root -g) node tests/smoke/smoke.mjs",
     "screens": "NODE_PATH=$(npm root -g) node tests/tools/screens.mjs"
   }

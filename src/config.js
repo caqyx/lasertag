@@ -236,6 +236,7 @@ export const CONFIG = Object.freeze({
     beamNearFade: [0.4, 2.5], // m od kamery: wstęga przygaszona przy samej kamerze (własne strzały nie oślepiają)
     muzzleFlashSize: 0.16,    // m
     muzzleFlashTime: 0.06,    // s
+    flashNearDist: 2.5,       // m — bliżej kamery błyski maleją (do 30% przy samej lufie FPP)
     muzzleFlashIntensity: 4.0,
     endFlashSize: 0.22,       // poświata w punkcie końca wiązki (ściana)
     endFlashIntensity: 2.0,
@@ -244,7 +245,7 @@ export const CONFIG = Object.freeze({
     sparkSpeed: [2.0, 6.0],   // m/s
     sparkGravity: 9.0,
     sparkStreak: 0.03,        // s — długość smugi = prędkość × to
-    sparkWidth: 0.02,         // m
+    sparkWidth: 0.014,        // m
     sparkIntensity: 5.0,
     hitFlashSize: 0.6,        // m — rozbłysk w punkcie trafienia
     hitFlashTime: 0.16,
@@ -255,9 +256,9 @@ export const CONFIG = Object.freeze({
   // Awatary uczestników (render/avatars.js).
   avatar: {
     bodyColor: '#0c0a14',     // ciemny matowy korpus (× kolor drużyny przez instanceColor)
-    bodyTint: 0.5,            // ile koloru drużyny w diffuse korpusu (0 = sam bodyColor, 1 = bodyColor × kolor)
+    bodyTint: 0.3,            // ile koloru drużyny w diffuse korpusu (0 = sam bodyColor, 1 = bodyColor × kolor)
     roughness: 0.8,
-    rimIntensity: 0.55,       // poświata krawędzi (fresnel) w kolorze drużyny
+    rimIntensity: 0.42,       // poświata krawędzi (fresnel) w kolorze drużyny
     rimPower: 2.6,
     visorIntensity: 3.0,
     trimIntensity: 1.1,       // pasek na broni (pas = × 0.6)
@@ -275,6 +276,8 @@ export const CONFIG = Object.freeze({
     scale: 0.62,              // skala względem wylotu lufy
     bodyColor: '#14121e',
     trimIntensity: 0.9,
+    rimIntensity: 0.12,       // fresnel w kolorze gracza
+    fillColor: '#120e22',     // sztuczne światło wypełniające (emisja, układ kamery) — liniowe ≈ 0.01–0.03
     heatIntensity: 3.0,
     hotColor: '#ff2a12',
     flashIntensity: 6.0,

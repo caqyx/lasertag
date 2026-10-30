@@ -1,5 +1,5 @@
 // Fizyka postaci i raycast (PLAN §3). Czysty JS, bez three, bez alokacji w funkcjach publicznych
-// (wyniki pośrednie w zmiennych modułu).
+// (argumenty i wyniki pośrednie w prealokowanych Float64Array na poziomie modułu).
 //
 // Model: postać = pionowy walec (radius, height), body.y = stopy. Bryły = OBB w XZ (obrót wokół Y) × [y0, y1].
 // Konwencja obrotu jak w mapgen.js: lx = dx*cos - dz*sin, lz = dx*sin + dz*cos; świat: (lx*cos + lz*sin, -lx*sin + lz*cos).
@@ -8,26 +8,57 @@
 // do powierzchni (blokuje z boku, gdy powierzchnia w punkcie styku jest wyżej niż stopy + stepHeight).
 
 import { CONFIG } from '../config.js';
-import { querySolids, queryRamps, nextStamp, cellCol, cellRow } from './mapgen.js';
+import { querySolidsBox, queryRampsBox, nextStamp } from './mapgen.js';
 
 const EPS = 1e-9;
 const MAX_SUBSTEPS = 32;          // twardy limit podkroków przy ogromnym dt
 const SUBSTEP_FRACTION = 0.5;     // maks. przesunięcie poziome na podkrok = radius * SUBSTEP_FRACTION
 
-// --- scratch (Float64Array zamiast `let` na poziomie modułu: zapis double do slotu kontekstu alokuje HeapNumber w V8)
+// --- Zero alokacji a V8: double zapisany do `let` modułu albo przekazany jako świeży argument / wynik
+// nie-inline'owanej funkcji jest pakowany w HeapNumber (alokacja). Dlatego gorąca ścieżka przekazuje liczby
+// wyłącznie przez prealokowane Float64Array (poniżej), a funkcje wewnętrzne dostają tylko referencje i małe int-y.
+// Publiczne funkcje z PLAN §3 to cienkie nakładki: zapisują argumenty do scratch i wołają wersję wewnętrzną.
+
+// AABB zapytania SpatialGrid: [minX, minZ, maxX, maxZ]
+const BOX = new Float64Array(4);
+// koło zapytania: [x, z, r]
+const CIRC = new Float64Array(3);
+const CI_X = 0;
+const CI_Z = 1;
+const CI_R = 2;
 // wynik kolizji koło vs OBB: [nx, nz, depth]
 const COL = new Float64Array(3);
 const C_NX = 0;
 const C_NZ = 1;
 const C_DEPTH = 2;
+// wyniki pomocnicze: [ground, ceiling]
+const OUT = new Float64Array(2);
+const O_GROUND = 0;
+const O_CEIL = 1;
+
+/** Ustawia CIRC i BOX (AABB koła). */
+function setCircle(x, z, r) {
+  CIRC[CI_X] = x; CIRC[CI_Z] = z; CIRC[CI_R] = r;
+  BOX[0] = x - r; BOX[1] = z - r; BOX[2] = x + r; BOX[3] = z + r;
+}
+
+/** Jak setCircle, ale z pól body (bez przekazywania doubli). */
+function setCircleBody(body) {
+  const x = body.x;
+  const z = body.z;
+  const r = body.radius;
+  CIRC[CI_X] = x; CIRC[CI_Z] = z; CIRC[CI_R] = r;
+  BOX[0] = x - r; BOX[1] = z - r; BOX[2] = x + r; BOX[3] = z + r;
+}
 
 /**
- * Koło (x,z,r) vs OBB (hx,hz w lokalnym XZ). Gdy się przecinają → true, normalna wypychania (świat) i głębokość w COL.
+ * Koło CIRC vs OBB o (hx,hz w lokalnym XZ). Gdy się przecinają → true, normalna wypychania (świat) i głębokość w COL.
  * Wspólne dla brył i ramp (oba mają cx,cz,hx,hz,cos,sin).
  */
-function circleObb(o, x, z, r) {
-  const dx = x - o.cx;
-  const dz = z - o.cz;
+function circleObb(o) {
+  const r = CIRC[CI_R];
+  const dx = CIRC[CI_X] - o.cx;
+  const dz = CIRC[CI_Z] - o.cz;
   const c = o.cos;
   const s = o.sin;
   const lx = dx * c - dz * s;
@@ -58,10 +89,11 @@ function circleObb(o, x, z, r) {
   return true;
 }
 
-/** Czy koło nachodzi na OBB (bez liczenia normalnej). */
-function circleOverlaps(o, x, z, r) {
-  const dx = x - o.cx;
-  const dz = z - o.cz;
+/** Czy koło CIRC nachodzi na OBB o (bez liczenia normalnej). */
+function circleOverlaps(o) {
+  const r = CIRC[CI_R];
+  const dx = CIRC[CI_X] - o.cx;
+  const dz = CIRC[CI_Z] - o.cz;
   const lx = dx * o.cos - dz * o.sin;
   const lz = dx * o.sin + dz * o.cos;
   const qx = lx < -o.hx ? -o.hx : lx > o.hx ? o.hx : lx;
@@ -71,123 +103,191 @@ function circleOverlaps(o, x, z, r) {
   return ex * ex + ez * ez < r * r;
 }
 
-/** Wysokość powierzchni rampy w punkcie lokalnym lz (przycięta do zakresu). */
-function rampHeightAtLocalZ(rp, lz) {
-  const t = (lz + rp.hz) / (2 * rp.hz);
-  const tc = t < 0 ? 0 : t > 1 ? 1 : t;
-  return rp.y0 + (rp.y1 - rp.y0) * tc;
-}
-
-/** Wysokość rampy w punkcie świata, gdy punkt leży w jej obrysie; inaczej -Infinity. */
-function rampHeightAt(rp, x, z) {
-  const dx = x - rp.cx;
-  const dz = z - rp.cz;
-  const lx = dx * rp.cos - dz * rp.sin;
-  const lz = dx * rp.sin + dz * rp.cos;
-  if (lx < -rp.hx || lx > rp.hx || lz < -rp.hz || lz > rp.hz) return -Infinity;
-  return rampHeightAtLocalZ(rp, lz);
-}
-
 /**
- * Najwyższa powierzchnia pod kołem (x,z,radius), nie wyższa niż feetY + stepHeight: podłoga 0, top bryły, rampa.
- * Bez alokacji.
+ * Wewnętrzne groundHeight: koło z CIRC/BOX (ustawione wcześniej), feet z feetSrc[feetIdx]. Wynik → OUT[O_GROUND].
+ * Rampa liczy się, gdy środek koła leży w jej obrysie (wysokość liniowa wzdłuż lokalnego Z).
  */
-export function groundHeight(world, x, z, feetY, radius) {
-  const limit = feetY + CONFIG.player.stepHeight;
+function groundInternal(world, feetSrc, feetIdx) {
+  const limit = feetSrc[feetIdx] + CONFIG.player.stepHeight;
   const g = world.grid;
   const solids = world.solids;
   let best = 0;
-  const n = querySolids(g, x - radius, z - radius, x + radius, z + radius);
+  const n = querySolidsBox(g, BOX);
   const out = g.outSolids;
   for (let k = 0; k < n; k++) {
     const s = solids[out[k]];
     if (s.y1 > limit || s.y1 <= best) continue;
-    if (circleOverlaps(s, x, z, radius)) best = s.y1;
+    if (circleOverlaps(s)) best = s.y1;
   }
-  const nr = queryRamps(g, x, z, x, z);
   const ramps = world.ramps;
-  const outR = g.outRamps;
-  for (let k = 0; k < nr; k++) {
-    const h = rampHeightAt(ramps[outR[k]], x, z);
-    if (h <= limit && h > best) best = h;
+  if (ramps.length > 0) {
+    const nr = queryRampsBox(g, BOX);
+    const outR = g.outRamps;
+    const x = CIRC[CI_X];
+    const z = CIRC[CI_Z];
+    for (let k = 0; k < nr; k++) {
+      const rp = ramps[outR[k]];
+      const dx = x - rp.cx;
+      const dz = z - rp.cz;
+      const lx = dx * rp.cos - dz * rp.sin;
+      const lz = dx * rp.sin + dz * rp.cos;
+      if (lx < -rp.hx || lx > rp.hx || lz < -rp.hz || lz > rp.hz) continue;
+      const h = rp.y0 + (rp.y1 - rp.y0) * ((lz + rp.hz) / (2 * rp.hz));
+      if (h <= limit && h > best) best = h;
+    }
   }
-  return best;
+  OUT[O_GROUND] = best;
+}
+
+// argumenty nakładki groundHeight: [feetY]
+const GARG = new Float64Array(1);
+
+/**
+ * Najwyższa powierzchnia pod kołem (x,z,radius), nie wyższa niż feetY + stepHeight: podłoga 0, top bryły, rampa.
+ * Bez alokacji (nakładka nad groundInternal).
+ */
+export function groundHeight(world, x, z, feetY, radius) {
+  setCircle(x, z, radius);
+  GARG[0] = feetY;
+  groundInternal(world, GARG, 0);
+  return OUT[O_GROUND];
 }
 
 /** Przesunięcie wzdłuż normalnej z COL + usunięcie składowej prędkości w głąb przeszkody. */
-function pushOut(body, skin) {
+function pushOut(body) {
   const nx = COL[C_NX];
   const nz = COL[C_NZ];
-  const dd = COL[C_DEPTH] + skin;
+  const dd = COL[C_DEPTH] + CONFIG.physics.skin;
   body.x += nx * dd;
   body.z += nz * dd;
   const vn = body.vx * nx + body.vz * nz;
   if (vn < 0) { body.vx -= vn * nx; body.vz -= vn * nz; }
 }
 
-/** Wypchnięcie poziome z brył/ramp blokujących w paśmie [feet+step, feet+height]. */
-function resolveHorizontal(world, body) {
+/**
+ * Jedno przejście kolizji poziomych z bryłami/rampami blokującymi w paśmie [feet+step, feet+height].
+ * push=true → wypycha (sekwencyjnie) i zwraca, czy była jakakolwiek penetracja; push=false → tylko wykrywa.
+ */
+function horizontalPass(world, body, push) {
   const P = CONFIG.player;
-  const PH = CONFIG.physics;
   const g = world.grid;
   const solids = world.solids;
   const ramps = world.ramps;
-  const r = body.radius;
-  const skin = PH.skin;
-  for (let it = 0; it < PH.maxIterations; it++) {
-    const feet = body.y;
-    const lo = feet + P.stepHeight;
-    const hi = feet + body.height;
-    let any = false;
-    const n = querySolids(g, body.x - r, body.z - r, body.x + r, body.z + r);
-    const out = g.outSolids;
-    for (let k = 0; k < n; k++) {
-      const s = solids[out[k]];
-      if (!(s.y1 > lo && s.y0 < hi)) continue;
-      if (!circleObb(s, body.x, body.z, r)) continue;
-      pushOut(body, skin);
-      any = true;
-    }
-    const nr = queryRamps(g, body.x - r, body.z - r, body.x + r, body.z + r);
+  const feet = body.y;
+  const lo = feet + P.stepHeight;
+  const hi = feet + body.height;
+  let any = false;
+  setCircleBody(body);
+  const n = querySolidsBox(g, BOX);
+  const out = g.outSolids;
+  for (let k = 0; k < n; k++) {
+    const s = solids[out[k]];
+    if (!(s.y1 > lo && s.y0 < hi)) continue;
+    if (!circleObb(s)) continue;
+    any = true;
+    if (!push) return true;
+    pushOut(body);
+    setCircleBody(body);
+  }
+  if (ramps.length > 0) {
+    const nr = queryRampsBox(g, BOX);
     const outR = g.outRamps;
     for (let k = 0; k < nr; k++) {
       const rp = ramps[outR[k]];
-      if (!circleObb(rp, body.x, body.z, r)) continue;
-      // wysokość powierzchni w najbliższym punkcie obrysu
+      if (!circleObb(rp)) continue;
+      // wysokość powierzchni w najbliższym punkcie obrysu (lz przycięte do zakresu)
       const dx = body.x - rp.cx;
       const dz = body.z - rp.cz;
-      const lz = dx * rp.sin + dz * rp.cos;
-      const hSurf = rampHeightAtLocalZ(rp, lz);
+      let t = ((dx * rp.sin + dz * rp.cos) + rp.hz) / (2 * rp.hz);
+      t = t < 0 ? 0 : t > 1 ? 1 : t;
+      const hSurf = rp.y0 + (rp.y1 - rp.y0) * t;
       if (hSurf <= lo) continue;
       // klin od 0 do powierzchni: blokuje, gdy postać nie jest całkiem nad powierzchnią
-      pushOut(body, skin);
       any = true;
+      if (!push) return true;
+      pushOut(body);
+      setCircleBody(body);
     }
-    if (!any) break;
   }
+  return any;
+}
+
+/**
+ * Wypchnięcie poziome (do CONFIG.physics.maxIterations przejść). Zwraca true, gdy końcowa pozycja jest wolna
+ * od penetracji; false, gdy wypchnięcia się nie zbiegły (np. szczelina węższa niż 2·radius — przeciwne ściany).
+ */
+function resolveHorizontal(world, body) {
+  const iters = CONFIG.physics.maxIterations;
+  for (let it = 0; it < iters; it++) {
+    if (!horizontalPass(world, body, true)) return true;
+  }
+  return !horizontalPass(world, body, false);
+}
+
+/** Granice areny. */
+function clampBounds(world, body) {
   const b = world.bounds;
+  const r = body.radius;
   if (body.x < b.minX + r) { body.x = b.minX + r; if (body.vx < 0) body.vx = 0; }
   if (body.x > b.maxX - r) { body.x = b.maxX - r; if (body.vx > 0) body.vx = 0; }
   if (body.z < b.minZ + r) { body.z = b.minZ + r; if (body.vz < 0) body.vz = 0; }
   if (body.z > b.maxZ - r) { body.z = b.maxZ - r; if (body.vz > 0) body.vz = 0; }
 }
 
-/** Najniższy spód bryły nad głową (bryły nachodzące na koło, których y0 > feet + step), min z world.ceiling. */
-function ceilingAbove(world, body) {
+/**
+ * Przesunięcie poziome o (vx, vz)·sdt z rozwiązaniem kolizji. Gdy pełny ruch nie daje się rozwiązać bez penetracji
+ * (przeciwległe ściany), próbuje ruchu tylko wzdłuż X, potem tylko wzdłuż Z; w ostateczności zostaje w poprzedniej
+ * (poprawnej) pozycji. Dzięki temu szczeliny < 2·radius są nieprzechodnie. Argument sdt czytany z MB[1].
+ */
+function moveHorizontal(world, body) {
+  const sdt = MB[1];
+  const px = body.x;
+  const pz = body.z;
+  const vx = body.vx;
+  const vz = body.vz;
+  body.x = px + vx * sdt;
+  body.z = pz + vz * sdt;
+  if (!resolveHorizontal(world, body)) {
+    let ok = false;
+    if (vx !== 0) {
+      body.x = px + vx * sdt; body.z = pz; body.vx = vx; body.vz = vz;
+      if (resolveHorizontal(world, body)) { body.vz = 0; ok = true; }
+    }
+    if (!ok && vz !== 0) {
+      body.x = px; body.z = pz + vz * sdt; body.vx = vx; body.vz = vz;
+      if (resolveHorizontal(world, body)) { body.vx = 0; ok = true; }
+    }
+    if (!ok) {
+      body.x = px; body.z = pz;
+      body.vx = 0; body.vz = 0;
+      // pozycja startowa też w penetracji (np. teleport w bryłę) — wypchnij najlepiej, jak się da
+      resolveHorizontal(world, body);
+    }
+  }
+  clampBounds(world, body);
+}
+
+/**
+ * Najniższy spód bryły nad głową (bryły nachodzące na koło CIRC, których y0 > feet + step), min z world.ceiling.
+ * Wynik → OUT[O_CEIL]. Wymaga wcześniejszego setCircleBody(body).
+ */
+function ceilingInternal(world, body) {
   const g = world.grid;
   const solids = world.solids;
-  const r = body.radius;
   const lo = body.y + CONFIG.player.stepHeight;
   let best = world.ceiling;
-  const n = querySolids(g, body.x - r, body.z - r, body.x + r, body.z + r);
+  const n = querySolidsBox(g, BOX);
   const out = g.outSolids;
   for (let k = 0; k < n; k++) {
     const s = solids[out[k]];
     if (s.y0 <= lo || s.y0 >= best) continue;
-    if (circleOverlaps(s, body.x, body.z, r)) best = s.y0;
+    if (circleOverlaps(s)) best = s.y0;
   }
-  return best;
+  OUT[O_CEIL] = best;
 }
+
+// stan kroku moveBody: [feetQuery, sdt]
+const MB = new Float64Array(2);
 
 /**
  * Krok fizyki postaci: grawitacja, integracja (podkroki — brak tunelowania), kolizje poziome, stopnie, rampy,
@@ -199,7 +299,9 @@ export function moveBody(world, body, dt) {
   const PH = CONFIG.physics;
   body.vy -= P.gravity * dt;
 
-  const maxMove = Math.max(Math.abs(body.vx), Math.abs(body.vz)) * dt;
+  const avx = body.vx < 0 ? -body.vx : body.vx;
+  const avz = body.vz < 0 ? -body.vz : body.vz;
+  const maxMove = (avx > avz ? avx : avz) * dt;
   let n = Math.ceil(maxMove / (body.radius * SUBSTEP_FRACTION));
   if (n < 1) n = 1;
   if (n > MAX_SUBSTEPS) n = MAX_SUBSTEPS;
@@ -208,27 +310,31 @@ export function moveBody(world, body, dt) {
   let grounded = body.onGround;
   for (let i = 0; i < n; i++) {
     // poziomo
-    body.x += body.vx * sdt;
-    body.z += body.vz * sdt;
-    resolveHorizontal(world, body);
+    MB[1] = sdt;
+    moveHorizontal(world, body);
 
-    // pionowo
-    const ceil = ceilingAbove(world, body);
+    // pionowo (resolveHorizontal mogło przesunąć — odśwież koło zapytania)
+    setCircleBody(body);
+    ceilingInternal(world, body);
+    const ceil = OUT[O_CEIL];
     const prevY = body.y;
     body.y += body.vy * sdt;
-    const ground = groundHeight(world, body.x, body.z, prevY > body.y ? prevY : body.y, body.radius);
-    if (body.y <= ground) {
+    const newY = body.y;
+    MB[0] = prevY > newY ? prevY : newY;
+    groundInternal(world, MB, 0);
+    const ground = OUT[O_GROUND];
+    if (newY <= ground) {
       body.y = ground;
       if (body.vy <= 0) { body.vy = 0; grounded = true; } else grounded = false;
-    } else if (grounded && body.vy <= 0 && body.y - ground <= PH.groundSnap) {
+    } else if (grounded && body.vy <= 0 && newY - ground <= PH.groundSnap) {
       body.y = ground;
       body.vy = 0;
     } else {
       grounded = false;
     }
     if (body.y + body.height > ceil) {
-      body.y = ceil - body.height;
-      if (body.y < ground) body.y = ground;
+      const yc = ceil - body.height;
+      body.y = yc < ground ? ground : yc;
       if (body.vy > 0) body.vy = 0;
     }
   }
@@ -238,6 +344,8 @@ export function moveBody(world, body, dt) {
 // ---------------------------------------------------------------------------------------------
 // Raycast
 
+// argumenty promienia: [ox, oy, oz, dx, dy, dz, maxDist]
+const RI = new Float64Array(7);
 // stan raycastu: [best, nx, ny, nz, index, found]
 const RAY = new Float64Array(6);
 const R_BEST = 0;
@@ -247,8 +355,7 @@ const R_NZ = 3;
 const R_IDX = 4;
 const R_FOUND = 5;
 
-function setFloorCeilHit(t, ny) {
-  RAY[R_BEST] = t;
+function setFloorCeilHit(ny) {
   RAY[R_FOUND] = 1;
   RAY[R_IDX] = -1;
   RAY[R_NX] = 0;
@@ -256,8 +363,10 @@ function setFloorCeilHit(t, ny) {
   RAY[R_NZ] = 0;
 }
 
-/** Promień (o, d — d jednostkowy) vs OBB bryły (slab w lokalnym układzie). Aktualizuje RAY, gdy bliżej. */
-function rayObb(s, idx, ox, oy, oz, dx, dy, dz) {
+/** Promień RI (d jednostkowy) vs OBB bryły (slab w lokalnym układzie). Aktualizuje RAY, gdy bliżej. */
+function rayObb(s, idx) {
+  const ox = RI[0]; const oy = RI[1]; const oz = RI[2];
+  const dx = RI[3]; const dy = RI[4]; const dz = RI[5];
   const rx = ox - s.cx;
   const rz = oz - s.cz;
   const c = s.cos;
@@ -309,8 +418,18 @@ function rayObb(s, idx, ox, oy, oz, dx, dy, dz) {
   else { RAY[R_NX] = sign * sn; RAY[R_NY] = 0; RAY[R_NZ] = sign * c; }
 }
 
-/** Promień vs górna powierzchnia rampy (płaszczyzna w obrysie). Indeks trafienia = -2 - indeks rampy. */
-function rayRamp(rp, idx, ox, oy, oz, dx, dy, dz) {
+// półprzestrzenie klina rampy w układzie lokalnym: n·p ≤ d; [nx, ny, nz] (d liczone per rampa)
+const WEDGE_N = new Float64Array([1, 0, 0, -1, 0, 0, 0, 0, 1, 0, 0, -1, 0, -1, 0, 0, 1, 0]);
+// scratch klina: d per płaszczyzna (6) + pochylenie k
+const WEDGE_D = new Float64Array(7);
+
+/**
+ * Promień RI vs pełny klin rampy (wypukły: slab X, slab Z, y ≥ 0, y ≤ y0 + (lz+hz)·k) — Cyrus–Beck.
+ * Start wewnątrz klina → ignoruj (jak dla brył). Indeks trafienia = -2 - indeks rampy.
+ */
+function rayRamp(rp, idx) {
+  const ox = RI[0]; const oy = RI[1]; const oz = RI[2];
+  const dx = RI[3]; const dy = RI[4]; const dz = RI[5];
   const rx = ox - rp.cx;
   const rz = oz - rp.cz;
   const c = rp.cos;
@@ -320,24 +439,59 @@ function rayRamp(rp, idx, ox, oy, oz, dx, dy, dz) {
   const ldx = dx * c - dz * sn;
   const ldz = dx * sn + dz * c;
   const k = (rp.y1 - rp.y0) / (2 * rp.hz);
-  const denom = dy - ldz * k;
-  if (denom > -EPS && denom < EPS) return;
-  const t = (rp.y0 + (loz + rp.hz) * k - oy) / denom;
-  if (t < 0 || t >= RAY[R_BEST]) return;
-  const lx = lox + ldx * t;
-  const lz = loz + ldz * t;
-  if (lx < -rp.hx || lx > rp.hx || lz < -rp.hz || lz > rp.hz) return;
-  // normalna lokalna (0, 1, -k) znormalizowana, zwrócona przeciw promieniowi
-  const inv = 1 / Math.sqrt(1 + k * k);
-  let ny = inv;
-  let nlz = -k * inv;
-  if (dy * ny + ldz * nlz > 0) { ny = -ny; nlz = -nlz; }
-  RAY[R_BEST] = t;
+  WEDGE_D[0] = rp.hx; WEDGE_D[1] = rp.hx; WEDGE_D[2] = rp.hz; WEDGE_D[3] = rp.hz; WEDGE_D[4] = 0;
+  WEDGE_D[5] = rp.y0 + rp.hz * k;
+  let tIn = -Infinity;
+  let tOut = Infinity;
+  let plane = -1;
+  for (let p = 0; p < 6; p++) {
+    const nx = WEDGE_N[p * 3];
+    const ny = WEDGE_N[p * 3 + 1];
+    const nz = p === 5 ? -k : WEDGE_N[p * 3 + 2];
+    const denom = nx * ldx + ny * dy + nz * ldz;
+    const num = WEDGE_D[p] - (nx * lox + ny * oy + nz * loz);
+    if (denom > -EPS && denom < EPS) {
+      if (num < 0) return;
+      continue;
+    }
+    const t = num / denom;
+    if (denom < 0) { if (t > tIn) { tIn = t; plane = p; } } else if (t < tOut) tOut = t;
+  }
+  if (tIn > tOut || tIn < 0 || tIn >= RAY[R_BEST] || plane < 0) return;
+  let nlx = WEDGE_N[plane * 3];
+  let nly = WEDGE_N[plane * 3 + 1];
+  let nlz = plane === 5 ? -k : WEDGE_N[plane * 3 + 2];
+  if (plane === 5) {
+    const inv = 1 / Math.sqrt(1 + k * k);
+    nly *= inv; nlz *= inv;
+  }
+  RAY[R_BEST] = tIn;
   RAY[R_IDX] = -2 - idx;
   RAY[R_FOUND] = 1;
-  RAY[R_NX] = nlz * sn;
-  RAY[R_NY] = ny;
-  RAY[R_NZ] = nlz * c;
+  RAY[R_NX] = nlx * c + nlz * sn;
+  RAY[R_NY] = nly;
+  RAY[R_NZ] = -nlx * sn + nlz * c;
+}
+
+/** Czy punkt PT leży w bryle (OBB × [y0,y1], brzegi włącznie). Bez alokacji. */
+const PT = new Float64Array(3);
+function pointInSolid(world) {
+  const x = PT[0]; const y = PT[1]; const z = PT[2];
+  BOX[0] = x; BOX[1] = z; BOX[2] = x; BOX[3] = z;
+  const g = world.grid;
+  const solids = world.solids;
+  const n = querySolidsBox(g, BOX);
+  const out = g.outSolids;
+  for (let k = 0; k < n; k++) {
+    const s = solids[out[k]];
+    if (y < s.y0 || y > s.y1) continue;
+    const dx = x - s.cx;
+    const dz = z - s.cz;
+    const lx = dx * s.cos - dz * s.sin;
+    const lz = dx * s.sin + dz * s.cos;
+    if (lx >= -s.hx && lx <= s.hx && lz >= -s.hz && lz <= s.hz) return true;
+  }
+  return false;
 }
 
 /**
@@ -347,10 +501,24 @@ function rayRamp(rp, idx, ox, oy, oz, dx, dy, dz) {
  * Bez alokacji.
  */
 export function raycastWorld(world, ox, oy, oz, dx, dy, dz, maxDist, outHit) {
-  const len = Math.sqrt(dx * dx + dy * dy + dz * dz);
+  RI[0] = ox; RI[1] = oy; RI[2] = oz; RI[3] = dx; RI[4] = dy; RI[5] = dz; RI[6] = maxDist;
+  return raycastInternal(world, outHit);
+}
+
+/** Wewnętrzny raycast: argumenty w RI (kierunek normalizowany tutaj, w miejscu). */
+function raycastInternal(world, outHit) {
   outHit.hit = false;
+  const ox = RI[0];
+  const oy = RI[1];
+  const oz = RI[2];
+  let dx = RI[3];
+  let dy = RI[4];
+  let dz = RI[5];
+  const maxDist = RI[6];
+  const len = Math.sqrt(dx * dx + dy * dy + dz * dz);
   if (len < EPS || !(maxDist > 0)) return false;
   dx /= len; dy /= len; dz /= len;
+  RI[3] = dx; RI[4] = dy; RI[5] = dz;
   RAY[R_BEST] = maxDist;
   RAY[R_FOUND] = 0;
   RAY[R_IDX] = -1;
@@ -358,10 +526,10 @@ export function raycastWorld(world, ox, oy, oz, dx, dy, dz, maxDist, outHit) {
   // podłoga / sufit
   if (dy < -EPS && oy >= 0) {
     const t = -oy / dy;
-    if (t < RAY[R_BEST]) setFloorCeilHit(t, 1);
+    if (t < RAY[R_BEST]) { RAY[R_BEST] = t; setFloorCeilHit(1); }
   } else if (dy > EPS && oy <= world.ceiling) {
     const t = (world.ceiling - oy) / dy;
-    if (t < RAY[R_BEST]) setFloorCeilHit(t, -1);
+    if (t < RAY[R_BEST]) { RAY[R_BEST] = t; setFloorCeilHit(-1); }
   }
 
   // DDA po kubełkach w XZ
@@ -372,8 +540,10 @@ export function raycastWorld(world, ox, oy, oz, dx, dy, dz, maxDist, outHit) {
   const sStamp = g.solidStamp;
   const rStamp = g.rampStamp;
   const cs = g.cell;
-  let col = cellCol(g, ox);
-  let row = cellRow(g, oz);
+  let col = Math.floor((ox - g.minX) * g.inv);
+  let row = Math.floor((oz - g.minZ) * g.inv);
+  col = col < 0 ? 0 : col >= g.cols ? g.cols - 1 : col;
+  row = row < 0 ? 0 : row >= g.rows ? g.rows - 1 : row;
   const stepC = dx > 0 ? 1 : -1;
   const stepR = dz > 0 ? 1 : -1;
   const adx = dx < 0 ? -dx : dx;
@@ -399,13 +569,13 @@ export function raycastWorld(world, ox, oy, oz, dx, dy, dz, maxDist, outHit) {
       const i = g.solidItems[j];
       if (sStamp[i] === st) continue;
       sStamp[i] = st;
-      rayObb(solids[i], i, ox, oy, oz, dx, dy, dz);
+      rayObb(solids[i], i);
     }
     for (let j = g.rampStart[kCell], e = g.rampStart[kCell + 1]; j < e; j++) {
       const i = g.rampItems[j];
       if (rStamp[i] === st) continue;
       rStamp[i] = st;
-      rayRamp(ramps[i], i, ox, oy, oz, dx, dy, dz);
+      rayRamp(ramps[i], i);
     }
     // przejście do następnego kubełka
     if (tMaxX < tMaxZ) {
@@ -438,14 +608,20 @@ export function raycastWorld(world, ox, oy, oz, dx, dy, dz, maxDist, outHit) {
 
 const segHit = createHit();
 
-/** Linia wzroku A→B (true = nic nie przesłania). Bez alokacji. */
+/**
+ * Linia wzroku A→B (true = nic nie przesłania). Symetryczna: odcinek, którego którykolwiek koniec leży w bryle,
+ * jest zasłonięty (A w bryle → false wprost; B w bryle → promień z A trafia w tę bryłę). Bez alokacji.
+ */
 export function segmentClear(world, ax, ay, az, bx, by, bz) {
   const dx = bx - ax;
   const dy = by - ay;
   const dz = bz - az;
   const len = Math.sqrt(dx * dx + dy * dy + dz * dz);
   if (len < 1e-6) return true;
-  return !raycastWorld(world, ax, ay, az, dx, dy, dz, len - 1e-4, segHit);
+  PT[0] = ax; PT[1] = ay; PT[2] = az;
+  if (pointInSolid(world)) return false;
+  RI[0] = ax; RI[1] = ay; RI[2] = az; RI[3] = dx; RI[4] = dy; RI[5] = dz; RI[6] = len - 1e-4;
+  return !raycastInternal(world, segHit);
 }
 
 export function createHit() {

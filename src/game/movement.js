@@ -43,7 +43,8 @@ export function stepMovement(body, input, dt, world) {
 
   const onGround = body.onGround;
   if (hasInput) {
-    const speed = input.sprint && mz > 0 ? P.sprintSpeed : P.walkSpeed;
+    // sprint tylko do przodu (przewaga składowej przód nad bokiem)
+    const speed = input.sprint && mz > 0 && mz >= (mx < 0 ? -mx : mx) ? P.sprintSpeed : P.walkSpeed;
     const tx = wx * speed;
     const tz = wz * speed;
     const ddx = tx - body.vx;

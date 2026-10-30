@@ -73,8 +73,9 @@ function buildBodyGeometry() {
     // ramiona: fazer na wysokości barku (wylot = CONFIG.weapon.muzzleOffset względem oka — stąd startują wiązki botów)
     limb(0.25, 1.45, 0.0, 0.28, 1.22, -0.08, 0.06),
     limb(0.28, 1.22, -0.08, 0.2, 1.36, -0.15, 0.055),
-    limb(-0.25, 1.45, 0.0, -0.08, 1.2, -0.24, 0.06),
-    limb(-0.08, 1.2, -0.24, 0.16, 1.38, -0.33, 0.055),
+    // lewe przedramię nisko pod sensorem przednim (sensor ma być widoczny z przodu)
+    limb(-0.25, 1.45, 0.0, -0.17, 1.08, -0.2, 0.06),
+    limb(-0.17, 1.08, -0.2, 0.15, 1.37, -0.38, 0.055),
     // szyja + hełm + wizjer (emisyjny, łuk z przodu)
     part(new THREE.CylinderGeometry(0.06, 0.07, 0.1, 8), 0, trs(0, 1.64, 0)),
     part(new THREE.SphereGeometry(0.145, 14, 10), 0, trs(0, 1.75, 0.01, 0, 0, 0, 1, 1.02, 1.08)),

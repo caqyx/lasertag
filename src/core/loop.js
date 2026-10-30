@@ -12,6 +12,7 @@ export function createLoop({
 }) {
   const dt = 1 / hz;
   const maxFrameDt = dt * maxSubSteps; // dłuższe klatki są przycinane (czas „gubiony")
+  const EPS = dt * 1e-4; // tolerancja: znaczniki rAF dokładnie co 1/hz dają 1 krok na klatkę
   let acc = 0;
   let last = -1;
   let handle = 0;
@@ -25,9 +26,10 @@ export function createLoop({
     if (frameDt > maxFrameDt) frameDt = maxFrameDt;
     acc += frameDt;
     let n = 0;
-    while (acc >= dt && n < maxSubSteps) {
+    while (acc + EPS >= dt && n < maxSubSteps) {
       step(dt);
       acc -= dt;
+      if (acc < 0) acc = 0;
       n++;
     }
     if (acc >= dt) acc = acc % dt; // zabezpieczenie (nie powinno wystąpić po clampie)
@@ -37,7 +39,13 @@ export function createLoop({
 
   function onFrame(t) {
     if (!running) return;
-    tick(t); // wyjątek zatrzymuje pętlę (jeden błąd w konsoli zamiast lawiny)
+    try {
+      tick(t);
+    } catch (err) {
+      running = false; // wyjątek zatrzymuje pętlę (jeden błąd zamiast lawiny); start() może ją wznowić
+      handle = 0;
+      throw err;
+    }
     if (running) handle = raf(onFrame);
   }
 

@@ -149,7 +149,7 @@ test('start/stop z shimem requestAnimationFrame; restart nie nadrabia przerwy', 
   }
 });
 
-test('BUG: przy idealnym 60 Hz (t = i·1000/60) każda klatka powinna dać dokładnie 1 krok', { todo: 'brak tolerancji epsilon w akumulatorze → wzorzec kroków 1,1,0,2,… (~60% klatek ma 0 lub 2 kroki)' }, () => {
+test('BUG: przy idealnym 60 Hz (t = i·1000/60) każda klatka powinna dać dokładnie 1 krok', () => {
   const { loop } = make();
   const t0 = 1234.5;
   loop.tick(t0);
@@ -158,7 +158,7 @@ test('BUG: przy idealnym 60 Hz (t = i·1000/60) każda klatka powinna dać dokł
   assert.deepEqual(hist, { 0: 0, 1: 600, 2: 0 });
 });
 
-test('BUG: wyjątek w step() zostawia running=true bez zaplanowanej klatki — start() nie wznawia pętli', { todo: 'onFrame nie resetuje running przy wyjątku; start() wraca wcześnie' }, () => {
+test('BUG: wyjątek w step() zostawia running=true bez zaplanowanej klatki — start() nie wznawia pętli', () => {
   const queue = [];
   let boom = true;
   const loop = createLoop({

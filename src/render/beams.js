@@ -49,6 +49,7 @@ uniform float uTaperMin;
 uniform float uMuzzleSize;
 uniform float uMuzzleTime;
 uniform float uEndSize;
+uniform float uNearSize;
 varying vec2 vQ;
 varying float vKind;
 varying float vK;
@@ -80,6 +81,8 @@ void main() {
     vec3 C = kind < 1.5 ? A : B;
     float size = kind < 1.5 ? uMuzzleSize * (0.7 + 0.6 * k) : uEndSize * (0.8 + 0.6 * k);
     mv = viewMatrix * vec4(C, 1.0);
+    // przy samej kamerze (własna lufa) błysk mniejszy — nie zasłania pół ekranu
+    size *= clamp(-mv.z / uNearSize, 0.3, 1.0);
     mv.xy += position.xy * size;
     vQ = position.xy;
   }
@@ -206,8 +209,8 @@ void main() {
     col = (vCol * g + vec3(hot) * 1.5) * uFlashI * fade * vPow;
   } else {
     float a = abs(vQ.y);
-    float across = 1.0 - a;
-    float head = 0.35 + 0.65 * vQ.x;
+    float across = (1.0 - a) * (1.0 - a);
+    float head = sin(3.14159 * vQ.x) * (0.4 + 0.6 * vQ.x);
     vec3 c = mix(vec3(1.0, 0.95, 0.9), vCol, smoothstep(0.0, 0.6, vK));
     col = c * across * head * uSparkI * (1.0 - vK) * mix(0.5, 1.0, vPow);
   }
@@ -322,6 +325,7 @@ export function createBeams(scene, capacity = CONFIG.pools.beams, sparkCapacity 
     uMuzzleSize: { value: FX.muzzleFlashSize },
     uMuzzleTime: { value: FX.muzzleFlashTime },
     uEndSize: { value: FX.endFlashSize },
+    uNearSize: { value: FX.flashNearDist },
     uCore: { value: FX.beamCore },
     uCoreI: { value: FX.beamCoreIntensity },
     uGlowI: { value: FX.beamGlowIntensity },

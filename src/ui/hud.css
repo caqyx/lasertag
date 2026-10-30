@@ -164,6 +164,7 @@
 }
 .lt-heat.warn .lt-heat-fill { box-shadow: 0 0 10px rgba(255, 120, 0, 0.8); }
 .lt-heat.warn .lt-heat-track { box-shadow: 0 0 8px rgba(255, 120, 0, 0.5); }
+.lt-heat.warn .lt-label { color: #ffb000; opacity: 1; text-shadow: 0 0 6px rgba(255, 176, 0, 0.7); }
 .lt-heat.over .lt-heat-fill { background: var(--hot); box-shadow: 0 0 12px var(--hot); animation: lt-blink 0.2s steps(2, jump-none) infinite; }
 .lt-heat.over .lt-heat-warn { visibility: visible; animation: lt-blink 0.2s steps(2, jump-none) infinite; }
 .lt-heat.over { border-color: rgba(255, 42, 18, 0.7); box-shadow: 0 0 16px rgba(255, 42, 18, 0.4); }

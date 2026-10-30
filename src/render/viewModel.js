@@ -41,7 +41,7 @@ function buildGeometry() {
     part(new THREE.BoxGeometry(0.06, 0.074, 0.055), 0, 0, -0.004, 0.075),
     // lufa + pierścień wylotu
     part(new THREE.CylinderGeometry(0.014, 0.016, 0.05, 12), 0, 0, 0, 0.025, Math.PI / 2),
-    part(new THREE.CylinderGeometry(0.0175, 0.0175, 0.008, 12), 3, 0, 0, 0.003, Math.PI / 2),
+    part(new THREE.CylinderGeometry(0.019, 0.019, 0.012, 12), 3, 0, 0, 0.004, Math.PI / 2),
     // emiter na górze (obudowa) + pasek ciepła na górnej ścianie
     part(new THREE.BoxGeometry(0.03, 0.012, 0.17), 0, 0, 0.032, 0.18),
     part(new THREE.BoxGeometry(0.018, 0.004, 0.15), 2, 0, 0.0395, 0.18, 0, 0.255, 0.105),
@@ -71,11 +71,14 @@ function buildMaterial(uniforms) {
       .replace('#include <common>', [
         '#include <common>',
         'uniform vec3 uColor; uniform vec3 uHot; uniform float uHeat; uniform float uBlink; uniform float uFlash;',
-        'uniform float uTrimI; uniform float uHeatI; uniform float uFlashI;',
+        'uniform float uTrimI; uniform float uHeatI; uniform float uFlashI; uniform float uRimI; uniform vec3 uFill;',
         'varying float vPart; varying float vBar;',
       ].join('\n'))
       .replace('#include <emissivemap_fragment>', [
         '#include <emissivemap_fragment>',
+        // sztuczne światło od góry (układ widoku = układ kamery) + fresnel w kolorze gracza: bryła czytelna w ciemności
+        'float vmRim = pow(1.0 - clamp(dot(normal, normalize(vViewPosition)), 0.0, 1.0), 2.0);',
+        'totalEmissiveRadiance += uFill * (0.35 + 0.65 * clamp(normal.y, 0.0, 1.0)) + uColor * vmRim * uRimI;',
         'if (vPart > 0.5 && vPart < 1.5) totalEmissiveRadiance += uColor * uTrimI * (1.0 + uFlash);',
         'else if (vPart > 1.5 && vPart < 2.5) {',
         '  float on = step(vBar, uHeat);',
@@ -100,6 +103,8 @@ export function createViewModel(camera, scene) {
     uTrimI: { value: VM.trimIntensity },
     uHeatI: { value: VM.heatIntensity },
     uFlashI: { value: VM.flashIntensity },
+    uRimI: { value: VM.rimIntensity },
+    uFill: { value: new THREE.Color(VM.fillColor) },
   };
   const geo = buildGeometry();
   const mat = buildMaterial(uniforms);

@@ -476,7 +476,7 @@ test('raycast vs rampa: trafienie powierzchni od góry, indeks −2−i, normaln
   assert.equal(hit.index, -1);
 });
 
-test('BUG: raycast przechodzi przez boki/koniec klina rampy, które blokują ruch', { todo: 'rayRamp testuje tylko płaszczyznę powierzchni; boki i tył klina (kolizyjne dla ruchu) nie zatrzymują promienia' }, () => {
+test('BUG: raycast przechodzi przez boki/koniec klina rampy, które blokują ruch', () => {
   const w = mk({ ramps: [RAMP] });
   const hit = createHit();
   // poziomo w bok rampy na wysokości 0.5, gdzie powierzchnia ma 1.6 m: ruch blokuje (test wyżej), promień nie
@@ -505,7 +505,7 @@ test('segmentClear: symetryczny dla punktów poza bryłami; zerowa długość �
   assert.equal(segmentClear(uv, 1, 1, 1, 1, 1, 1), true);
 });
 
-test('segmentClear gdy koniec odcinka leży w bryle — asymetria (udokumentowane „start w bryle → ignoruj”)', { todo: 'segmentClear(A w bryle, B) = true, a segmentClear(B, A) = false; ryzyko dla M1 (np. lufa w ścianie przy przyklejeniu do niej)' }, () => {
+test('segmentClear gdy koniec odcinka leży w bryle — asymetria (udokumentowane „start w bryle → ignoruj”)', () => {
   const w = mk({ walls: [{ x: 0, z: 0, w: 2, d: 2, h: 3 }] });
   assert.equal(segmentClear(w, 0, 1, 0, 5, 1, 0), segmentClear(w, 5, 1, 0, 0, 1, 0));
 });
@@ -537,7 +537,7 @@ test('moveBody: dt ≤ 0 lub NaN — brak zmian', () => {
   }
 });
 
-test('BUG: postać przeciska się przez szczelinę węższą niż średnica (0.65 m < 0.70 m)', { todo: 'resolveHorizontal: sekwencyjne pushOut + maxIterations=4 oscylują między dwiema ścianami; resztkowa penetracja ~0.05 m i przejście. Szczelina 0.5 m blokuje.' }, () => {
+test('BUG: postać przeciska się przez szczelinę węższą niż średnica (0.65 m < 0.70 m)', () => {
   const gap = 0.65;
   const w = mk({ walls: [{ x: -1 - gap / 2, z: 0, w: 2, d: 1, h: 3 }, { x: 1 + gap / 2, z: 0, w: 2, d: 1, h: 3 }] });
   const b = body(0, -2);

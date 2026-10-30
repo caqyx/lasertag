@@ -5,7 +5,7 @@ import { createLoop } from './core/loop.js';
 import { MAPS } from './world/maps/index.js';
 import { buildWorld } from './world/mapgen.js';
 import { createGraphics } from './render/graphics.js';
-import { applyDebugCam } from './render/debugCams.js';
+import { applyDebugCam, listDebugCams } from './render/debugCams.js';
 import { createBody, stepMovement } from './game/movement.js';
 import { createInputState } from './game/input/inputState.js';
 import { createKeyboardMouse } from './game/input/keyboardMouse.js';
@@ -123,6 +123,7 @@ window.__lt = {
     return ok;
   },
   setPreset: (n) => graphics.setPreset(n),
+  cams: () => listDebugCams(world).map((c) => c.name),
   world: { id: world.id, solids: world.solids.length },
 };
 

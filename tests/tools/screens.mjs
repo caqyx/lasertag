@@ -48,7 +48,7 @@ try {
         const info = await page.evaluate(() => ({ ...window.__lt.info() }));
         const name = cams ? cams[i] : String(i);
         const file = `${out}/${map}-${preset}-${i}-${name}.png`;
-        await page.screenshot({ path: `${ROOT}/${file}` });
+        await page.screenshot({ path: `${ROOT}/${file}`, timeout: 120000 });
         report[`${map}/${preset}/${name}`] = { file, info };
         console.log(file, JSON.stringify(info));
       }

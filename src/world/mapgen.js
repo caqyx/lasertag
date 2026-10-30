@@ -288,12 +288,29 @@ export function nextStamp(g) {
   return g.stamp;
 }
 
-/** Indeksy brył, których kubełki przecinają AABB → g.outSolids[0..n). Zwraca n. Bez alokacji. */
-export function querySolids(g, minX, minZ, maxX, maxZ) {
+// Wewnętrzny bufor AABB dla nakładek querySolids/queryRamps.
+const QBOX = new Float64Array(4);
+
+/**
+ * Wspólne: indeksy z kubełków przecinających AABB box = [minX, minZ, maxX, maxZ] → out[0..n). Zwraca n.
+ * Argumenty geometryczne czytane z Float64Array — przekazywanie świeżych doubli do nie-inline'owanej funkcji
+ * alokuje w V8 HeapNumber; tu przekazujemy tylko referencje.
+ */
+function queryBuckets(g, box, start, items, stamps, out) {
+  if (items.length === 0) return 0;
   const st = nextStamp(g);
-  const c0 = cellCol(g, minX); const c1 = cellCol(g, maxX);
-  const r0 = cellRow(g, minZ); const r1 = cellRow(g, maxZ);
-  const start = g.solidStart; const items = g.solidItems; const stamps = g.solidStamp; const out = g.outSolids;
+  const inv = g.inv;
+  const cMax = g.cols - 1;
+  const rMax = g.rows - 1;
+  let c0 = Math.floor((box[0] - g.minX) * inv);
+  let r0 = Math.floor((box[1] - g.minZ) * inv);
+  let c1 = Math.floor((box[2] - g.minX) * inv);
+  let r1 = Math.floor((box[3] - g.minZ) * inv);
+  c0 = c0 < 0 ? 0 : c0 > cMax ? cMax : c0;
+  c1 = c1 < 0 ? 0 : c1 > cMax ? cMax : c1;
+  r0 = r0 < 0 ? 0 : r0 > rMax ? rMax : r0;
+  r1 = r1 < 0 ? 0 : r1 > rMax ? rMax : r1;
+  const cap = out.length;
   let n = 0;
   for (let r = r0; r <= r1; r++) {
     for (let c = c0; c <= c1; c++) {
@@ -302,33 +319,33 @@ export function querySolids(g, minX, minZ, maxX, maxZ) {
         const i = items[j];
         if (stamps[i] === st) continue;
         stamps[i] = st;
-        if (n < out.length) out[n++] = i;
+        if (n < cap) out[n++] = i;
       }
     }
   }
   return n;
 }
 
-/** Jak querySolids, dla ramp → g.outRamps. */
+/** Bryły w AABB box (Float64Array(4): minX, minZ, maxX, maxZ) → g.outSolids[0..n). Zwraca n. Bez alokacji. */
+export function querySolidsBox(g, box) {
+  return queryBuckets(g, box, g.solidStart, g.solidItems, g.solidStamp, g.outSolids);
+}
+
+/** Rampy w AABB box → g.outRamps[0..n). Zwraca n. Bez alokacji. */
+export function queryRampsBox(g, box) {
+  return queryBuckets(g, box, g.rampStart, g.rampItems, g.rampStamp, g.outRamps);
+}
+
+/** Nakładka: indeksy brył, których kubełki przecinają AABB → g.outSolids[0..n). Zwraca n. Nie zagnieżdżać zapytań. */
+export function querySolids(g, minX, minZ, maxX, maxZ) {
+  QBOX[0] = minX; QBOX[1] = minZ; QBOX[2] = maxX; QBOX[3] = maxZ;
+  return querySolidsBox(g, QBOX);
+}
+
+/** Nakładka: jak querySolids, dla ramp → g.outRamps. */
 export function queryRamps(g, minX, minZ, maxX, maxZ) {
-  if (g.rampItems.length === 0) return 0;
-  const st = nextStamp(g);
-  const c0 = cellCol(g, minX); const c1 = cellCol(g, maxX);
-  const r0 = cellRow(g, minZ); const r1 = cellRow(g, maxZ);
-  const start = g.rampStart; const items = g.rampItems; const stamps = g.rampStamp; const out = g.outRamps;
-  let n = 0;
-  for (let r = r0; r <= r1; r++) {
-    for (let c = c0; c <= c1; c++) {
-      const k = r * g.cols + c;
-      for (let j = start[k], e = start[k + 1]; j < e; j++) {
-        const i = items[j];
-        if (stamps[i] === st) continue;
-        stamps[i] = st;
-        if (n < out.length) out[n++] = i;
-      }
-    }
-  }
-  return n;
+  QBOX[0] = minX; QBOX[1] = minZ; QBOX[2] = maxX; QBOX[3] = maxZ;
+  return queryRampsBox(g, QBOX);
 }
 
 // ---------------------------------------------------------------------------------------------
