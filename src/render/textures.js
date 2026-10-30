@@ -1,8 +1,10 @@
 // Proceduralne tekstury (CanvasTexture) — farba UV ×4 style, podłoga, sufit, dym (SPEC §4/§5).
 // Wszystko rysowane na canvasie z ziarna (seed) — zero zewnętrznych zasobów.
 // createTextures({ size, anisotropy, palette, seed }) → { get(name), paint(style), disposeAll(), size }
-// Nazwy: 'paint:stripes' | 'paint:geo' | 'paint:splatter' | 'paint:grid' |
+// Nazwy: 'paint:stripes' | 'paint:geo' | 'paint:splatter' | 'paint:grid' | 'wall:color' |
 //        'floor:color' | 'floor:rough' | 'floor:emissive' | 'ceiling' | 'smoke'
+// Farba UV to MASKI kanałów (liniowe): R = kolor A ściany, G = kolor B ściany, B = akcent (drobne elementy, ~8%).
+// Kolory przypisuje shader ścian per bryła (arenaBuilder) → 1–2 kolory przewodnie na ścianę, akcent rzadko.
 import * as THREE from 'three';
 import { CONFIG } from '../config.js';
 
@@ -47,7 +49,8 @@ export function createTextures({ size, anisotropy, palette, seed }) {
     let tex = cache.get(name);
     if (tex) return tex;
     const rng = makeRng((seed ^ hashString(name)) >>> 0);
-    if (name.startsWith('paint:')) tex = finish(drawPaint(name.slice(6), S, palette, rng));
+    if (name.startsWith('paint:')) tex = finish(drawPaint(name.slice(6), S, palette, rng), { srgb: false });
+    else if (name === 'wall:color') tex = finish(drawWallColor(S, rng));
     else if (name === 'floor:color') tex = finish(drawFloorColor(S, rng));
     else if (name === 'floor:rough') tex = finish(drawFloorRough(S, rng), { srgb: false });
     else if (name === 'floor:emissive') tex = finish(drawFloorEmissive(S, palette));
@@ -78,10 +81,11 @@ function makeCanvas(w, h) {
   return c;
 }
 
-function paletteColors(palette) {
-  // wagi: primary/secondary/uv przewodnie, accent rzadko
-  return [palette.primary, palette.secondary, palette.uv, palette.primary, palette.secondary, palette.uv, palette.accent];
-}
+// maski kanałów: A (R) częściej niż B (G); akcent (B) tylko w drobnych elementach
+const MASK_A = '#ff0000', MASK_B = '#00ff00', MASK_ACC = '#0000ff';
+function paletteColors() { return [MASK_A, MASK_A, MASK_A, MASK_B, MASK_B]; }
+// kolor drobnego detalu: ~8% akcent
+function pickD(rng, cols) { return rng() < T.accentShare ? MASK_ACC : pick(rng, cols); }
 
 function pick(rng, arr) { return arr[Math.floor(rng() * arr.length) % arr.length]; }
 function rr(rng, a, b) { return a + (b - a) * rng(); }
@@ -100,7 +104,7 @@ function drawPaint(style, S, palette, rng) {
   g.fillStyle = '#000';
   g.fillRect(0, 0, W, H);
   const ppm = W / T.paintMeters[0]; // pikseli na metr
-  const cols = paletteColors(palette);
+  const cols = paletteColors();
   g.lineJoin = 'miter';
   g.lineCap = 'butt';
   if (style === 'stripes') paintStripes(g, W, H, ppm, cols, rng);
@@ -167,15 +171,17 @@ function paintStripes(g, W, H, ppm, cols, rng) {
     const y = rng() * H;
     const x = rng() * W;
     const l = rr(rng, 0.4, 2.5) * ppm;
-    g.fillStyle = pick(rng, cols);
+    g.fillStyle = pickD(rng, cols);
     wrapX(W, (dx) => g.fillRect(x + dx, y, l, Math.max(1, 0.006 * ppm)));
   }
 }
 
 function paintGeo(g, W, H, ppm, cols, rng) {
+  // mural skupiony w ~1/2 kafla (różna gęstość na różnych ścianach dzięki losowemu offsetowi u), reszta rzadko
+  const muralX = rng() * W, muralW = rr(rng, 1.6, 2.6) * ppm;
   const shapes = 16 + Math.floor(rng() * 8);
   for (let i = 0; i < shapes; i++) {
-    const x = rng() * W;
+    const x = rng() < 0.8 ? muralX + (rng() - 0.5) * muralW : rng() * W;
     const y = rr(rng, 0.12, 0.88) * H;
     const r = rr(rng, 0.12, 0.6) * ppm;
     const lw = (rng() < 0.35 ? rr(rng, 0.006, 0.014) : rr(rng, 0.025, 0.06)) * ppm;
@@ -223,10 +229,10 @@ function paintGeo(g, W, H, ppm, cols, rng) {
       g.restore();
     });
   }
-  // kilka pełnych, małych trójkątów — kontrast grubości
+  // kilka pełnych, małych trójkątów — kontrast grubości (akcenty)
   for (let i = 0; i < 10; i++) {
-    const x = rng() * W, y = rr(rng, 0.1, 0.9) * H, r = rr(rng, 0.04, 0.12) * ppm;
-    const col = pick(rng, cols);
+    const x = muralX + (rng() - 0.5) * muralW * 1.3, y = rr(rng, 0.1, 0.9) * H, r = rr(rng, 0.03, 0.08) * ppm;
+    const col = pickD(rng, cols);
     wrapX(W, (dx) => {
       g.fillStyle = col;
       g.beginPath();
@@ -237,51 +243,62 @@ function paintGeo(g, W, H, ppm, cols, rng) {
 }
 
 function paintSplatter(g, W, H, ppm, cols, rng) {
-  const splats = 6 + Math.floor(rng() * 4);
-  for (let i = 0; i < splats; i++) {
-    const x = rng() * W;
-    const y = rr(rng, 0.15, 0.75) * H;
-    const r = rr(rng, 0.06, 0.2) * ppm;
-    const col = pick(rng, cols);
-    const sat = 14 + Math.floor(rng() * 20);
-    const drips = 2 + Math.floor(rng() * 5);
-    // parametry losowane z góry (wrapX rysuje 3×)
-    const satP = [];
-    for (let k = 0; k < sat; k++) {
-      const a = rng() * Math.PI * 2;
-      const d = r * rr(rng, 0.7, 2.6);
-      satP.push(Math.cos(a) * d, Math.sin(a) * d * 0.85, r * rr(rng, 0.03, 0.22) * (1.6 - d / (r * 2.6)));
-    }
-    const dripP = [];
-    for (let k = 0; k < drips; k++) {
-      dripP.push(rr(rng, -0.8, 0.8) * r, rr(rng, 0.04, 0.12) * r + 0.004 * ppm, rr(rng, 0.2, 0.9) * ppm);
-    }
-    const lobes = [];
-    for (let k = 0; k < 7; k++) {
-      const a = rng() * Math.PI * 2;
-      lobes.push(Math.cos(a) * r * 0.55, Math.sin(a) * r * 0.55, r * rr(rng, 0.35, 0.65));
-    }
-    wrapX(W, (dx) => {
-      g.fillStyle = col;
-      g.beginPath(); g.arc(x + dx, y, r, 0, Math.PI * 2); g.fill();
-      for (let k = 0; k < lobes.length; k += 3) {
-        g.beginPath(); g.arc(x + dx + lobes[k], y + lobes[k + 1], lobes[k + 2], 0, Math.PI * 2); g.fill();
+  // 2–3 skupiska małych rozbryzgów (różne kształty, obroty, kilka kropel), pył tylko wokół plam; reszta kafla czysta
+  const clusters = 2 + Math.floor(rng() * 2);
+  for (let c = 0; c < clusters; c++) {
+    const cx = rng() * W, cy = rr(rng, 0.25, 0.7) * H;
+    const spread = rr(rng, 0.5, 1.1) * ppm;
+    const colA = pick(rng, cols);
+    const n = 5 + Math.floor(rng() * 7);
+    for (let i = 0; i < n; i++) {
+      const x = cx + (rng() - 0.5) * spread * 2;
+      const y = Math.min(H * 0.85, Math.max(H * 0.1, cy + (rng() - 0.5) * spread));
+      const r = rr(rng, 0.025, 0.075) * ppm;
+      const col = rng() < 0.7 ? colA : pickD(rng, cols);
+      const kind = Math.floor(rng() * 3); // 0 kleks z kroplami, 1 gwiazda (uderzenie), 2 smuga (rozbryzg pod kątem)
+      const rot = rng() * Math.PI * 2;
+      const stretch = kind === 2 ? rr(rng, 1.8, 3.2) : rr(rng, 0.8, 1.3);
+      const spikes = [];
+      const ns = kind === 1 ? 7 + Math.floor(rng() * 6) : 3 + Math.floor(rng() * 3);
+      for (let k = 0; k < ns; k++) {
+        const a = rng() * Math.PI * 2;
+        spikes.push(a, r * rr(rng, kind === 1 ? 1.3 : 0.9, kind === 1 ? 2.4 : 1.4), r * rr(rng, 0.12, 0.3));
       }
-      for (let k = 0; k < satP.length; k += 3) {
-        g.beginPath(); g.arc(x + dx + satP[k], y + satP[k + 1], Math.max(1, satP[k + 2]), 0, Math.PI * 2); g.fill();
+      const dust = [];
+      for (let k = 0; k < 10 + Math.floor(rng() * 14); k++) {
+        const a = rng() * Math.PI * 2, d = r * rr(rng, 1.3, 4.0);
+        dust.push(Math.cos(a) * d, Math.sin(a) * d, Math.max(0.6, r * rr(rng, 0.04, 0.16)));
       }
-      for (let k = 0; k < dripP.length; k += 3) {
-        const dxk = x + dx + dripP[k], w = dripP[k + 1], len = dripP[k + 2];
-        g.fillRect(dxk - w / 2, y, w, len);
-        g.beginPath(); g.arc(dxk, y + len, w * 0.9, 0, Math.PI * 2); g.fill();
-      }
-    });
-  }
-  // drobny pył farby
-  for (let i = 0; i < 260; i++) {
-    const x = rng() * W, y = rng() * H, r = rr(rng, 0.002, 0.012) * ppm;
-    g.fillStyle = pick(rng, cols);
-    g.beginPath(); g.arc(x, y, Math.max(0.7, r), 0, Math.PI * 2); g.fill();
+      const drips = kind === 0 ? Math.floor(rng() * 3) : 0;
+      const dripP = [];
+      for (let k = 0; k < drips; k++) dripP.push(rr(rng, -0.6, 0.6) * r, Math.max(1, r * rr(rng, 0.12, 0.22)), rr(rng, 0.08, 0.45) * ppm);
+      wrapX(W, (dx) => {
+        g.fillStyle = col;
+        g.save();
+        g.translate(x + dx, y);
+        g.rotate(rot);
+        g.scale(stretch, 1 / Math.sqrt(stretch));
+        g.beginPath(); g.arc(0, 0, r, 0, Math.PI * 2); g.fill();
+        for (let k = 0; k < spikes.length; k += 3) {
+          const a = spikes[k], L = spikes[k + 1], w = spikes[k + 2];
+          g.beginPath();
+          g.moveTo(Math.cos(a + 0.35) * r * 0.6, Math.sin(a + 0.35) * r * 0.6);
+          g.lineTo(Math.cos(a) * L, Math.sin(a) * L);
+          g.lineTo(Math.cos(a - 0.35) * r * 0.6, Math.sin(a - 0.35) * r * 0.6);
+          g.closePath(); g.fill();
+          g.beginPath(); g.arc(Math.cos(a) * L, Math.sin(a) * L, w, 0, Math.PI * 2); g.fill();
+        }
+        g.restore();
+        for (let k = 0; k < dust.length; k += 3) {
+          g.beginPath(); g.arc(x + dx + dust[k], y + dust[k + 1], dust[k + 2], 0, Math.PI * 2); g.fill();
+        }
+        for (let k = 0; k < dripP.length; k += 3) {
+          const px = x + dx + dripP[k], w = dripP[k + 1], len = dripP[k + 2];
+          g.fillRect(px - w / 2, y, w, len);
+          g.beginPath(); g.arc(px, y + len, w * 0.9, 0, Math.PI * 2); g.fill();
+        }
+      });
+    }
   }
 }
 
@@ -291,7 +308,7 @@ function paintGrid(g, W, H, ppm, cols, rng) {
   const nx = Math.round(W / step);
   const traces = 34 + Math.floor(rng() * 16);
   for (let i = 0; i < traces; i++) {
-    const col = pick(rng, cols);
+    const col = pickD(rng, cols);
     const lw = (rng() < 0.6 ? rr(rng, 0.008, 0.016) : rr(rng, 0.02, 0.035)) * ppm;
     const pts = [];
     let x = Math.floor(rng() * nx) * step;
@@ -346,6 +363,40 @@ function paintGrid(g, W, H, ppm, cols, rng) {
   }
 }
 
+// ---------------------------------------------------------------- ściana (malowana sklejka; kafel = T.wallMeters)
+
+function drawWallColor(S, rng) {
+  // ciemny granat, matowe ziarno farby, szwy płyt 1.22 × 2.44 m, przetarcia — albedo ×(≈0.6–1.0) koloru ściany
+  const c = makeCanvas(S, S);
+  const g = c.getContext('2d');
+  const img = g.createImageData(S, S);
+  const d = img.data;
+  for (let i = 0; i < S * S; i++) {
+    const v = 205 + rng() * 50;
+    d[i * 4] = v; d[i * 4 + 1] = v; d[i * 4 + 2] = v; d[i * 4 + 3] = 255;
+  }
+  g.putImageData(img, 0, 0);
+  // pionowe smugi wałka (bardzo subtelne)
+  for (let i = 0; i < 60; i++) {
+    const x = rng() * S, w = rr(rng, 0.01, 0.05) * S;
+    g.fillStyle = `rgba(${rng() < 0.5 ? '0,0,0' : '255,255,255'},${rr(rng, 0.03, 0.08)})`;
+    wrapX(S, (dx) => g.fillRect(x + dx, 0, w, S));
+  }
+  // przetarcia / odbicia butów nisko
+  for (let i = 0; i < 18; i++) {
+    const x = rng() * S, y = rr(rng, 0.8, 0.98) * S, r = rr(rng, 0.01, 0.04) * S;
+    g.fillStyle = 'rgba(255,255,255,0.12)';
+    wrapX(S, (dx) => { g.beginPath(); g.ellipse(x + dx, y, r * 2, r * 0.6, 0, 0, Math.PI * 2); g.fill(); });
+  }
+  // szwy płyt: pion co pół kafla (1.22 m), poziom na krawędzi (2.44 m)
+  const seam = Math.max(1, Math.round(S / 400));
+  g.fillStyle = 'rgba(0,0,0,0.75)';
+  g.fillRect(0, 0, seam, S); g.fillRect(S / 2, 0, seam, S); g.fillRect(0, 0, S, seam);
+  g.fillStyle = 'rgba(255,255,255,0.25)';
+  g.fillRect(seam, 0, seam, S); g.fillRect(S / 2 + seam, 0, seam, S); g.fillRect(0, seam, S, seam);
+  return c;
+}
+
 // ---------------------------------------------------------------- podłoga (kafel = T.floorMeters)
 
 function drawFloorColor(S, rng) {
@@ -359,6 +410,13 @@ function drawFloorColor(S, rng) {
     d[i * 4] = v; d[i * 4 + 1] = v * 0.95; d[i * 4 + 2] = v * 1.15; d[i * 4 + 3] = 255;
   }
   g.putImageData(img, 0, 0);
+  // gumowe kafle: drobne „monety" (wypustki) co ~4 cm, lekko jaśniejsze
+  const studs = Math.round(T.floorMeters / 0.04);
+  const sp = S / studs, sr = Math.max(0.8, sp * 0.28);
+  g.fillStyle = 'rgba(70,64,90,0.55)';
+  for (let y = 0; y < studs; y++) {
+    for (let x = 0; x < studs; x++) { g.beginPath(); g.arc((x + 0.5) * sp, (y + 0.5) * sp, sr, 0, Math.PI * 2); g.fill(); }
+  }
   // szwy mat co 1 m (ciemniejsze)
   g.fillStyle = 'rgba(0,0,0,0.85)';
   const seam = Math.max(1, S / 512);

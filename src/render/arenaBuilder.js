@@ -1,23 +1,39 @@
-// Budowa areny z danych świata (PLAN §2/§5): bryły z farbą UV, neonowe listwy, podłoga, sufit z kratownicą i lampami,
-// stożki światła w dymie (High/Ultra). Geometria scalona per materiał → kilka draw calli na całą mapę.
-// buildArena(world, preset, textures, opts?) → { group, dispose(), update(time) }
+// Budowa areny z danych świata (PLAN §2/§5): bryły z farbą UV, neonowe listwy, podłoga z odbiciem planarnym,
+// sufit z kratownicą i lampami, gumowe odboje/listwy przypodłogowe, panele baz przy spawnach, stożki światła (High/Ultra).
+// Geometria scalona per materiał → kilka draw calli na całą mapę.
+//
+// buildArena(world, preset, textures, opts?) → {
+//   group, dispose(), update(time),
+//   renderReflection(renderer, scene, camera),  // High/Ultra: odbicie podłogi (wołać przed composerem; no-op gdy brak)
+//   setSize(w, h),                              // rozmiar bufora rysowania (px) — dla odbicia
+// }
 //   opts.renderer — gdy podany i preset.envReflections: envMap podłogi z PMREMGenerator.fromScene (raz, przy budowie).
 //
 // Konwencja obrotu brył (jak Object3D.rotation.y = rot):
 //   world.x = cx + lx·cos + lz·sin,   world.z = cz − lx·sin + lz·cos   (cos = cos(rot), sin = sin(rot))
+//
+// Kolory: 'accent' palety (limonka) NIE trafia na listwy ani światła — tylko drobne elementy farby (SPEC §6 p.10).
 import * as THREE from 'three';
-import { CONFIG } from '../config.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { CONFIG } from '../config.js';
 import { PAINT_STYLES, makeRng } from './textures.js';
 
 const A = CONFIG.render.arena;
 const TX = CONFIG.render.textures;
 
-// ---------------------------------------------------------------- bufor geometrii (bez Three do końca)
+/** warstwa obiektów pomijanych w renderze odbicia (podłoga, dym, stożki) */
+export const LAYER_NO_REFLECT = 1;
+
+const MAIN_KEYS = ['primary', 'secondary', 'uv'];
+
+// ---------------------------------------------------------------- bufor geometrii
 
 class GeoBuf {
-  constructor(withColor = false, withUv = true) {
-    this.pos = []; this.nrm = []; this.uv = withUv ? [] : null; this.col = withColor ? [] : null; this.idx = [];
+  constructor({ color = false, uv = true, wall = false } = {}) {
+    this.pos = []; this.nrm = []; this.uv = uv ? [] : null; this.col = color ? [] : null; this.idx = [];
+    this.wall = wall ? { uv1: [], pa: [], pb: [], wash: [], w: [] } : null;
+    // stan bieżącej bryły (dla wall): kolory farby A/B, kolor poświaty, top, y listwy dolnej
+    this.cur = { pa: [0, 0, 0], pb: [0, 0, 0], wash: [0, 0, 0], top: 0, bot: -1 };
   }
   get count() { return this.pos.length / 3; }
   vert(x, y, z, nx, ny, nz, u, v, r, g, b) {
@@ -25,6 +41,16 @@ class GeoBuf {
     this.nrm.push(nx, ny, nz);
     if (this.uv) this.uv.push(u, v);
     if (this.col) this.col.push(r, g, b);
+  }
+  // wierzchołek ściany: + metry wzdłuż ściany (along), długość ściany (len), uv1 (sklejka)
+  wvert(x, y, z, nx, ny, nz, u, v, along, len, u1, v1) {
+    this.vert(x, y, z, nx, ny, nz, u, v);
+    const w = this.wall, c = this.cur;
+    w.uv1.push(u1, v1);
+    w.pa.push(c.pa[0], c.pa[1], c.pa[2]);
+    w.pb.push(c.pb[0], c.pb[1], c.pb[2]);
+    w.wash.push(c.wash[0], c.wash[1], c.wash[2]);
+    w.w.push(along, len, c.top, c.bot);
   }
   quad(a, b, c, d) { this.idx.push(a, b, c, a, c, d); }
   toGeometry() {
@@ -34,6 +60,13 @@ class GeoBuf {
     g.setAttribute('normal', new THREE.Float32BufferAttribute(this.nrm, 3));
     if (this.uv) g.setAttribute('uv', new THREE.Float32BufferAttribute(this.uv, 2));
     if (this.col) g.setAttribute('color', new THREE.Float32BufferAttribute(this.col, 3));
+    if (this.wall) {
+      g.setAttribute('uv1', new THREE.Float32BufferAttribute(this.wall.uv1, 2));
+      g.setAttribute('aPaintA', new THREE.Float32BufferAttribute(this.wall.pa, 3));
+      g.setAttribute('aPaintB', new THREE.Float32BufferAttribute(this.wall.pb, 3));
+      g.setAttribute('aWash', new THREE.Float32BufferAttribute(this.wall.wash, 3));
+      g.setAttribute('aWall', new THREE.Float32BufferAttribute(this.wall.w, 4));
+    }
     g.setIndex(this.count > 65535 ? new THREE.Uint32BufferAttribute(this.idx, 1) : new THREE.Uint16BufferAttribute(this.idx, 1));
     g.computeBoundingSphere();
     g.computeBoundingBox();
@@ -41,17 +74,17 @@ class GeoBuf {
   }
 }
 
-// prostopadłościan wzdłuż odcinka a→b, przekrój t×t (listwy, belki); kolor per wierzchołek (HDR)
+// prostopadłościan wzdłuż odcinka a→b, przekrój tw (poziomo) × th (pion); kolor per wierzchołek (HDR)
 const _d = new THREE.Vector3(), _s = new THREE.Vector3(), _u = new THREE.Vector3(), _up = new THREE.Vector3();
 const _c = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3(),
   new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()];
-function addBar(buf, ax, ay, az, bx, by, bz, tw, th, r, g, b) {
+const BAR_FACES = [[0, 1, 5, 4], [1, 2, 6, 5], [2, 3, 7, 6], [3, 0, 4, 7], [3, 2, 1, 0], [4, 5, 6, 7]];
+function addBar(buf, ax, ay, az, bx, by, bz, tw, th, r = 1, g = 1, b = 1) {
   _d.set(bx - ax, by - ay, bz - az).normalize();
   _up.set(0, 1, 0);
   if (Math.abs(_d.y) > 0.9) _up.set(1, 0, 0);
   _s.crossVectors(_d, _up).normalize().multiplyScalar(tw / 2);
   _u.crossVectors(_s, _d).normalize().multiplyScalar(th / 2);
-  // 0..3 przy a, 4..7 przy b; kolejność wokół osi: -s-u, +s-u, +s+u, -s+u
   for (let e = 0; e < 2; e++) {
     const px = e ? bx : ax, py = e ? by : ay, pz = e ? bz : az;
     _c[e * 4 + 0].set(px - _s.x - _u.x, py - _s.y - _u.y, pz - _s.z - _u.z);
@@ -59,13 +92,12 @@ function addBar(buf, ax, ay, az, bx, by, bz, tw, th, r, g, b) {
     _c[e * 4 + 2].set(px + _s.x + _u.x, py + _s.y + _u.y, pz + _s.z + _u.z);
     _c[e * 4 + 3].set(px - _s.x + _u.x, py - _s.y + _u.y, pz - _s.z + _u.z);
   }
-  const faces = [[0, 1, 5, 4], [1, 2, 6, 5], [2, 3, 7, 6], [3, 0, 4, 7], [3, 2, 1, 0], [4, 5, 6, 7]];
-  for (const f of faces) {
+  for (const f of BAR_FACES) {
     const p0 = _c[f[0]], p1 = _c[f[1]], p2 = _c[f[2]];
     const nx = (p1.y - p0.y) * (p2.z - p0.z) - (p1.z - p0.z) * (p2.y - p0.y);
     const ny = (p1.z - p0.z) * (p2.x - p0.x) - (p1.x - p0.x) * (p2.z - p0.z);
     const nz = (p1.x - p0.x) * (p2.y - p0.y) - (p1.y - p0.y) * (p2.x - p0.x);
-    // kolejność rogów w `faces` daje normalną do środka → odwracamy (ściany zewnętrzne = front)
+    // kolejność rogów w BAR_FACES daje normalną do środka → odwracamy (ściany zewnętrzne = front)
     const nl = -(Math.hypot(nx, ny, nz) || 1);
     const i0 = buf.count;
     for (let k = 0; k < 4; k++) {
@@ -78,32 +110,38 @@ function addBar(buf, ax, ay, az, bx, by, bz, tw, th, r, g, b) {
 
 // ---------------------------------------------------------------- bryły
 
-// Ściana pionowa prostokąta: rogi lokalne (l0 → l1) na wysokości y0..y1, normalna lokalna (nlx, nlz).
+function toWorld(s, lx, lz, out) {
+  out[0] = s.cx + lx * s.cos + lz * s.sin;
+  out[1] = s.cz - lx * s.sin + lz * s.cos;
+  return out;
+}
+const _wa = [0, 0], _wb = [0, 0];
+
+// Ściana pionowa prostokąta: rogi lokalne (l0 → l1), wysokość y0..y1, normalna lokalna (nlx, nlz).
 // u w metrach wzdłuż ściany (rośnie w prawo patrząc z zewnątrz), v = y (metry) → skala do kafla farby.
 function addSide(buf, s, lx0, lz0, lx1, lz1, nlx, nlz, y0, y1, uOff, tileW, tileH) {
-  const c = s.cos, sn = s.sin;
-  const wx0 = s.cx + lx0 * c + lz0 * sn, wz0 = s.cz - lx0 * sn + lz0 * c;
-  const wx1 = s.cx + lx1 * c + lz1 * sn, wz1 = s.cz - lx1 * sn + lz1 * c;
-  const nx = nlx * c + nlz * sn, nz = -nlx * sn + nlz * c;
+  toWorld(s, lx0, lz0, _wa); toWorld(s, lx1, lz1, _wb);
+  const nx = nlx * s.cos + nlz * s.sin, nz = -nlx * s.sin + nlz * s.cos;
   const len = Math.hypot(lx1 - lx0, lz1 - lz0);
   const u0 = uOff / tileW, u1 = (uOff + len) / tileW;
+  const P = TX.wallMeters;
+  const p0 = uOff / P, p1 = (uOff + len) / P;
   const i = buf.count;
-  buf.vert(wx0, y0, wz0, nx, 0, nz, u0, y0 / tileH);
-  buf.vert(wx1, y0, wz1, nx, 0, nz, u1, y0 / tileH);
-  buf.vert(wx1, y1, wz1, nx, 0, nz, u1, y1 / tileH);
-  buf.vert(wx0, y1, wz0, nx, 0, nz, u0, y1 / tileH);
+  buf.wvert(_wa[0], y0, _wa[1], nx, 0, nz, u0, y0 / tileH, 0, len, p0, y0 / P);
+  buf.wvert(_wb[0], y0, _wb[1], nx, 0, nz, u1, y0 / tileH, len, len, p1, y0 / P);
+  buf.wvert(_wb[0], y1, _wb[1], nx, 0, nz, u1, y1 / tileH, len, len, p1, y1 / P);
+  buf.wvert(_wa[0], y1, _wa[1], nx, 0, nz, u0, y1 / tileH, 0, len, p0, y1 / P);
   buf.quad(i, i + 1, i + 2, i + 3);
 }
 
 function addCap(buf, s, y, up) {
-  const c = s.cos, sn = s.sin;
   const i = buf.count;
   const ny = up ? 1 : -1;
   const corners = up ? [[-1, 1], [1, 1], [1, -1], [-1, -1]] : [[-1, -1], [1, -1], [1, 1], [-1, 1]];
   for (const [ix, iz] of corners) {
-    const lx = ix * s.hx, lz = iz * s.hz;
-    const wx = s.cx + lx * c + lz * sn, wz = s.cz - lx * sn + lz * c;
-    buf.vert(wx, y, wz, 0, ny, 0, wx / TX.paintMeters[0], wz / TX.paintMeters[0]);
+    toWorld(s, ix * s.hx, iz * s.hz, _wa);
+    // along/len = 1/2 → brak podświetlenia krawędzi; top = y → równomierna, słaba poświata
+    buf.wvert(_wa[0], y, _wa[1], 0, ny, 0, 0, 0, 1, 2, _wa[0] / TX.wallMeters, _wa[1] / TX.wallMeters);
   }
   buf.quad(i, i + 1, i + 2, i + 3);
 }
@@ -112,117 +150,259 @@ function addSolid(paintBuf, plainBuf, s, rng) {
   const tileW = s.boundary ? TX.paintMeters[0] * A.boundaryPaintScale : TX.paintMeters[0];
   const tileH = s.boundary ? TX.paintMeters[1] * A.boundaryPaintScale : TX.paintMeters[1];
   const { hx, hz, y0, y1 } = s;
-  // losowy offset u per ściana (anty-repetycja); każda strona inny
   const base = rng() * tileW * 4;
   const off = [base, base + 2 * hz + rng() * tileW, base + rng() * tileW * 2, base + rng() * tileW * 3];
-  // patrząc z zewnątrz: +X → prawo = −Z;  −X → +Z;  +Z → +X;  −Z → −X
   addSide(paintBuf, s, hx, hz, hx, -hz, 1, 0, y0, y1, off[0], tileW, tileH);
   addSide(paintBuf, s, -hx, -hz, -hx, hz, -1, 0, y0, y1, off[1], tileW, tileH);
   addSide(paintBuf, s, -hx, hz, hx, hz, 0, 1, y0, y1, off[2], tileW, tileH);
   addSide(paintBuf, s, hx, -hz, -hx, -hz, 0, -1, y0, y1, off[3], tileW, tileH);
+  const w = plainBuf.cur.wash, sw = A.capWash;
+  const saved = [w[0], w[1], w[2]];
+  w[0] *= sw; w[1] *= sw; w[2] *= sw;
+  plainBuf.cur.top = y1;
   addCap(plainBuf, s, y1, true);
   if (y0 > 0.001) addCap(plainBuf, s, y0, false);
+  w[0] = saved[0]; w[1] = saved[1]; w[2] = saved[2];
 }
 
 // ---------------------------------------------------------------- rampa (klin)
 
-function addRamp(paintBuf, plainBuf, trimBuf, r, accent) {
-  const s = r; // ten sam układ (cx,cz,hx,hz,cos,sin)
+function addRamp(paintBuf, plainBuf, trimBuf, r, col) {
+  const s = r;
   const { hx, hz, y0, y1 } = r;
-  const c = r.cos, sn = r.sin;
-  const W = (lx, lz) => [r.cx + lx * c + lz * sn, r.cz - lx * sn + lz * c];
-  const tileW = TX.paintMeters[0], tileH = TX.paintMeters[1];
-  // boki ±X: trapezy (dół 0, góra y0→y1 wzdłuż z)
+  const tileW = TX.paintMeters[0], tileH = TX.paintMeters[1], P = TX.wallMeters;
+  paintBuf.cur.top = y1; paintBuf.cur.bot = -1;
   for (const side of [1, -1]) {
     const lx = side * hx;
     const za = side > 0 ? hz : -hz, zb = -za;
     const ya = side > 0 ? y1 : y0, yb = side > 0 ? y0 : y1;
-    const [ax, az] = W(lx, za), [bx, bz] = W(lx, zb);
-    const nx = side * c, nz = -side * sn;
+    toWorld(s, lx, za, _wa); toWorld(s, lx, zb, _wb);
+    const nx = side * r.cos, nz = -side * r.sin;
+    const L = 2 * hz;
     const i = paintBuf.count;
-    paintBuf.vert(ax, 0, az, nx, 0, nz, 0, 0);
-    paintBuf.vert(bx, 0, bz, nx, 0, nz, 2 * hz / tileW, 0);
-    paintBuf.vert(bx, yb, bz, nx, 0, nz, 2 * hz / tileW, yb / tileH);
-    paintBuf.vert(ax, ya, az, nx, 0, nz, 0, ya / tileH);
+    paintBuf.wvert(_wa[0], 0, _wa[1], nx, 0, nz, 0, 0, 0, L, 0, 0);
+    paintBuf.wvert(_wb[0], 0, _wb[1], nx, 0, nz, L / tileW, 0, L, L, L / P, 0);
+    paintBuf.wvert(_wb[0], yb, _wb[1], nx, 0, nz, L / tileW, yb / tileH, L, L, L / P, yb / P);
+    paintBuf.wvert(_wa[0], ya, _wa[1], nx, 0, nz, 0, ya / tileH, 0, L, 0, ya / P);
     paintBuf.quad(i, i + 1, i + 2, i + 3);
   }
-  // tył (+Z, wysokość y1) i przód (−Z, wysokość y0)
   addSide(paintBuf, s, -hx, hz, hx, hz, 0, 1, 0, y1, 0, tileW, tileH);
   if (y0 > 0.001) addSide(paintBuf, s, hx, -hz, -hx, -hz, 0, -1, 0, y0, 0, tileW, tileH);
-  // powierzchnia skośna
   const len = Math.hypot(2 * hz, y1 - y0);
   const ny = (2 * hz) / len, nzl = -(y1 - y0) / len;
-  const nX = nzl * sn, nZ = nzl * c;
-  const p = [W(-hx, -hz), W(hx, -hz), W(hx, hz), W(-hx, hz)];
+  const nX = nzl * r.sin, nZ = nzl * r.cos;
   const ys = [y0, y0, y1, y1];
+  const lz = [-hz, -hz, hz, hz], lx = [-hx, hx, hx, -hx];
+  plainBuf.cur.top = y1;
   const i = plainBuf.count;
-  for (let k = 0; k < 4; k++) plainBuf.vert(p[k][0], ys[k], p[k][1], nX, ny, nZ, 0, 0);
+  for (let k = 0; k < 4; k++) {
+    toWorld(s, lx[k], lz[k], _wa);
+    plainBuf.wvert(_wa[0], ys[k], _wa[1], nX, ny, nZ, 0, 0, 1, 2, _wa[0] / P, _wa[1] / P);
+  }
   plainBuf.quad(i, i + 3, i + 2, i + 1);
-  // listwy wzdłuż górnych krawędzi boków
   const t = A.trimSize;
   for (const side of [1, -1]) {
-    const lx = side * (hx + t / 2 + A.trimGap);
-    const [ax, az] = W(lx, -hz), [bx, bz] = W(lx, hz);
-    addBar(trimBuf, ax, y0 - t / 2, az, bx, y1 - t / 2, bz, t, t, accent.r, accent.g, accent.b);
+    toWorld(s, side * (hx + t / 2 + A.trimGap), -hz, _wa); toWorld(s, side * (hx + t / 2 + A.trimGap), hz, _wb);
+    addBar(trimBuf, _wa[0], y0 - t / 2, _wa[1], _wb[0], y1 - t / 2, _wb[1], t, t, col.r, col.g, col.b);
   }
 }
 
-// ---------------------------------------------------------------- listwy neonowe
+// ---------------------------------------------------------------- listwy, odboje
 
-function trimLoop(buf, s, y, col, inset = 0) {
-  const t = A.trimSize, o = t / 2 + A.trimGap;
-  const ex = s.hx + o, ez = s.hz + o;
-  const c = s.cos, sn = s.sin;
-  const W = (lx, lz, out) => { out[0] = s.cx + lx * c + lz * sn; out[1] = s.cz - lx * sn + lz * c; return out; };
-  const a = [0, 0], b = [0, 0];
+// pętla wokół bryły na wysokości y: pręty o przekroju tw × th, odsunięte o off od ściany
+function loop(buf, s, y, tw, th, off, col, ext = tw / 2) {
+  const ex = s.hx + off, ez = s.hz + off;
   const edges = [[-ex, ez, ex, ez], [ex, -ez, -ex, -ez], [ex, ez, ex, -ez], [-ex, -ez, -ex, ez]];
   for (const e of edges) {
-    W(e[0], e[1], a); W(e[2], e[3], b);
-    // wydłużenie o t/2 na końcach → domknięte narożniki
-    const dx = b[0] - a[0], dz = b[1] - a[1], l = Math.hypot(dx, dz) || 1;
-    const kx = dx / l * (t / 2 - inset), kz = dz / l * (t / 2 - inset);
-    addBar(buf, a[0] - kx, y, a[1] - kz, b[0] + kx, y, b[1] + kz, t, t, col.r, col.g, col.b);
+    toWorld(s, e[0], e[1], _wa); toWorld(s, e[2], e[3], _wb);
+    const dx = _wb[0] - _wa[0], dz = _wb[1] - _wa[1], l = Math.hypot(dx, dz) || 1;
+    const kx = dx / l * ext, kz = dz / l * ext;
+    addBar(buf, _wa[0] - kx, y, _wa[1] - kz, _wb[0] + kx, y, _wb[1] + kz, tw, th, col.r, col.g, col.b);
   }
+}
+
+function trimLoop(buf, s, y, col) {
+  const t = A.trimSize;
+  loop(buf, s, y, t, t, t / 2 + A.trimGap, col);
 }
 
 function pillarTrims(buf, s, col) {
   const t = A.trimSize, o = t / 2 + A.trimGap;
-  const c = s.cos, sn = s.sin;
+  const top = Math.min(s.y1, A.pillarTrimTop);
   for (const [ix, iz] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) {
-    const lx = ix * (s.hx + o * 0.5), lz = iz * (s.hz + o * 0.5);
-    const wx = s.cx + lx * c + lz * sn, wz = s.cz - lx * sn + lz * c;
-    addBar(buf, wx, s.y0 + 0.02, wz, wx, Math.min(s.y1, A.pillarTrimTop) , wz, t, t, col.r, col.g, col.b);
+    toWorld(s, ix * (s.hx + o * 0.5), iz * (s.hz + o * 0.5), _wa);
+    addBar(buf, _wa[0], s.y0 + 0.02, _wa[1], _wa[0], top, _wa[1], t, t, col.r, col.g, col.b);
   }
-  // pierścienie: u podstawy i na wysokości ścian
   trimLoop(buf, s, s.y0 + t / 2 + 0.02, col);
-  for (const h of A.pillarRings) if (h < s.y1 - t) trimLoop(buf, s, h, col);
+  trimLoop(buf, s, top - t / 2, col);
 }
 
-function boundaryTrims(buf, s, col, world) {
-  // tylko strona zwrócona do środka areny (długi bok)
-  const t = A.trimSize, o = t / 2 + A.trimGap;
-  const c = s.cos, sn = s.sin;
+// strona bryły obwodowej zwrócona do środka areny: { longX, sign }
+function innerSide(s, world) {
   const longX = s.hx >= s.hz;
-  // kandydaci: ±hz (gdy długi bok wzdłuż X) lub ±hx
-  let best = null, bestDot = -Infinity;
+  let best = 1, bestDot = -Infinity;
   for (const sign of [1, -1]) {
     const nlx = longX ? 0 : sign, nlz = longX ? sign : 0;
-    const nx = nlx * c + nlz * sn, nz = -nlx * sn + nlz * c;
+    const nx = nlx * s.cos + nlz * s.sin, nz = -nlx * s.sin + nlz * s.cos;
     const cx = (world.bounds.minX + world.bounds.maxX) / 2 - s.cx, cz = (world.bounds.minZ + world.bounds.maxZ) / 2 - s.cz;
     const dot = nx * cx + nz * cz;
     if (dot > bestDot) { bestDot = dot; best = sign; }
   }
-  for (const h of A.boundaryTrimHeights) {
-    if (h > s.y1 - t) continue;
-    let ax, az, bx, bz;
-    if (longX) { const lz = best * (s.hz + o); ax = -s.hx; az = lz; bx = s.hx; bz = lz; }
-    else { const lx = best * (s.hx + o); ax = lx; az = -s.hz; bx = lx; bz = s.hz; }
-    addBar(buf, s.cx + ax * c + az * sn, h, s.cz - ax * sn + az * c, s.cx + bx * c + bz * sn, h, s.cz - bx * sn + bz * c,
-      t, t, col.r, col.g, col.b);
+  return { longX, sign: best };
+}
+
+function innerLine(buf, s, world, h, tw, th, off, col) {
+  const { longX, sign } = innerSide(s, world);
+  if (longX) { toWorld(s, -s.hx, sign * (s.hz + off), _wa); toWorld(s, s.hx, sign * (s.hz + off), _wb); }
+  else { toWorld(s, sign * (s.hx + off), -s.hz, _wa); toWorld(s, sign * (s.hx + off), s.hz, _wb); }
+  addBar(buf, _wa[0], h, _wa[1], _wb[0], h, _wb[1], tw, th, col.r, col.g, col.b);
+}
+
+function boundaryTrims(buf, s, col, world) {
+  const t = A.trimSize;
+  for (const h of A.boundaryTrimHeights) if (h <= s.y1 - t) innerLine(buf, s, world, h, t, t, t / 2 + A.trimGap, col);
+}
+
+// gumowe odboje: listwa przypodłogowa (pętla) + narożniki pionowe
+function rubberFor(buf, s, world) {
+  if (s.y0 > 0.001) return;
+  const R = A.rubber;
+  if (s.boundary) { innerLine(buf, s, world, R.baseHeight / 2, R.baseDepth, R.baseHeight, R.baseDepth / 2, WHITE); return; }
+  loop(buf, s, R.baseHeight / 2, R.baseDepth, R.baseHeight, R.baseDepth / 2, WHITE, R.baseDepth / 2);
+  if (s.kind === 'pillar') return;
+  const top = s.y1 - A.trimSize - 0.04;
+  const o = R.cornerSize / 2 - R.cornerInset;
+  for (const [ix, iz] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+    toWorld(s, ix * (s.hx + o), iz * (s.hz + o), _wa);
+    addBar(buf, _wa[0], R.baseHeight, _wa[1], _wa[0], top, _wa[1], R.cornerSize, R.cornerSize);
   }
+}
+const WHITE = { r: 1, g: 1, b: 1 };
+
+// panel bazy drużyny na ścianie obwodowej za spawnem: ciemna płyta + rama w kolorze drużyny
+function spawnPanel(rubberBuf, trimBuf, world, sp, teamColor) {
+  const bx = Math.sin(sp.yaw), bz = Math.cos(sp.yaw); // „za plecami" (przód = (−sin, −cos))
+  const b = world.bounds;
+  let px, pz, nx = 0, nz = 0;
+  if (Math.abs(bx) > Math.abs(bz)) { px = bx > 0 ? b.maxX : b.minX; pz = sp.z; nx = bx > 0 ? -1 : 1; }
+  else { pz = bz > 0 ? b.maxZ : b.minZ; px = sp.x; nz = bz > 0 ? -1 : 1; }
+  // tył panelu: lico ściany obwodowej (najbliższa bryła boundary w tym kierunku)
+  let face = null;
+  for (const s of world.solids) {
+    if (!s.boundary) continue;
+    const { longX, sign } = innerSide(s, world);
+    const lx = longX ? 0 : sign * s.hx, lz = longX ? sign * s.hz : 0;
+    toWorld(s, lx, lz, _wa);
+    const d = (_wa[0] - sp.x) * -nx + (_wa[1] - sp.z) * -nz;
+    if (d > 0 && (face === null || d < face)) {
+      // czy spawn mieści się w zasięgu tej ściany
+      const along = nx !== 0 ? Math.abs(sp.z - s.cz) : Math.abs(sp.x - s.cx);
+      if (along < Math.max(s.hx, s.hz)) face = d;
+    }
+  }
+  if (face !== null) { px = sp.x - nx * face; pz = sp.z - nz * face; }
+  const P = A.spawnPanel;
+  const tx = -nz, tz = nx; // styczna do ściany
+  const cx = px + nx * P.depth / 2, cz = pz + nz * P.depth / 2;
+  addBar(rubberBuf, cx - tx * P.width / 2, P.y, cz - tz * P.width / 2, cx + tx * P.width / 2, P.y, cz + tz * P.width / 2,
+    P.depth, P.height);
+  const t = A.trimSize * 0.8, fx = cx + nx * (P.depth / 2 + t / 2), fz = cz + nz * (P.depth / 2 + t / 2);
+  const hw = P.width / 2, hh = P.height / 2;
+  const c = teamColor;
+  addBar(trimBuf, fx - tx * hw, P.y + hh, fz - tz * hw, fx + tx * hw, P.y + hh, fz + tz * hw, t, t, c.r, c.g, c.b);
+  addBar(trimBuf, fx - tx * hw, P.y - hh, fz - tz * hw, fx + tx * hw, P.y - hh, fz + tz * hw, t, t, c.r, c.g, c.b);
+  addBar(trimBuf, fx - tx * hw, P.y - hh, fz - tz * hw, fx - tx * hw, P.y + hh, fz - tz * hw, t, t, c.r, c.g, c.b);
+  addBar(trimBuf, fx + tx * hw, P.y - hh, fz + tz * hw, fx + tx * hw, P.y + hh, fz + tz * hw, t, t, c.r, c.g, c.b);
+  // „strzałka" bazy: krótki pasek w środku
+  addBar(trimBuf, fx - tx * hw * 0.35, P.y, fz - tz * hw * 0.35, fx + tx * hw * 0.35, P.y, fz + tz * hw * 0.35, t, t * 2,
+    c.r * 0.7, c.g * 0.7, c.b * 0.7);
 }
 
 // ---------------------------------------------------------------- shadery
+
+// ściany: maski farby (R/G/B) → kolory per bryła; poświata UV od listwy gasnąca w dół; delikatne krawędzie pionowe
+function patchWallMaterial(mat, accentLin) {
+  mat.onBeforeCompile = (sh) => {
+    sh.uniforms.uAccent = { value: accentLin };
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', `#include <common>
+attribute vec3 aPaintA;
+attribute vec3 aPaintB;
+attribute vec3 aWash;
+attribute vec4 aWall;
+varying vec3 vPaintA;
+varying vec3 vPaintB;
+varying vec3 vWash;
+varying vec4 vWall;
+varying float vWY;`)
+      .replace('#include <fog_vertex>', `#include <fog_vertex>
+vPaintA = aPaintA; vPaintB = aPaintB; vWash = aWash; vWall = aWall;
+vWY = (modelMatrix * vec4(transformed, 1.0)).y;`);
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', `#include <common>
+uniform vec3 uAccent;
+varying vec3 vPaintA;
+varying vec3 vPaintB;
+varying vec3 vWash;
+varying vec4 vWall;
+varying float vWY;`)
+      .replace('#include <emissivemap_fragment>', `
+#ifdef USE_EMISSIVEMAP
+  vec3 pm = texture2D( emissiveMap, vEmissiveMapUv ).rgb;
+  totalEmissiveRadiance = ( pm.r * vPaintA + pm.g * vPaintB + pm.b * uAccent ) * emissive;
+#else
+  totalEmissiveRadiance = vec3( 0.0 );
+#endif
+  {
+    float dTop = max( vWall.z - vWY, 0.0 );
+    float wash = ${A.wash.top.toFixed(4)} * exp( -dTop / ${A.wash.fall.toFixed(3)} ) + ${A.wash.base.toFixed(4)};
+    if ( vWall.w > -0.5 ) wash += ${A.wash.bottom.toFixed(4)} * exp( -max( vWY - vWall.w, 0.0 ) / ${(A.wash.fall * 0.5).toFixed(3)} );
+    float e = min( vWall.x, vWall.y - vWall.x );
+    wash += ${A.wash.edge.toFixed(4)} * ( 1.0 - smoothstep( 0.0, ${A.wash.edgeWidth.toFixed(3)}, e ) ) * smoothstep( 0.0, 0.6, vWY );
+#ifdef USE_MAP
+    vec3 wtex = texture2D( map, vMapUv ).rgb;   // faktura płyty moduluje poświatę
+#else
+    vec3 wtex = vec3( 0.8 );
+#endif
+    totalEmissiveRadiance += vWash * wash * wtex;
+  }
+`);
+  };
+  mat.customProgramCacheKey = () => 'lt-wall';
+}
+
+// podłoga: odbicie planarne (RT z kamerą odbitą, mipmapy + smuga pionowa) × połysk × Fresnel; bez odbicia gdy brak RT
+function patchFloorMaterial(mat, uniforms) {
+  mat.onBeforeCompile = (sh) => {
+    Object.assign(sh.uniforms, uniforms);
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', `#include <common>
+uniform sampler2D tReflect;
+uniform vec2 reflRes;
+uniform float reflOn;`)
+      .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+  if ( reflOn > 0.5 ) {
+    vec2 ruv = gl_FragCoord.xy / reflRes;
+    ruv.y = 1.0 - ruv.y;
+    vec2 px = 1.0 / reflRes;
+    vec3 rc = vec3( 0.0 );
+    // smuga pionowa (połysk na gumie rozciąga odbicie w pionie ekranu)
+    rc += texture2D( tReflect, ruv + vec2( 0.0, -${A.reflect.streak.toFixed(1)} ) * px, ${A.reflect.mipBias.toFixed(2)} ).rgb * 0.16;
+    rc += texture2D( tReflect, ruv + vec2( 0.0, -${(A.reflect.streak / 2).toFixed(1)} ) * px, ${A.reflect.mipBias.toFixed(2)} ).rgb * 0.22;
+    rc += texture2D( tReflect, ruv, ${A.reflect.mipBias.toFixed(2)} ).rgb * 0.24;
+    rc += texture2D( tReflect, ruv + vec2( 0.0, ${(A.reflect.streak / 2).toFixed(1)} ) * px, ${A.reflect.mipBias.toFixed(2)} ).rgb * 0.22;
+    rc += texture2D( tReflect, ruv + vec2( 0.0, ${A.reflect.streak.toFixed(1)} ) * px, ${A.reflect.mipBias.toFixed(2)} ).rgb * 0.16;
+    float rough = texture2D( roughnessMap, vRoughnessMapUv ).g;
+    float gloss = 1.0 - smoothstep( 0.25, 0.85, rough );
+    vec3 fN = normalize( ( viewMatrix * vec4( 0.0, 1.0, 0.0, 0.0 ) ).xyz );
+    float ndv = clamp( abs( dot( fN, normalize( vViewPosition ) ) ), 0.0, 1.0 );
+    float fres = ${A.reflect.f0.toFixed(3)} + ( 1.0 - ${A.reflect.f0.toFixed(3)} ) * pow( 1.0 - ndv, 5.0 );
+    totalEmissiveRadiance += rc * ${A.reflect.strength.toFixed(3)} * mix( 0.45, 1.0, gloss ) * fres;
+  }
+`);
+  };
+  mat.customProgramCacheKey = () => 'lt-floor';
+}
 
 const CONE_VERT = /* glsl */`
 attribute vec3 color;
@@ -253,13 +433,21 @@ varying float vH;
 varying float vFogDepth;
 void main() {
   float facing = abs(dot(normalize(vNormalV), normalize(vViewV)));
-  float edge = pow(facing, 2.5);                    // krawędzie stożka znikają (fresnel)
-  float fall = pow(vH, 1.6) * smoothstep(0.0, 0.35, vH); // jasno pod lampą, 0 przy podłodze
-  float near = smoothstep(0.4, 2.2, vFogDepth);     // nie oślepia przy kamerze
-  float fogF = exp(-fogDensity * fogDensity * vFogDepth * vFogDepth);
+  float edge = pow(facing, 2.0);                         // krawędzie stożka znikają (fresnel)
+  float fall = pow(vH, 1.4) * smoothstep(0.0, 0.3, vH);  // jasno pod lampą, 0 przy podłodze
+  float near = smoothstep(0.4, 2.2, vFogDepth);          // nie oślepia przy kamerze
+  float fogF = exp(-fogDensity * fogDensity * vFogDepth * vFogDepth * 0.6);
   float a = opacity * edge * fall * near * fogF * (0.92 + 0.08 * sin(time * 1.7 + vH * 6.0));
   gl_FragColor = vec4(vColor * a, 1.0);
 }`;
+
+// ---------------------------------------------------------------- kolory
+
+/** kolor światła/lampy: akcent palety mapowany na fiolet UV (akcent tylko w farbie) */
+export function lightColorHex(world, hex) {
+  const p = world.palette;
+  return hex && p.accent && hex.toLowerCase() === p.accent.toLowerCase() ? p.uv : hex;
+}
 
 // ---------------------------------------------------------------- główna funkcja
 
@@ -270,61 +458,97 @@ export function buildArena(world, preset, textures, opts = {}) {
   const own = (x) => { disposables.push(x); return x; };
   const rng = makeRng((world.seed ^ 0xa11ce) >>> 0);
   const pal = world.palette;
-  const lin = (hex, k) => new THREE.Color(hex).multiplyScalar(k);
-  const trimCol = {
-    primary: lin(pal.primary, A.trimIntensity),
-    secondary: lin(pal.secondary, A.trimIntensity),
-    uv: lin(pal.uv, A.trimIntensity * A.trimUvBoost),
-    accent: lin(pal.accent, A.trimIntensity * A.trimAccentScale),
+  const lin = (hex, k = 1) => new THREE.Color(hex).multiplyScalar(k);
+  const palLin = { primary: lin(pal.primary), secondary: lin(pal.secondary), uv: lin(pal.uv) };
+  const boost = (key) => (key === 'uv' ? A.uvBoost : 1);
+  const trimCol = {};
+  for (const k of MAIN_KEYS) trimCol[k] = lin(pal[k], A.trimIntensity * boost(k));
+  const accentLin = lin(pal.accent, A.paintIntensity * A.accentPaintScale);
+  // akcent z danych → kolor główny (deterministycznie per bryła)
+  const mainKey = (key, i) => (MAIN_KEYS.includes(key) ? key : (key === 'accent' ? (i % 2 ? 'secondary' : 'primary') : null));
+
+  const paintBufs = {};
+  for (const st of PAINT_STYLES) paintBufs[st] = new GeoBuf({ wall: true });
+  const plainBuf = new GeoBuf({ wall: true });
+  const trimBuf = new GeoBuf({ color: true });
+  const trussBuf = new GeoBuf();
+  const rubberBuf = new GeoBuf();
+
+  const setCur = (buf, aKey, bKey, washKey, top, bot) => {
+    const c = buf.cur;
+    const ka = A.paintIntensity * boost(aKey), kb = A.paintIntensity * boost(bKey);
+    c.pa[0] = palLin[aKey].r * ka; c.pa[1] = palLin[aKey].g * ka; c.pa[2] = palLin[aKey].b * ka;
+    c.pb[0] = palLin[bKey].r * kb; c.pb[1] = palLin[bKey].g * kb; c.pb[2] = palLin[bKey].b * kb;
+    const w = washKey ? palLin[washKey] : null, kw = boost(washKey);
+    c.wash[0] = w ? w.r * kw : 0; c.wash[1] = w ? w.g * kw : 0; c.wash[2] = w ? w.b * kw : 0;
+    c.top = top; c.bot = bot;
   };
 
-  // --- bufory
-  const paintBufs = {};
-  for (const st of PAINT_STYLES) paintBufs[st] = new GeoBuf();
-  const plainBuf = new GeoBuf();
-  const trimBuf = new GeoBuf(true, true);
-  const trussBuf = new GeoBuf(false, true);
-
-  for (const s of world.solids) {
+  world.solids.forEach((s, i) => {
     const style = PAINT_STYLES.includes(s.paint) ? s.paint : null;
-    addSolid(style ? paintBufs[style] : plainBuf, plainBuf, s, rng);
-    const col = trimCol[s.trim];
-    if (!col) continue;
-    if (s.boundary) { boundaryTrims(trimBuf, s, col, world); continue; }
-    if (s.kind === 'pillar') { pillarTrims(trimBuf, s, col); continue; }
+    const tk = mainKey(s.trim, i);
+    // farba: kolor A = kolor listwy (lub losowy główny), B = inny główny
+    const aKey = tk || MAIN_KEYS[Math.floor(rng() * 3)];
+    const others = MAIN_KEYS.filter((k) => k !== aKey);
+    const bKey = others[Math.floor(rng() * 2)];
+    const hasBottom = !!(tk && s.trimBottom) || (s.boundary && !!tk);
+    const bot = hasBottom ? s.y0 + A.trimSize / 2 + A.trimBottomLift : -1;
+    const top = s.boundary ? Math.min(s.y1, A.boundaryTrimHeights[A.boundaryTrimHeights.length - 1]) : s.y1;
+    const buf = style ? paintBufs[style] : plainBuf;
+    setCur(buf, aKey, bKey, tk, top, bot);
+    setCur(plainBuf, aKey, bKey, tk, top, bot);
+    addSolid(buf, plainBuf, s, rng);
+    rubberFor(rubberBuf, s, world);
+    if (!tk) return;
+    const col = trimCol[tk];
+    if (s.boundary) { boundaryTrims(trimBuf, s, col, world); return; }
+    if (s.kind === 'pillar') { pillarTrims(trimBuf, s, col); return; }
     trimLoop(trimBuf, s, s.y1 - A.trimSize / 2, col);
     if (s.trimBottom) trimLoop(trimBuf, s, s.y0 + A.trimSize / 2 + A.trimBottomLift, col);
-  }
-  for (const r of world.ramps || []) addRamp(paintBufs.stripes, plainBuf, trimBuf, r, trimCol.accent);
+  });
+  (world.ramps || []).forEach((r) => {
+    setCur(paintBufs.stripes, 'secondary', 'uv', 'secondary', r.y1, -1);
+    setCur(plainBuf, 'secondary', 'uv', 'secondary', r.y1, -1);
+    addRamp(paintBufs.stripes, plainBuf, trimBuf, r, trimCol.secondary);
+  });
 
-  const reflectables = []; // meshe odbijane w podłodze (lustrzana kopia pod przezroczystą podłogą)
+  // panele baz przy spawnach (kolory drużyn, przygaszone)
+  const teams = CONFIG.colors.teams;
+  for (const sp of world.spawns || []) {
+    const tc = lin(teams[(sp.team || 0) % teams.length], A.spawnPanel.intensity);
+    spawnPanel(rubberBuf, trimBuf, world, sp, tc);
+  }
 
   // --- materiały ścian
   const wallColor = new THREE.Color(A.wallColor);
+  const wallMap = textures.get('wall:color');
+  wallMap.channel = 1;
+  const reflectables = [];
+  const makeWallMat = (emap) => {
+    const mat = own(new THREE.MeshStandardMaterial({
+      color: wallColor, map: wallMap, roughness: A.wallRoughness, metalness: 0,
+      emissive: 0xffffff, emissiveIntensity: 1, emissiveMap: emap || null,
+    }));
+    patchWallMaterial(mat, accentLin);
+    return mat;
+  };
   for (const st of PAINT_STYLES) {
     const geo = paintBufs[st].toGeometry();
     if (!geo) continue;
-    const mat = own(new THREE.MeshStandardMaterial({
-      color: wallColor, roughness: A.wallRoughness, metalness: 0,
-      emissive: 0xffffff, emissiveIntensity: A.paintIntensity, emissiveMap: textures.paint(st),
-    }));
-    const m = new THREE.Mesh(own(geo), mat);
+    const m = new THREE.Mesh(own(geo), makeWallMat(textures.paint(st)));
     m.name = 'walls:' + st;
     group.add(m);
-    reflectables.push(m);
   }
   {
     const geo = plainBuf.toGeometry();
     if (geo) {
-      const mat = own(new THREE.MeshStandardMaterial({ color: wallColor, roughness: A.wallRoughness, metalness: 0 }));
-      const m = new THREE.Mesh(own(geo), mat);
+      const m = new THREE.Mesh(own(geo), makeWallMat(null));
       m.name = 'walls:plain';
       group.add(m);
-      reflectables.push(m);
     }
   }
 
-  // --- sufit: płaszczyzna + kratownica + lampy
+  // --- sufit: płaszczyzna + kratownica + oprawy
   const b = world.bounds;
   const W = b.maxX - b.minX, D = b.maxZ - b.minZ;
   const cx = (b.minX + b.maxX) / 2, cz = (b.minZ + b.maxZ) / 2;
@@ -343,55 +567,65 @@ export function buildArena(world, preset, textures, opts = {}) {
     m.name = 'ceiling';
     group.add(m);
   }
-  // kratownica: główne dźwigary wzdłuż X (pas górny + dolny + krzyżulce), poprzeczki wzdłuż Z
+  const yTop = ceil - A.trussDrop, yBot = ceil - A.trussDrop - A.trussDepth;
+  const trussZ = [];
   {
-    const yTop = ceil - A.trussDrop, yBot = ceil - A.trussDrop - A.trussDepth;
     const tw = A.trussChord;
     for (let z = b.minZ + A.trussSpacing; z < b.maxZ - 0.5; z += A.trussSpacing) {
+      trussZ.push(z);
       for (const dz of [-A.trussWidth / 2, A.trussWidth / 2]) {
-        addBar(trussBuf, b.minX, yTop, z + dz, b.maxX, yTop, z + dz, tw, tw, 1, 1, 1);
-        addBar(trussBuf, b.minX, yBot, z + dz, b.maxX, yBot, z + dz, tw, tw, 1, 1, 1);
+        addBar(trussBuf, b.minX, yTop, z + dz, b.maxX, yTop, z + dz, tw, tw);
+        addBar(trussBuf, b.minX, yBot, z + dz, b.maxX, yBot, z + dz, tw, tw);
         let up = true;
         for (let x = b.minX; x < b.maxX - 0.01; x += A.trussBay) {
           const x2 = Math.min(b.maxX, x + A.trussBay);
-          addBar(trussBuf, x, up ? yBot : yTop, z + dz, x2, up ? yTop : yBot, z + dz, tw * 0.6, tw * 0.6, 1, 1, 1);
+          addBar(trussBuf, x, up ? yBot : yTop, z + dz, x2, up ? yTop : yBot, z + dz, tw * 0.6, tw * 0.6);
           up = !up;
         }
       }
-      // poprzeczne szczeble między płaszczyznami dźwigara
       for (let x = b.minX + A.trussBay; x < b.maxX; x += A.trussBay * 2) {
-        addBar(trussBuf, x, yBot, z - A.trussWidth / 2, x, yBot, z + A.trussWidth / 2, tw * 0.6, tw * 0.6, 1, 1, 1);
+        addBar(trussBuf, x, yBot, z - A.trussWidth / 2, x, yBot, z + A.trussWidth / 2, tw * 0.6, tw * 0.6);
       }
     }
     for (let x = b.minX + A.trussSpacing; x < b.maxX - 0.5; x += A.trussSpacing) {
-      addBar(trussBuf, x, yTop + tw, b.minZ, x, yTop + tw, b.maxZ, tw * 1.2, tw * 1.6, 1, 1, 1);
+      addBar(trussBuf, x, yTop + tw, b.minZ, x, yTop + tw, b.maxZ, tw * 1.2, tw * 1.6);
     }
   }
-  // świetlówki UV (blacklight) wzdłuż dźwigarów — sufit czytelny jako zamknięty, fiolet „wisi" w powietrzu
+  // świetlówki UV: w oprawach przykręconych pod pasem dolnym dźwigara
   {
-    const yT = ceil - A.trussDrop - A.trussDepth - A.uvTube.drop;
-    const c = lin(pal.uv, A.uvTube.intensity);
-    const hl = A.uvTube.length / 2;
-    let row = 0;
-    for (let z = b.minZ + A.trussSpacing; z < b.maxZ - 0.5; z += A.trussSpacing, row++) {
-      const start = b.minX + A.uvTube.spacing * (row % 2 ? 0.5 : 0.25);
-      for (let x = start; x < b.maxX - hl; x += A.uvTube.spacing) {
+    const U = A.uvTube;
+    const hy = yBot - A.trussChord / 2 - U.housing / 2;          // korytko przylega do pasa dolnego
+    const yT = hy - U.housing / 2 - U.thickness / 2;
+    const c = lin(pal.uv, U.intensity);
+    const hl = U.length / 2;
+    trussZ.forEach((z, row) => {
+      const zz = z + (row % 2 ? 1 : -1) * A.trussWidth / 2;
+      const start = b.minX + U.spacing * (row % 2 ? 0.5 : 0.25);
+      for (let x = start; x < b.maxX - hl; x += U.spacing) {
         let nearLamp = false;
-        for (const L of world.lights || []) if (Math.abs(L.x - x) < 1.5 && Math.abs(L.z - z) < 1.5) nearLamp = true;
+        for (const L of world.lights || []) if (Math.abs(L.x - x) < 1.5 && Math.abs(L.z - z) < 2.5) nearLamp = true;
         if (nearLamp) continue;
-        addBar(trimBuf, x - hl, yT, z, x + hl, yT, z, A.uvTube.thickness, A.uvTube.thickness, c.r, c.g, c.b);
+        addBar(trussBuf, x - hl - 0.05, hy, zz, x + hl + 0.05, hy, zz, U.thickness * 2.4, U.housing); // oprawa
+        addBar(trimBuf, x - hl, yT, zz, x + hl, yT, zz, U.thickness, U.thickness, c.r, c.g, c.b);
       }
-    }
+    });
   }
-  // lampy UV (emisyjne prostokąty w kolorze światła — w meshu listew) + oprawy (w kratownicy)
+  // lampy: poprzeczka między sąsiednimi dźwigarami + oprawa + emisyjny prostokąt (kolor światła, akcent → UV)
+  const lampY = [];
   for (const L of world.lights || []) {
-    const y = Math.min(L.y, ceil - A.trussDrop - A.trussDepth - 0.05);
-    const c = lin(L.color, A.lampIntensity);
+    let z0 = -Infinity, z1 = Infinity;
+    for (const z of trussZ) { if (z <= L.z && z > z0) z0 = z; if (z >= L.z && z < z1) z1 = z; }
+    if (!isFinite(z0)) z0 = b.minZ; if (!isFinite(z1)) z1 = b.maxZ;
+    if (z1 - z0 < 0.5) { z0 -= A.trussSpacing / 2; z1 += A.trussSpacing / 2; }
+    const yb = yBot - A.trussChord;
+    addBar(trussBuf, L.x, yb, z0 - A.trussWidth / 2, L.x, yb, z1 + A.trussWidth / 2, 0.08, 0.08);
     const hl = A.lampSize[0] / 2;
+    const yh = yb - 0.04 - 0.06;
+    addBar(trussBuf, L.x - hl - 0.06, yh, L.z, L.x + hl + 0.06, yh, L.z, A.lampSize[1] + 0.1, 0.12);
+    const y = yh - 0.06 - A.lampSize[2] / 2;
+    lampY.push(y);
+    const c = lin(lightColorHex(world, L.color), A.lampIntensity);
     addBar(trimBuf, L.x - hl, y, L.z, L.x + hl, y, L.z, A.lampSize[1], A.lampSize[2], c.r, c.g, c.b);
-    addBar(trussBuf, L.x - hl - 0.06, y + A.lampSize[2], L.z, L.x + hl + 0.06, y + A.lampSize[2], L.z,
-      A.lampSize[1] + 0.08, 0.1, 1, 1, 1);
-    addBar(trussBuf, L.x, y + 0.05, L.z, L.x, ceil, L.z, 0.04, 0.04, 1, 1, 1); // zawiesie
   }
   {
     const geo = trussBuf.toGeometry();
@@ -406,23 +640,36 @@ export function buildArena(world, preset, textures, opts = {}) {
       group.add(m);
     }
   }
-
-  // --- listwy neonowe + lampy: jeden mesh, vertexColors HDR
+  // gumowe odboje, listwy przypodłogowe, płyty baz
+  {
+    const geo = rubberBuf.toGeometry();
+    if (geo) {
+      geo.deleteAttribute('uv');
+      const mat = own(new THREE.MeshStandardMaterial({ color: A.rubber.color, roughness: 0.85, metalness: 0 }));
+      const m = new THREE.Mesh(own(geo), mat);
+      m.name = 'rubber';
+      group.add(m);
+    }
+  }
+  // listwy neonowe + lampy: jeden mesh, vertexColors HDR
   {
     const geo = trimBuf.toGeometry();
     if (geo) {
       geo.deleteAttribute('uv');
       geo.deleteAttribute('normal');
-      const mat = own(new THREE.MeshBasicMaterial({ vertexColors: true, fog: true, toneMapped: true }));
+      const mat = own(new THREE.MeshBasicMaterial({ vertexColors: true, fog: true }));
       const m = new THREE.Mesh(own(geo), mat);
       m.name = 'neon';
       group.add(m);
-      reflectables.push(m);
     }
   }
 
   // --- podłoga
-  let floorMat;
+  const reflOn = !!preset.envReflections;
+  const floorUniforms = {
+    tReflect: { value: null }, reflRes: { value: new THREE.Vector2(1, 1) }, reflOn: { value: 0 },
+  };
+  let floorMat, floorMesh;
   {
     const geo = own(new THREE.PlaneGeometry(W, D));
     geo.rotateX(-Math.PI / 2);
@@ -434,30 +681,31 @@ export function buildArena(world, preset, textures, opts = {}) {
       metalness: A.floorMetalness,
       emissive: 0xffffff, emissiveMap: textures.get('floor:emissive'), emissiveIntensity: A.floorEmissiveIntensity,
     }));
-    const m = new THREE.Mesh(geo, floorMat);
-    m.name = 'floor';
-    m.renderOrder = 1;
-    group.add(m);
+    patchFloorMaterial(floorMat, floorUniforms);
+    floorMesh = new THREE.Mesh(geo, floorMat);
+    floorMesh.name = 'floor';
+    floorMesh.layers.set(LAYER_NO_REFLECT);
+    group.add(floorMesh);
   }
 
-  // --- stożki światła w dymie (High/Ultra = gdy preset ma dym ≥ A.conesMinSmoke)
+  // --- stożki światła w dymie (High/Ultra)
   let coneMat = null, coneMesh = null;
   if (preset.smoke >= A.conesMinSmoke && (world.lights || []).length) {
-    const buf = [];
-    for (const L of world.lights) {
-      const top = Math.min(L.y, ceil - A.trussDrop - A.trussDepth - 0.05);
+    const list = [];
+    world.lights.forEach((L, i) => {
+      const top = lampY[i];
       const h = top - A.coneBottom;
       const g = new THREE.CylinderGeometry(A.coneTopRadius, A.coneBottomRadius, h, 24, 1, true);
       g.translate(L.x, A.coneBottom + h / 2, L.z);
-      const c = new THREE.Color(L.color);
+      const c = new THREE.Color(lightColorHex(world, L.color));
       const n = g.attributes.position.count;
       const col = new Float32Array(n * 3);
-      for (let i = 0; i < n; i++) { col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b; }
+      for (let k = 0; k < n; k++) { col[k * 3] = c.r; col[k * 3 + 1] = c.g; col[k * 3 + 2] = c.b; }
       g.setAttribute('color', new THREE.BufferAttribute(col, 3));
-      buf.push(g);
-    }
-    const geo = own(mergeGeometries(buf));
-    for (const g of buf) g.dispose();
+      list.push(g);
+    });
+    const geo = own(mergeGeometries(list));
+    for (const g of list) g.dispose();
     coneMat = own(new THREE.ShaderMaterial({
       uniforms: {
         ...THREE.UniformsUtils.clone(THREE.UniformsLib.fog),
@@ -470,10 +718,11 @@ export function buildArena(world, preset, textures, opts = {}) {
     coneMesh = new THREE.Mesh(geo, coneMat);
     coneMesh.name = 'lightCones';
     coneMesh.renderOrder = 2;
+    coneMesh.layers.set(LAYER_NO_REFLECT);
     group.add(coneMesh);
   }
 
-  // --- envMap podłogi (raz): PMREM z samej areny, z punktu na wysokości oka blisko środka
+  // --- envMap podłogi (raz): PMREM z samej areny — słaby połysk ogólny (główne odbicia robi RT)
   let envRT = null;
   if (preset.envReflections && opts.renderer) {
     const p = findBakePoint(world);
@@ -481,11 +730,11 @@ export function buildArena(world, preset, textures, opts = {}) {
     tmp.add(group);
     group.position.set(-p.x, -A.envBakeHeight, -p.z);
     if (coneMesh) coneMesh.visible = false;
-    floorMat.visible = false; // podłoga nie odbija samej siebie
+    floorMesh.visible = false;
     const pmrem = new THREE.PMREMGenerator(opts.renderer);
     envRT = pmrem.fromScene(tmp, A.envBlur, 0.05, Math.max(W, D) * 1.5);
     pmrem.dispose();
-    floorMat.visible = true;
+    floorMesh.visible = true;
     if (coneMesh) coneMesh.visible = true;
     group.position.set(0, 0, 0);
     tmp.remove(group);
@@ -494,34 +743,21 @@ export function buildArena(world, preset, textures, opts = {}) {
     floorMat.needsUpdate = true;
   }
 
-  // --- odbicia planarne (High/Ultra): lustrzane kopie (scale.y = −1, te same geometrie i materiały) pod półprzezroczystą
-  // podłogą. Krycie podłogi zależy od połysku (roughnessMap) i kąta patrzenia (Fresnel) → miękkie, nierówne odbicia neonów.
-  if (preset.envReflections) {
-    const mirror = new THREE.Group();
-    mirror.name = 'floorMirror';
-    mirror.scale.y = -1;
-    for (const src of reflectables) {
-      const m = new THREE.Mesh(src.geometry, src.material);
-      m.name = 'mirror:' + src.name;
-      mirror.add(m);
-    }
-    group.add(mirror);
-    const F = A.floorReflect;
-    floorMat.transparent = true;
-    floorMat.depthWrite = true;
-    floorMat.alphaMap = textures.get('floor:rough');
-    floorMat.onBeforeCompile = (sh) => {
-      sh.fragmentShader = sh.fragmentShader.replace('#include <alphamap_fragment>', `
-        float flRough = texture2D( alphaMap, vAlphaMapUv ).g;
-        vec3 flN = normalize( ( viewMatrix * vec4( 0.0, 1.0, 0.0, 0.0 ) ).xyz );
-        float flNdV = clamp( abs( dot( flN, normalize( vViewPosition ) ) ), 0.0, 1.0 );
-        float flFres = pow( 1.0 - flNdV, 3.0 );
-        diffuseColor.a = clamp( mix( ${F.alphaGloss.toFixed(3)}, ${F.alphaRough.toFixed(3)}, smoothstep( 0.2, 0.8, flRough ) )
-                                - flFres * ${F.fresnel.toFixed(3)}, ${F.alphaMin.toFixed(3)}, 1.0 );
-      `);
-    };
-    floorMat.customProgramCacheKey = () => 'lt-floor-mirror';
-    floorMat.needsUpdate = true;
+  // --- odbicie planarne: render sceny kamerą odbitą względem y=0 do RT (½ rozdz., mipmapy) — High/Ultra
+  let reflRT = null;
+  const reflCam = new THREE.PerspectiveCamera();
+  reflCam.matrixAutoUpdate = false;
+  reflCam.matrixWorldAutoUpdate = false;
+  reflCam.layers.set(0);
+  const MIRROR = new THREE.Matrix4().makeScale(1, -1, 1);
+  const FLIP_Y = new THREE.Matrix4().makeScale(1, -1, 1);
+  if (reflOn) {
+    reflRT = new THREE.WebGLRenderTarget(1, 1, {
+      type: THREE.HalfFloatType, generateMipmaps: true,
+      minFilter: THREE.LinearMipmapLinearFilter, magFilter: THREE.LinearFilter, depthBuffer: true,
+    });
+    floorUniforms.tReflect.value = reflRT.texture;
+    floorUniforms.reflOn.value = 1;
   }
 
   return {
@@ -529,11 +765,33 @@ export function buildArena(world, preset, textures, opts = {}) {
     update(time) {
       if (coneMat) coneMat.uniforms.time.value = time;
     },
+    setSize(w, h) {
+      floorUniforms.reflRes.value.set(w, h);
+      if (reflRT) reflRT.setSize(Math.max(1, Math.round(w * A.reflect.scale)), Math.max(1, Math.round(h * A.reflect.scale)));
+    },
+    renderReflection(renderer, scene, camera) {
+      if (!reflRT) return;
+      camera.updateMatrixWorld();
+      // właściwa kamera (det > 0): M·C·Sy → obraz odbity pionowo (shader podłogi odwraca v)
+      reflCam.matrixWorld.multiplyMatrices(MIRROR, camera.matrixWorld).multiply(FLIP_Y);
+      reflCam.matrixWorldInverse.copy(reflCam.matrixWorld).invert();
+      reflCam.projectionMatrix.copy(camera.projectionMatrix);
+      reflCam.projectionMatrixInverse.copy(camera.projectionMatrixInverse);
+      const vis = camera.visible;
+      camera.visible = false; // broń FPP (dziecko kamery) nie odbija się
+      const prev = renderer.getRenderTarget();
+      renderer.setRenderTarget(reflRT);
+      renderer.clear();
+      renderer.render(scene, reflCam);
+      renderer.setRenderTarget(prev);
+      camera.visible = vis;
+    },
     dispose() {
       if (group.parent) group.parent.remove(group);
       for (const d of disposables) d.dispose();
       disposables.length = 0;
       if (envRT) { envRT.dispose(); envRT = null; }
+      if (reflRT) { reflRT.dispose(); reflRT = null; }
     },
   };
 }

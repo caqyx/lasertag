@@ -88,9 +88,9 @@ export const CONFIG = Object.freeze({
 
   bots: {
     levels: {
-      easy:   { reaction: 0.65, aimSigmaDeg: 5.5, turnDegPerSec: 160, viewDist: 28, fovDeg: 100, strafe: 0,   coverHp: 1, coverOnOverheat: false },
-      normal: { reaction: 0.40, aimSigmaDeg: 3.0, turnDegPerSec: 260, viewDist: 38, fovDeg: 120, strafe: 0.5, coverHp: 2, coverOnOverheat: false },
-      hard:   { reaction: 0.24, aimSigmaDeg: 1.6, turnDegPerSec: 400, viewDist: 48, fovDeg: 140, strafe: 0.8, coverHp: 2, coverOnOverheat: true },
+      easy:   { reaction: 0.65, aimSigmaDeg: 5.5, turnDegPerSec: 160, viewDist: 28, fovDeg: 100, strafe: 0,   coverHp: 1, coverOnOverheat: false, heatLimit: 1.0 },
+      normal: { reaction: 0.40, aimSigmaDeg: 3.0, turnDegPerSec: 260, viewDist: 38, fovDeg: 120, strafe: 0.5, coverHp: 2, coverOnOverheat: false, heatLimit: 0.9 },
+      hard:   { reaction: 0.24, aimSigmaDeg: 1.6, turnDegPerSec: 400, viewDist: 48, fovDeg: 140, strafe: 0.8, coverHp: 2, coverOnOverheat: true, heatLimit: 0.8 },
     },
     chaseTime: 4.0,
     burstShots: [2, 5],
@@ -98,6 +98,22 @@ export const CONFIG = Object.freeze({
     thinkInterval: 0.1,     // s między decyzjami FSM (rozłożone między botów)
     arriveDist: 0.6,
     stuckTime: 1.2,
+    // --- bots/ai.js (M2)
+    stuckMinMove: 0.35,     // m postępu w oknie stuckTime, poniżej = utknięcie (skok + nowa ścieżka)
+    pathCapacity: 256,      // maks. długość ścieżki (węzły)
+    patrolSamples: 6,       // losowane kandydaty celu patrolu (preferencja nieodwiedzonych)
+    patrolMinDist: 6,       // m — min. odległość celu patrolu
+    aimHeight: 1.3,         // m nad stopami celu (klatka)
+    fireTolDeg: 3.5,        // strzał, gdy celownik ≤ tyle od punktu celowania (z rozrzutem)
+    reacquireTime: 0.6,     // s — utrata celu krótsza niż to nie resetuje czasu reakcji
+    hitAwareTime: 1.0,      // s — po trafieniu bot „zna" napastnika (bez sprawdzania FOV)
+    engageRange: [6, 18],   // m — preferowany dystans walki (bliżej → cofanie, dalej → podejście)
+    engageRepath: 0.8,      // s — odświeżanie ścieżki do celu w walce
+    strafeSwitch: [0.45, 1.2], // s — zmiana kierunku strafe
+    coverHold: 2.0,         // s w osłonie (dłużej, jeśli przegrzany)
+    coverCooldown: 5.0,     // s przerwy przed kolejnym szukaniem osłony
+    coverRadius: 12,        // m — promień szukania węzła osłony
+    coverChecks: 24,        // maks. testów linii wzroku przy szukaniu osłony
     adapt: {
       evalInterval: 30,
       window: 60,
@@ -138,48 +154,54 @@ export const CONFIG = Object.freeze({
       floorMeters: 2,         // kafel podłogi (linia siatki co 2 m)
       floorLine: 0.012,       // grubość linii siatki podłogi (m)
       smokeSize: 256,
+      wallMeters: 2.44,       // kafel faktury ściany (2 płyty 1.22 m)
+      accentShare: 0.08,      // udział akcentu wśród drobnych elementów farby
     },
     // Arena (render/arenaBuilder.js)
     arena: {
-      wallColor: '#07060d',
-      wallRoughness: 0.82,
-      paintIntensity: 0.75,         // emissive × farba UV (HDR → bloom)
+      wallColor: '#15132a',         // bardzo ciemny granat (× faktura sklejki)
+      wallRoughness: 0.85,
+      paintIntensity: 0.75,         // emisja farby UV (maski × kolor bryły; HDR → bloom)
+      accentPaintScale: 0.8,        // akcent (limonka) tylko w drobnych elementach farby
+      uvBoost: 1.45,                // fiolet jest ciemny percepcyjnie (listwy, farba, poświata)
       boundaryPaintScale: 1.875,    // ściany obwodowe: kafel 11.25 × 4.5 m (duże murale)
+      // poświata UV/neonu na licu ściany (× kolor listwy bryły × faktura): mocna przy listwie, gaśnie w dół
+      wash: { top: 0.09, fall: 0.55, bottom: 0.05, base: 0.008, edge: 0.05, edgeWidth: 0.035 },
+      capWash: 0.35,                // poświata na wierzchu brył (× wash)
       trimSize: 0.05,
       trimGap: 0.006,               // odsunięcie listwy od ściany (bez z-fightingu)
-      trimBottomLift: 0.03,
-      trimIntensity: 1.8,           // vertexColors HDR (> 1 → bloom)
-      trimUvBoost: 1.5,             // fiolet jest ciemny percepcyjnie
-      trimAccentScale: 0.8,
-      pillarTrimTop: 4.5,
-      pillarRings: [2.4],
-      boundaryTrimHeights: [0.06, 2.6],
-      floorRoughness: 0.6,          // × roughnessMap (≈0.6) → ~0.35
-      floorMetalness: 0.3,
-      floorEmissiveIntensity: 0.2,
-      floorEnvIntensity: 1.0,
-      // odbicia planarne (preset.envReflections): krycie podłogi nad lustrzaną kopią sceny
-      floorReflect: { alphaGloss: 0.85, alphaRough: 0.96, fresnel: 0.25, alphaMin: 0.65 },
+      trimBottomLift: 0.05,
+      trimIntensity: 1.25,          // vertexColors HDR (> 1 → bloom); rdzeń nasycony, nie biały
+      pillarTrimTop: 2.4,           // filar: ramka neonowa do wysokości ścian, wyżej czysty słup
+      boundaryTrimHeights: [0.12, 2.6],
+      rubber: { color: '#0b0a12', baseHeight: 0.1, baseDepth: 0.022, cornerSize: 0.06, cornerInset: 0.012 },
+      spawnPanel: { width: 1.6, height: 0.9, depth: 0.04, y: 1.45, intensity: 1.0 },
+      floorRoughness: 0.75,         // × roughnessMap (≈0.6) → ~0.45 (półpołysk)
+      floorMetalness: 0.2,
+      floorEmissiveIntensity: 0.16,
+      floorEnvIntensity: 0.25,      // PMREM (ogólny połysk); odbicia neonów robi RT (reflect)
+      // odbicie planarne podłogi (preset.envReflections): RT w skali rozdz., rozmycie mipmapą + smuga pionowa
+      reflect: { scale: 0.5, mipBias: 2.2, streak: 10, strength: 0.55, f0: 0.18 },
       envBakeHeight: 1.6,
       envBlur: 0.02,
       ceilingTile: 4.8,
+      ceilingGlow: 1.2,             // emisja paneli sufitu (tekstura × palette.uv)
       trussColor: '#2a2638',
-      trussGlow: 0.05,              // emisja kratownicy (palette.uv) — sylwetki belek czytelne w ciemności
-      ceilingGlow: 2.8,             // emisja paneli sufitu (tekstura × palette.uv)
+      trussGlow: 0.06,              // emisja kratownicy (palette.uv) — sylwetki belek czytelne w ciemności
       trussSpacing: 4,
       trussWidth: 0.4,
       trussDepth: 0.4,
       trussDrop: 0.15,
       trussChord: 0.06,
       trussBay: 0.8,
-      lampSize: [0.9, 0.12, 0.05],  // długość, szerokość, grubość (m)
-      lampIntensity: 4.0,
-      uvTube: { length: 1.2, thickness: 0.035, spacing: 6, drop: 0.06, intensity: 2.2 }, // świetlówki UV na kratownicy
+      lampSize: [0.9, 0.14, 0.05],  // długość, szerokość, grubość (m)
+      lampIntensity: 2.6,
+      uvTube: { length: 1.2, thickness: 0.035, spacing: 4, housing: 0.05, intensity: 1.8 }, // świetlówki UV pod dźwigarami
       conesMinSmoke: 48,            // stożki światła tylko gdy preset.smoke ≥ (High/Ultra)
-      coneTopRadius: 0.25,
-      coneBottomRadius: 1.9,
+      coneTopRadius: 0.22,
+      coneBottomRadius: 1.7,
       coneBottom: 0.0,
-      coneOpacity: 0.25,
+      coneOpacity: 0.5,
     },
   },
 
