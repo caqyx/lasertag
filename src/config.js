@@ -146,7 +146,8 @@ export const CONFIG = Object.freeze({
   render: {
     near: 0.05,
     far: 120,
-    toneMappingExposure: 1.0,
+    toneMapping: 'neutral', // 'neutral' | 'aces' (patrz graphics.js)
+    toneMappingExposure: 0.95,
     fogDensity: 0.055,
     fogTint: 0.07,          // kolor mgły = lerp(palette.fog, palette.uv, fogTint)
     clearColor: '#05030a',
@@ -156,7 +157,7 @@ export const CONFIG = Object.freeze({
     lights: {
       hemiIntensity: 0.9,     // HemisphereLight w kolorze palette.ambient
       hemiGround: 0.35,       // ziemia = ambient × to
-      pointScale: 1.0,        // intensywność PointLight = light.intensity × to (decay 2)
+      pointScale: 0.65,       // intensywność PointLight = light.intensity × to (decay 2)
       rangeScale: 1.0,
       drop: 0.35,             // PointLight pod oprawą lampy (m)
     },
@@ -178,12 +179,12 @@ export const CONFIG = Object.freeze({
       uvBoost: 1.45,                // fiolet jest ciemny percepcyjnie (listwy, farba, poświata)
       boundaryPaintScale: 1.875,    // ściany obwodowe: kafel 11.25 × 4.5 m (duże murale)
       // poświata UV/neonu na licu ściany (× kolor listwy bryły × faktura): mocna przy listwie, gaśnie w dół
-      wash: { top: 0.09, fall: 0.55, bottom: 0.05, base: 0.008, edge: 0.05, edgeWidth: 0.035 },
-      capWash: 0.35,                // poświata na wierzchu brył (× wash)
+      wash: { top: 0.065, fall: 0.5, bottom: 0.04, base: 0.005, edge: 0.04, edgeWidth: 0.035 },
+      capWash: 0.2,                 // poświata na wierzchu brył (× wash)
       trimSize: 0.05,
       trimGap: 0.006,               // odsunięcie listwy od ściany (bez z-fightingu)
       trimBottomLift: 0.05,
-      trimIntensity: 1.25,          // vertexColors HDR (> 1 → bloom); rdzeń nasycony, nie biały
+      trimIntensity: 1.1,           // vertexColors HDR (> 1 → bloom); rdzeń nasycony, nie biały
       trimLumRef: 0.35,             // listwy: intensywność × sqrt(ref / luminancja koloru), zakres 0.55–1.7
       trimSaturation: 1.35,         // podbicie nasycenia listew/lamp (ACES wybiela jasne kolory)
       lampClearance: 0.7,           // oprawa lampy min. tyle od bryły sięgającej sufitu (filar)
@@ -200,7 +201,7 @@ export const CONFIG = Object.freeze({
       envBakeHeight: 1.6,
       envBlur: 0.02,
       ceilingTile: 4.8,
-      ceilingGlow: 1.2,             // emisja paneli sufitu (tekstura × palette.uv)
+      ceilingGlow: 0.6,             // emisja paneli sufitu (tekstura × palette.uv)
       trussColor: '#2a2638',
       trussGlow: 0.06,              // emisja kratownicy (palette.uv) — sylwetki belek czytelne w ciemności
       trussSpacing: 4,

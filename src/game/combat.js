@@ -357,7 +357,7 @@ export function pickSpawn(sim, P) {
       best = sp; PS[0] = vis; PS[1] = any; PS[2] = 1;
     } else if (vis === PS[0] && any === PS[1]) {
       PS[2] += 1;
-      if (sim.rng.next() * PS[2] < 1) best = sp; // reservoir: równomiernie wśród remisów
+      if (sim.rng.int(1, PS[2] | 0) === 1) best = sp; // reservoir: równomiernie wśród remisów (int → bez HeapNumber)
     }
   }
   return best;

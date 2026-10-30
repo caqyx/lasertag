@@ -21,7 +21,8 @@ export function createGraphics({ canvas, presetName = CONFIG.defaults.preset }) 
     canvas, antialias: false, powerPreference: 'high-performance', stencil: false, alpha: false,
   });
   renderer.outputColorSpace = THREE.SRGBColorSpace;
-  renderer.toneMapping = THREE.ACESFilmicToneMapping; // stosowane w OutputPass
+  // stosowane w OutputPass; 'neutral' (Khronos PBR Neutral) zachowuje nasycenie neonów — ACES wybiela jasny cyjan
+  renderer.toneMapping = R.toneMapping === 'aces' ? THREE.ACESFilmicToneMapping : THREE.NeutralToneMapping;
   renderer.toneMappingExposure = R.toneMappingExposure;
   renderer.setClearColor(new THREE.Color(R.clearColor), 1);
   renderer.info.autoReset = false;

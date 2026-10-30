@@ -15,6 +15,10 @@ export const BOT_STATE = Object.freeze({ PATROL: 'patrol', ENGAGE: 'engage', COV
 
 const DEG = Math.PI / 180;
 const TWO_PI = Math.PI * 2;
+// Losowe ułamki liczone tu z rng.int (wynik Smi) — double zwracany przez rng.next/range z nie-inline'owanego
+// wywołania V8 pakuje w HeapNumber (alokacja na gorącej ścieżce).
+const U = 1 << 20;
+const INV_U = 1 / U;
 
 /**
  * @param {{ level?: 'easy'|'normal'|'hard', nav: object, adapt?: object|null }} o
@@ -425,8 +429,8 @@ function steerAim(B, P) {
 function sampleAimError(B) {
   B.needErr = false;
   const rng = B.rng;
-  const u1 = rng.next() || 1e-9;
-  const u2 = rng.next();
+  const u1 = rng.int(1, U) * INV_U;          // (0, 1]
+  const u2 = rng.int(0, U - 1) * INV_U;      // [0, 1)
   const m = Math.sqrt(-2 * Math.log(u1)) * B.sigma;
   B.errYaw = m * Math.cos(TWO_PI * u2);
   B.errPitch = m * Math.sin(TWO_PI * u2) * 0.6;   // mniejszy rozrzut w pionie
@@ -469,8 +473,9 @@ function steerMove(B, P, sim) {
     }
     if (B.L.strafe > 0) {
       if (B.strafeTimer <= 0) {
-        B.strafeTimer = sim.rng.range(C.strafeSwitch[0], C.strafeSwitch[1]);
-        B.strafeDir = sim.rng.next() < B.L.strafe ? (sim.rng.next() < 0.5 ? -1 : 1) : 0;
+        const sw = C.strafeSwitch;
+        B.strafeTimer = sw[0] + (sw[1] - sw[0]) * (sim.rng.int(0, U - 1) * INV_U);
+        B.strafeDir = sim.rng.int(0, U - 1) * INV_U < B.L.strafe ? (sim.rng.int(0, 1) === 0 ? -1 : 1) : 0;
       }
       if (B.strafeDir !== 0 && d > 1e-3) {
         // prostopadle do kierunku na cel
@@ -502,7 +507,7 @@ function steerMove(B, P, sim) {
 function onStuck(B, P, sim) {
   B.stuckCount++;
   B.jumpNow = true;
-  B.strafeDir = -B.strafeDir;
+  if (B.strafeDir !== 0) B.strafeDir = -B.strafeDir;   // bez -0 (double → zmiana mapy obiektu → deopt wszystkich funkcji bota)
   if (B.state === BOT_STATE.PATROL) startPatrol(B, P, sim);
   else if (B.state === BOT_STATE.COVER) { B.coverCooldown = CONFIG.bots.coverCooldown; startPatrol(B, P, sim); }
   else if (B.state === BOT_STATE.CHASE) { B.target = null; startPatrol(B, P, sim); }
@@ -527,7 +532,8 @@ function steerFire(B, P, sim, out) {
   const W = P.weapon;
   if (B.pauseNeeded) {
     B.pauseNeeded = false;
-    B.pauseTimer = sim.rng.range(C.burstPause[0], C.burstPause[1]);
+    const bp = C.burstPause;
+    B.pauseTimer = bp[0] + (bp[1] - bp[0]) * (sim.rng.int(0, U - 1) * INV_U);
   }
   if (T === null || !B.targetVisible || T.state !== 'alive' || T.protectTimer > 0) return;
   if (B.state !== BOT_STATE.ENGAGE && !(B.state === BOT_STATE.COVER && B.pathIdx >= B.pathLen)) return;

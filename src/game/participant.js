@@ -66,13 +66,14 @@ export function createParticipant(o) {
     sensorsLit: C.maxHp,
     stats: { score: 0, hits: 0, elims: 0, deaths: 0, shots: 0 },
     lastHitBy: -1,
-    lastHitTime: -1e9,
+    lastHitTime: -1e9 - 0.5,   // double od startu (−1e9 to Smi → późniejsza zmiana mapy)
     lastHitDirX: 0.5,
     lastHitDirZ: 0.5,
   };
   resetVitals(P);
   P.prevX = 0; P.prevY = 0; P.prevZ = 0;
   P.lastHitDirX = 0; P.lastHitDirZ = 0;
+  P.lastHitTime = -1e9;
   return P;
 }
 

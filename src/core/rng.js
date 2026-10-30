@@ -1,15 +1,20 @@
 // Deterministyczny RNG (mulberry32). Czysty JS, bez alokacji w next()/range()/int()/pick().
+// Uwaga V8: wynik double z nie-inline'owanego wywołania jest pakowany (HeapNumber); na gorącej ścieżce preferuj int()
+// (wynik Smi) i licz ułamek u wołającego: a + (b - a) * rng.int(0, U - 1) / U.
 
 /**
  * @param {number} seed  dowolna liczba (rzutowana na uint32)
  * @returns {{ next(): number, range(a:number,b:number): number, int(a:number,b:number): number, pick<T>(arr:T[]): T, seed: number }}
  */
 export function createRng(seed) {
-  let state = (seed >>> 0) || 0;
+  // Stan w Int32Array: zapis int32 spoza zakresu Smi do zmiennej domknięcia (`let`) alokowałby HeapNumber przy każdym next().
+  const S = new Int32Array(1);
+  S[0] = (seed >>> 0) || 0;
 
   function next() {
-    state = (state + 0x6d2b79f5) | 0;
-    let t = state;
+    const st = (S[0] + 0x6d2b79f5) | 0;
+    S[0] = st;
+    let t = st;
     t = Math.imul(t ^ (t >>> 15), t | 1);
     t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
