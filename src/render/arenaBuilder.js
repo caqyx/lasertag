@@ -611,6 +611,8 @@ float floorMask() {
       wsum += w;
     }
     rc /= wsum;
+    if ( any( isnan( rc ) ) || any( isinf( rc ) ) ) rc = vec3( 0.0 );   // odbicie nie przenosi NaN/Inf na podłogę
+    rc = min( rc, vec3( ${A.reflect.maxValue.toFixed(1)} ) );
     // zanik z odległością od podłogi: głębia punktu odbitego − głębia podłogi ≈ droga za lustrem
     float rDepth = texture2D( tReflectDepth, ruv ).x;
     float rViewZ = perspectiveDepthToViewZ( rDepth, camNear, camFar );

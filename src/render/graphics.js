@@ -18,6 +18,22 @@ import { createDecor } from './decor.js';
 
 const R = CONFIG.render;
 
+const HDR_GUARD_SHADER = {
+  name: 'HdrGuardShader',
+  uniforms: { tDiffuse: { value: null } },
+  vertexShader: /* glsl */`
+varying vec2 vUv;
+void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+  fragmentShader: /* glsl */`
+uniform sampler2D tDiffuse;
+varying vec2 vUv;
+void main() {
+  vec4 c = texture2D(tDiffuse, vUv);
+  if (any(isnan(c)) || any(isinf(c))) c = vec4(0.0, 0.0, 0.0, 1.0);
+  gl_FragColor = clamp(c, vec4(0.0), vec4(${R.hdrMax.toFixed(1)}));
+}`,
+};
+
 export function createGraphics({ canvas, presetName = CONFIG.defaults.preset }) {
   const renderer = new THREE.WebGLRenderer({
     canvas, antialias: false, powerPreference: 'high-performance', stencil: false, alpha: false,
@@ -44,7 +60,7 @@ export function createGraphics({ canvas, presetName = CONFIG.defaults.preset }) 
   let arena = null;
   let decor = null;
   let smoke = null;
-  let composer = null, bloomPass = null, fxaaPass = null, outputPass = null, renderPass = null;
+  let composer = null, bloomPass = null, fxaaPass = null, outputPass = null, renderPass = null, guardPass = null;
   const size = new THREE.Vector2();
   const fogTintColor = new THREE.Color();
 
@@ -56,7 +72,7 @@ export function createGraphics({ canvas, presetName = CONFIG.defaults.preset }) 
     if (!composer) return;
     for (const p of composer.passes) if (p.dispose) p.dispose();
     composer.dispose(); // renderTarget1/2 + copyPass
-    composer = bloomPass = fxaaPass = outputPass = renderPass = null;
+    composer = bloomPass = fxaaPass = outputPass = renderPass = guardPass = null;
   }
 
   function buildComposer() {
@@ -69,6 +85,10 @@ export function createGraphics({ canvas, presetName = CONFIG.defaults.preset }) 
     renderPass = new RenderPass(scene, camera);
     composer.addPass(renderPass);
     if (preset.bloom) {
+      // strażnik HDR: NaN/Inf (np. z dowolnego shadera) → 0, jasność ≤ hdrMax — inaczej bloom rozlewa NaN
+      // przez łańcuch mipów i powstają duże czarne prostokąty
+      guardPass = new ShaderPass(HDR_GUARD_SHADER);
+      composer.addPass(guardPass);
       const bl = preset.bloom;
       bloomPass = new UnrealBloomPass(new THREE.Vector2(256, 256), bl.strength, bl.radius, bl.threshold);
       const scale = bl.scale;
@@ -229,6 +249,7 @@ export function createGraphics({ canvas, presetName = CONFIG.defaults.preset }) 
     renderer, scene, camera,
     presetName: presetName,
     setPreset, setWorld, update, render, resize, info, dispose,
+    get composer() { return composer; },   // diagnostyka (testy/zrzuty)
   };
   setPreset(presetName);
   return api;
