@@ -238,10 +238,7 @@ for (const mapId of Object.keys(MAPS)) {
       }
     }
   });
-  const dupTodo = mapId === 'uvmaze' ? undefined
-    : 'BUG combat.pickSpawn: preferuje spawn niewidoczny dla wrogów nad wolnym — przy starcie tdm członkowie drużyny stoją na tym samym ' +
-      'spawnie (neonhive tdm2: 6/8 różnych, tdm4: 4/8; reactor tdm2: 4/8, tdm4: 4/8), mimo że drużyna ma ≥ perTeam własnych spawnów';
-  test(`${mapId}: start meczu (ffa/tdm2/tdm4) — 8 uczestników na 8 różnych spawnach`, { todo: dupTodo }, () => {
+  test(`${mapId}: start meczu (ffa/tdm2/tdm4) — 8 uczestników na 8 różnych spawnach`, () => {
     for (const mode of ['ffa', 'tdm2', 'tdm4']) {
       const { sim } = startPositions(mapId, mode);
       const pos = sim.participants.map((P) => `${P.body.x},${P.body.z}`);

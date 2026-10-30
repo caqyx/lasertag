@@ -16,6 +16,7 @@ import { groundHeight } from './physics.js';
 
 const EDGE_STEP = 0.2;        // m — gęstość próbkowania krawędzi
 const EDGE_MARGIN = 0.03;     // m — margines koła przy teście krawędzi (ponad radius gracza)
+const FLAT_BUMP = 0.1;        // m — maks. garb/dołek na krawędzi łączącej węzły tej samej wysokości
 const SUPPORT_EPS = 0.05;     // m — tolerancja zgodności wysokości węzła z groundHeight
 const SAME_LEVEL_DY = 1.0;    // m — nearestNode: „ten sam poziom"
 const NEAR_RING = 2;          // komórki — promień pierwszego przeszukiwania nearestNode
@@ -102,15 +103,24 @@ function edgeWalkable(world, ax, ah, az, bx, bh, bz) {
   const len = Math.hypot(dx, dz);
   const steps = Math.max(1, Math.ceil(len / EDGE_STEP));
   let h = ah;
+  let hMin = ah; let hMax = ah;
   for (let i = 1; i <= steps; i++) {
     const t = i / steps;
     const x = ax + dx * t; const z = az + dz * t;
     const gh = groundHeight(world, x, z, h, P.radius);
     if (Math.abs(gh - h) > maxClimb) return false;
     h = gh;
+    if (h < hMin) hMin = h; if (h > hMax) hMax = h;
     if (blockedAt(world, x, z, h, r)) return false;
   }
-  return Math.abs(h - bh) < SUPPORT_EPS + 1e-6;
+  if (Math.abs(h - bh) >= SUPPORT_EPS + 1e-6) return false;
+  // krawędź „płaska" (końce na tej samej wysokości) nie może po drodze wchodzić na garb/schodzić w dołek
+  // (np. ścięty narożnik niskiego końca rampy) — zejście z garbu > groundSnap to krótki lot, bot gubi grunt
+  if (Math.abs(ah - bh) < SUPPORT_EPS) {
+    const hiEnd = ah > bh ? ah : bh; const loEnd = ah < bh ? ah : bh;
+    if (hMax - hiEnd > FLAT_BUMP || loEnd - hMin > FLAT_BUMP) return false;
+  }
+  return true;
 }
 
 // ---------------------------------------------------------------------------------------------

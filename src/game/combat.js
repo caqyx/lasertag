@@ -336,12 +336,36 @@ function spawnAllowed(sim, P, sp) {
 
 // scratch pickSpawn: [bestVis, bestAny, ties]
 const PS = new Float64Array(3);
+// scratch: min. odległość² spawnu od żywych uczestników (zajętość)
+const OCC = new Float64Array(1);
+// zastępczy punkt (spawn przesunięty, gdy wszystkie dozwolone zajęte) — zwracany przez pickSpawn, czytać od razu
+const SPAWN_ALT = { x: 0.5, y: 0.5, z: 0.5, yaw: 0.5, team: 0 };
+// przesunięcia kandydatów wokół zajętego spawnu (× spawnOffset)
+const ALT_DIRS = new Float64Array([1, 0, -1, 0, 0, 1, 0, -1, 0.7071, 0.7071, -0.7071, 0.7071, 0.7071, -0.7071, -0.7071, -0.7071]);
+
+/** Min. odległość² punktu (x,y,z) od żywych uczestników poza P → OCC[0]. */
+function occupancy(sim, P, x, y, z) {
+  const ps = sim.participants;
+  OCC[0] = Infinity;
+  for (let j = 0; j < ps.length; j++) {
+    const Q = ps[j];
+    if (Q === P || Q.state !== 'alive') continue;
+    const qb = Q.body;
+    const dx = qb.x - x, dy = qb.y - y, dz = qb.z - z;
+    const d2 = dx * dx + dy * dy + dz * dz;
+    if (d2 < OCC[0]) OCC[0] = d2;
+  }
+}
 
 /**
- * Punkt startowy najdalszy od żywych wrogów, którzy go widzą (linia wzroku oko→oko); remis/brak widzących →
- * najdalszy od wszystkich żywych uczestników; dalszy remis → losowo przez sim.rng.
+ * Punkt startowy (SPEC §2.2):
+ * 1) zajęte spawny (żywy uczestnik w promieniu CONFIG.combat.spawnOccupiedRadius) są wykluczone;
+ * 2) spośród wolnych — najdalszy od żywych wrogów, którzy go widzą (oko→oko); remis/brak widzących → najdalszy
+ *    od wszystkich żywych; dalszy remis → losowo (sim.rng);
+ * 3) wszystkie dozwolone zajęte → punkt przesunięty o spawnOffset od spawnu (8 kierunków, wolna linia od spawnu,
+ *    wolny od uczestników), wybierany od spawnu najdalszego od zajmujących; brak takiego → ten najdalszy spawn.
  * Tryb drużynowy (sim.teamCount > 0, team ≥ 0): tylko spawny z sp.team % teamCount === P.team (brak → wszystkie).
- * Zwraca element world.spawns (lub null, gdy mapa nie ma spawnów).
+ * Zwraca element world.spawns albo współdzielony obiekt zastępczy (czytać od razu); null, gdy mapa nie ma spawnów.
  */
 export function pickSpawn(sim, P) {
   const spawns = sim.world.spawns;
@@ -350,6 +374,21 @@ export function pickSpawn(sim, P) {
   for (let i = 0; i < spawns.length; i++) {
     if (spawnAllowed(sim, P, spawns[i])) { anyAllowed = true; break; }
   }
+  const C = CONFIG.combat;
+  const occ2 = C.spawnOccupiedRadius * C.spawnOccupiedRadius;
+  // 1) czy istnieje wolny dozwolony spawn; przy okazji najdalszy od zajmujących
+  let anyFree = false;
+  let leastOcc = null;
+  PS[0] = -1;
+  for (let i = 0; i < spawns.length; i++) {
+    const sp = spawns[i];
+    if (anyAllowed && !spawnAllowed(sim, P, sp)) continue;
+    occupancy(sim, P, sp.x, sp.y, sp.z);
+    if (OCC[0] >= occ2) { anyFree = true; break; }
+    if (OCC[0] > PS[0]) { PS[0] = OCC[0]; leastOcc = sp; }
+  }
+  if (!anyFree) return spawnOffset(sim, P, leastOcc);
+
   const eye = CONFIG.player.eyeHeight;
   const ps = sim.participants;
   let best = null;
@@ -371,6 +410,7 @@ export function pickSpawn(sim, P) {
         if (segmentClearSeg(sim.world)) vis = d2;
       }
     }
+    if (any < occ2) continue;   // zajęty
     if (best === null || vis > PS[0] || (vis === PS[0] && any > PS[1])) {
       best = sp; PS[0] = vis; PS[1] = any; PS[2] = 1;
     } else if (vis === PS[0] && any === PS[1]) {
@@ -379,4 +419,33 @@ export function pickSpawn(sim, P) {
     }
   }
   return best;
+}
+
+/**
+ * Wszystkie spawny zajęte: punkt o spawnOffset od sp w jednym z 8 kierunków — linia od spawnu wolna od brył
+ * (na wysokości bioder i oka, z zapasem promienia), bez uczestnika w spawnOccupiedRadius. Brak → sp.
+ */
+function spawnOffset(sim, P, sp) {
+  const C = CONFIG.combat;
+  const occ2 = C.spawnOccupiedRadius * C.spawnOccupiedRadius;
+  const off = C.spawnOffset;
+  const reach = off + CONFIG.player.radius + 0.05;
+  const b = sim.world.bounds;
+  const r = CONFIG.player.radius;
+  for (let k = 0; k < 8; k++) {
+    const dx = ALT_DIRS[k * 2], dz = ALT_DIRS[k * 2 + 1];
+    const x = sp.x + dx * off, z = sp.z + dz * off;
+    if (x < b.minX + r || x > b.maxX - r || z < b.minZ + r || z > b.maxZ - r) continue;
+    SEG[0] = sp.x; SEG[1] = sp.y + 0.5; SEG[2] = sp.z;
+    SEG[3] = sp.x + dx * reach; SEG[4] = sp.y + 0.5; SEG[5] = sp.z + dz * reach;
+    if (!segmentClearSeg(sim.world)) continue;
+    SEG[0] = sp.x; SEG[1] = sp.y + CONFIG.player.height - 0.1; SEG[2] = sp.z;
+    SEG[3] = sp.x + dx * reach; SEG[4] = sp.y + CONFIG.player.height - 0.1; SEG[5] = sp.z + dz * reach;
+    if (!segmentClearSeg(sim.world)) continue;
+    occupancy(sim, P, x, sp.y, z);
+    if (OCC[0] < occ2) continue;
+    SPAWN_ALT.x = x; SPAWN_ALT.y = sp.y; SPAWN_ALT.z = z; SPAWN_ALT.yaw = sp.yaw; SPAWN_ALT.team = sp.team;
+    return SPAWN_ALT;
+  }
+  return sp;
 }

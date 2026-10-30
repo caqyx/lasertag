@@ -65,6 +65,8 @@ export const CONFIG = Object.freeze({
       right: [0.28, 1.55, 0],
     },
     loseOrder: ['back', 'left', 'right', 'front'],
+    spawnOccupiedRadius: 1.5, // m — spawn z żywym uczestnikiem bliżej niż to jest zajęty (pickSpawn)
+    spawnOffset: 1.2,       // m — przesunięcie od spawnu, gdy wszystkie dozwolone zajęte
     hitStun: 0.45,          // D-016: s bez broni po trafieniu (nie eliminującym) — kto trafi pierwszy, wygrywa wymianę
     eventCapacity: 256,     // pierścień zdarzeń symulacji (core/events.js); czyszczony raz na klatkę renderu
     maxParticipants: 16,    // pojemność instancji awatarów
