@@ -619,7 +619,7 @@ float floorMask() {
     float behind = max( -rViewZ - vViewPosition.z, 0.0 );   // vViewPosition.z = głębia podłogi (dodatnia)
     float hFade = exp( -behind / ${A.reflect.fadeLen.toFixed(2)} );
     vec3 fN = normalize( ( viewMatrix * vec4( 0.0, 1.0, 0.0, 0.0 ) ).xyz );
-    float ndv = clamp( abs( dot( fN, normalize( vViewPosition ) ) ), 0.0, 1.0 );
+    float ndv = clamp( abs( dot( fN, vViewPosition ) ) * inversesqrt( max( dot( vViewPosition, vViewPosition ), 1e-12 ) ), 0.0, 1.0 );
     float fres = ${A.reflect.f0.toFixed(3)} + ( 1.0 - ${A.reflect.f0.toFixed(3)} ) * pow( 1.0 - ndv, 5.0 );
     totalEmissiveRadiance += rc * ${A.reflect.strength.toFixed(3)} * fres * hFade * ( 1.0 - floorMask() );
   }
@@ -643,7 +643,7 @@ function patchNeonMaterial(mat) {
       .replace('#include <common>', '#include <common>\nvarying float vNearK;\nvarying float vNDepth;\nvarying vec3 vTubeN;\nvarying vec3 vTubeV;')
       .replace('#include <color_fragment>', `#include <color_fragment>
   // „rurka": ściany zwrócone do kamery jasne, boczne ciemniejsze → gradient rdzeń → brzeg zamiast płaskiej taśmy
-  float tubeF = abs( dot( normalize( vTubeN ), normalize( vTubeV ) ) );
+  float tubeF = clamp( abs( dot( vTubeN, vTubeV ) ) * inversesqrt( max( dot( vTubeN, vTubeN ) * dot( vTubeV, vTubeV ), 1e-12 ) ), 0.0, 1.0 );
   diffuseColor.rgb *= vNearK * mix( ${N.tubeEdge.toFixed(3)}, 1.0, pow( tubeF, ${N.tubePow.toFixed(2)} ) );`)
       .replace('#include <fog_fragment>', `
 #ifdef USE_FOG
@@ -714,9 +714,9 @@ varying vec3 vViewV;
 varying float vH;
 varying float vFogDepth;
 void main() {
-  float facing = abs(dot(normalize(vNormalV), normalize(vViewV)));
+  float facing = clamp(abs(dot(vNormalV, vViewV)) * inversesqrt(max(dot(vNormalV, vNormalV) * dot(vViewV, vViewV), 1e-12)), 0.0, 1.0);
   float edge = smoothstep(0.15, 0.9, facing); edge *= edge;  // krawędzie stożka znikają miękko (fresnel)
-  float fall = pow(vH, 2.2) * smoothstep(0.0, 0.45, vH);  // jasno pod lampą, wygasa długo przed podłogą
+  float fall = pow(clamp(vH, 0.0, 1.0), 2.2) * smoothstep(0.0, 0.45, vH);  // jasno pod lampą, wygasa długo przed podłogą
   float near = smoothstep(0.4, 2.2, vFogDepth);          // nie oślepia przy kamerze
   float fogF = exp(-fogDensity * fogDensity * vFogDepth * vFogDepth * 0.6);
   float a = opacity * edge * fall * near * fogF * (0.92 + 0.08 * sin(time * 1.7 + vH * 6.0));

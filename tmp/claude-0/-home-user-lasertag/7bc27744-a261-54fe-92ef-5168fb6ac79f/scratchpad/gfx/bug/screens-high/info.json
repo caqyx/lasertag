@@ -1,0 +1,63 @@
+{
+  "uvmaze/high/overview": {
+    "file": "/tmp/claude-0/-home-user-lasertag/7bc27744-a261-54fe-92ef-5168fb6ac79f/scratchpad/gfx/bug/screens-high/uvmaze-high-0-overview.png",
+    "info": {
+      "calls": 38,
+      "triangles": 48211,
+      "points": 0,
+      "lines": 0,
+      "textures": 26,
+      "geometries": 17,
+      "programs": 26
+    }
+  },
+  "uvmaze/high/corridor": {
+    "file": "/tmp/claude-0/-home-user-lasertag/7bc27744-a261-54fe-92ef-5168fb6ac79f/scratchpad/gfx/bug/screens-high/uvmaze-high-1-corridor.png",
+    "info": {
+      "calls": 38,
+      "triangles": 48211,
+      "points": 0,
+      "lines": 0,
+      "textures": 26,
+      "geometries": 17,
+      "programs": 26
+    }
+  },
+  "uvmaze/high/plaza": {
+    "file": "/tmp/claude-0/-home-user-lasertag/7bc27744-a261-54fe-92ef-5168fb6ac79f/scratchpad/gfx/bug/screens-high/uvmaze-high-2-plaza.png",
+    "info": {
+      "calls": 38,
+      "triangles": 48211,
+      "points": 0,
+      "lines": 0,
+      "textures": 26,
+      "geometries": 17,
+      "programs": 26
+    }
+  },
+  "uvmaze/high/spawn": {
+    "file": "/tmp/claude-0/-home-user-lasertag/7bc27744-a261-54fe-92ef-5168fb6ac79f/scratchpad/gfx/bug/screens-high/uvmaze-high-3-spawn.png",
+    "info": {
+      "calls": 38,
+      "triangles": 48211,
+      "points": 0,
+      "lines": 0,
+      "textures": 26,
+      "geometries": 17,
+      "programs": 26
+    }
+  },
+  "uvmaze/high/corner": {
+    "file": "/tmp/claude-0/-home-user-lasertag/7bc27744-a261-54fe-92ef-5168fb6ac79f/scratchpad/gfx/bug/screens-high/uvmaze-high-4-corner.png",
+    "info": {
+      "calls": 38,
+      "triangles": 48211,
+      "points": 0,
+      "lines": 0,
+      "textures": 26,
+      "geometries": 17,
+      "programs": 26
+    }
+  },
+  "uvmaze/high/console": []
+}

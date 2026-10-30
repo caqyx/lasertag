@@ -51,7 +51,7 @@ void main() {
   // energia płynąca w górę: pasma + skośne strugi
   float bands = smoothstep(0.78, 1.0, fract(vY * 0.55 - time * 0.45));
   float flow = 0.5 + 0.5 * sin(vAng * 9.0 + vY * 2.2 - time * 2.3);
-  flow = pow(flow, 6.0);
+  flow = pow(clamp(flow, 0.0, 1.0), 6.0);
   float pulse = 0.85 + 0.15 * sin(time * 2.7);
   vec3 c;
   if (vK > 0.5) {
@@ -59,7 +59,7 @@ void main() {
     c = mix(colA, vec3(1.0), 0.35) * (1.6 + 0.6 * bands) * pulse;
   } else {
     // płaszcz: ciemniejszy środek, jaśniejsze brzegi (fresnel), pasma i strugi
-    float rim = pow(1.0 - facing, 2.0);
+    float rim = pow(clamp(1.0 - facing, 0.0, 1.0), 2.0);
     c = colA * (0.25 + 0.9 * rim + 1.4 * bands + 0.8 * flow) * pulse;
     c += colB * smoothstep(0.92, 1.0, fract(vY * 0.12 - time * 0.08)) * 0.8;
   }
@@ -90,7 +90,7 @@ varying float vPhase;
 varying float vFogDepth;
 void main() {
   // fala jasności biegnąca po pierścieniach w górę (vPhase = wysokość); faza < 0 → stałe (ostrzegawcze)
-  float k = vPhase < 0.0 ? 1.0 : 0.45 + 0.75 * pow(0.5 + 0.5 * sin(time * 2.4 - vPhase * 1.3), 3.0);
+  float k = vPhase < 0.0 ? 1.0 : 0.45 + 0.75 * pow(clamp(0.5 + 0.5 * sin(time * 2.4 - vPhase * 1.3), 0.0, 1.0), 3.0);
   float fogF = exp(-fogDensity * fogDensity * vFogDepth * vFogDepth * 0.6);
   gl_FragColor = vec4(mix(fogColor, vColor * k, fogF), 1.0);
 }`;
@@ -106,7 +106,7 @@ varying float vY;
 varying float vFogDepth;
 void main() {
   float facing = abs(dot(normalize(vN), normalize(vV)));
-  float rim = pow(1.0 - facing, 3.0);
+  float rim = pow(clamp(1.0 - facing, 0.0, 1.0), 3.0);
   float scan = smoothstep(0.96, 1.0, fract(vY * 0.35 - time * 0.3));
   float fogF = exp(-fogDensity * fogDensity * vFogDepth * vFogDepth);
   gl_FragColor = vec4(col * (opacity * (0.25 + rim) + scan * 0.25) * fogF, 1.0);
