@@ -170,12 +170,42 @@ createHud(rootEl) → { update(player, sim, dt), dispose() }   // HP 4 segmenty,
    // trafienia, ekran eliminacji z odliczaniem, ochrona, feed eliminacji (z kolejki zdarzeń); DOM aktualizowany tylko przy zmianie
 ```
 
-## 8. Etapy późniejsze (szkic)
-- **M2**: `nav.js` (`buildNav(world) → { nodes, edges, findPath(a,b,outPath), nearestNode(x,y,z) }`), `bots/ai.js` (FSM jako InputSource), `bots/adapt.js`.
+## 8. M2 — boty (kontrakty)
+
+### 8.1 Nawigacja (`src/world/nav.js`) — czysta, bez three
+```js
+buildNav(world) → Nav = {
+  count, x: Float32Array, y: Float32Array, z: Float32Array,       // węzły (próbkowanie co CONFIG.nav.cell na powierzchniach chodliwych, clearance od brył)
+  edgeStart: Int32Array(count+1), edges: Int32Array, cost: Float32Array,   // CSR; krawędź = przejście możliwe dla kapsuły gracza (bez skoku), też rampy/poziomy
+  cover: Uint8Array?                                               // opcjonalnie: węzły przy osłonach (połówki/filary/narożniki)
+}
+nearestNode(nav, x, y, z) → index | -1          // najbliższy węzeł na tym samym poziomie (|dy| < 1), preferuj z linią przejścia
+findPath(nav, from, to, outPath: Int32Array) → length (0 = brak)   // A* z prealokowanymi buforami (bez alokacji), ścieżka wygładzona? (opcjonalnie: smoothPath)
+randomNode(nav, rng) → index
+```
+Wymóg: z każdego spawnu osiągalne ≥ 98% węzłów; na mapach 2-poziomowych (M4) krawędzie przez rampy.
+
+### 8.2 Bot (`src/game/bots/ai.js`) — InputSource
+```js
+createBotBrain({ level: 'easy'|'normal'|'hard', nav, adapt }) → { sample(P, sim, out), state, target }
+```
+FSM wg SPEC §2.5: patrol → namierzanie (reakcja, obrót z limitem °/s, rozrzut σ, serie) → osłona → pościg. Widzenie: dystans, FOV, `segmentClear`
+oko→oko (z rozłożeniem zapytań w czasie: CONFIG.bots.thinkInterval). Ruch: podążanie za ścieżką (`findPath`), strafe w walce, wykrywanie utknięcia
+(CONFIG.bots.stuckTime → nowa ścieżka). Bot nie strzela do sojuszników, nie strzela przegrzany (czeka), ma rozsądną dyscyplinę ognia. Zero alokacji w sample.
+
+### 8.3 Adaptacja (`src/game/bots/adapt.js`)
+```js
+createAdapt() → A = { offset, ... }
+recordEvent(A, time, kind /* 'kill'|'death' gracza */)
+stepAdapt(A, time) → void                        // co CONFIG.bots.adapt.evalInterval wg SPEC §2.5
+skillScale(A, level) → { aimSigma, reaction, turn }   // zapis do prealokowanego obiektu; dotyczy botów-przeciwników gracza
+```
+
+## 9. Etapy późniejsze (szkic)
 - **M3**: `modes.js`, `match.js` (timer, limity, koniec), `ui/scoreboard.js`, `ui/menu.js`, `ui/endScreen.js`.
 - **M4**: `maps/neonhive.js`, `maps/reactor.js` + decor (rdzeń reaktora).
 
-## 9. Podział pracy M0 (równolegle, rozłączne pliki)
+## 10. Podział pracy M0 (równolegle, rozłączne pliki)
 | Coder | Pliki |
 |---|---|
 | A — świat | `src/core/rng.js`, `src/world/maps/uvmaze.js`, `src/world/maps/index.js`, `src/world/mapgen.js`, `src/world/physics.js`, `src/game/movement.js` |
