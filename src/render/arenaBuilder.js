@@ -16,7 +16,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { CONFIG } from '../config.js';
-import { PAINT_STYLES } from './textures.js';
+import { PAINT_STYLES, SIGN_CELLS } from './textures.js';
 import { createRng } from '../core/rng.js';
 
 const A = CONFIG.render.arena;
@@ -149,7 +149,8 @@ function addCap(buf, s, y, up) {
 }
 
 function addSolid(paintBuf, plainBuf, s, rng) {
-  const tileW = s.boundary ? TX.paintMeters[0] * A.boundaryPaintScale : TX.paintMeters[0];
+  const uScale = A.wallUScale[0] + (A.wallUScale[1] - A.wallUScale[0]) * rng();
+  const tileW = s.boundary ? TX.paintMeters[0] * A.boundaryPaintScale : TX.paintMeters[0] * uScale;
   const tileH = s.boundary ? TX.paintMeters[1] * A.boundaryPaintScale : TX.paintMeters[1];
   const { hx, hz, y0, y1 } = s;
   const base = rng() * tileW * 4;
@@ -378,6 +379,42 @@ function addSteelSolid(steelBuf, beamBuf, trimBuf, railBuf, s, col, warnCol, dim
   }
 }
 
+// tablice na licu ściany obwodowej: litera sektora w środku, znaki po bokach (komórki atlasu 4 × 2)
+function addSigns(buf, s, world, idx) {
+  const Sg = A.signs;
+  const { longX, sign } = innerSide(s, world);
+  const L = longX ? s.hx : s.hz;
+  if (2 * L < Sg.size * 1.5) return;
+  const off = (longX ? s.hz : s.hx) + A.trimGap * 2;
+  const nlx = longX ? 0 : sign, nlz = longX ? sign : 0;
+  const nx = nlx * s.cos + nlz * s.sin, nz = -nlx * s.sin + nlz * s.cos;
+  const reactor = world.id === 'reactor';
+  const cells = [[0.5, SIGN_CELLS.sector[idx % 4]]];
+  if (2 * L > Sg.size * 4) {
+    cells.push([0.2, reactor ? SIGN_CELLS.trefoil : SIGN_CELLS.number]);
+    cells.push([0.8, reactor ? SIGN_CELLS.hazard : SIGN_CELLS.arrow]);
+  }
+  const h = Sg.size / 2;
+  for (const [f, cell] of cells) {
+    const u = -L + 2 * L * f;
+    const cu = (cell % 4) / 4, cv = cell < 4 ? 0.5 : 0;
+    // wierzchołki w lokalnym układzie: wzdłuż długiego boku, na licu wewnętrznym
+    const pts = longX ? [[u - h, sign * off], [u + h, sign * off]] : [[sign * off, u - h], [sign * off, u + h]];
+    toWorld(s, pts[0][0], pts[0][1], _wa); toWorld(s, pts[1][0], pts[1][1], _wb);
+    // kolejność tak, by tekst nie był lustrzany patrząc od środka (prawo = kierunek zgodny z normalną × góra)
+    const rx = nz, rz = -nx; // „prawo" patrząc na ścianę od środka areny (przód = −n)
+    const flip = (_wb[0] - _wa[0]) * rx + (_wb[1] - _wa[1]) * rz < 0;
+    const A0 = flip ? _wb : _wa, B0 = flip ? _wa : _wb;
+    const y0 = Sg.y - h, y1 = Sg.y + h;
+    const i = buf.count;
+    buf.vert(A0[0], y0, A0[1], nx, 0, nz, cu, cv);
+    buf.vert(B0[0], y0, B0[1], nx, 0, nz, cu + 0.25, cv);
+    buf.vert(B0[0], y1, B0[1], nx, 0, nz, cu + 0.25, cv + 0.5);
+    buf.vert(A0[0], y1, A0[1], nx, 0, nz, cu, cv + 0.5);
+    buf.quad(i, i + 1, i + 2, i + 3);
+  }
+}
+
 // barierka ażurowa: niska blacha (cokół), słupki, pochwyt + poprzeczka, siatka (alphaTest); neon na pochwycie
 function addRail(steelBuf, trimBuf, railBuf, s, col, warnCol) {
   const RL = A.rail;
@@ -538,7 +575,6 @@ function patchFloorMaterial(mat, uniforms) {
       .replace('#include <fog_vertex>', '#include <fog_vertex>\n  vFW = ( modelMatrix * vec4( transformed, 1.0 ) ).xz;');
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', `#include <common>
-#include <packing>
 uniform sampler2D tReflect;
 uniform sampler2D tReflectDepth;
 uniform float camNear;
@@ -787,7 +823,11 @@ export function buildArena(world, preset, textures, opts = {}) {
   const steelBuf = new GeoBuf();   // galerie/kładki/barierki/rampy: stal z kratką
   const railBuf = new GeoBuf();    // siatka barierek (ażur, alphaTest)
   const covers = opts.covers || (() => false);
-  const reflPassU = { value: 1 };   // 1 = normalny render; < 1 podczas renderu odbicia (wspólny uniform ścian)
+  const reflPassU = { value: 1 };
+  const cycle = A.boundaryCycle.includes(world.id);
+  let boundaryIdx = 0;
+  let signIdx = 0;
+  const signBuf = new GeoBuf();   // 1 = normalny render; < 1 podczas renderu odbicia (wspólny uniform ścian)
   const warnKey = fullAccent ? 'accent' : 'secondary';
 
   const setCur = (buf, aKey, bKey, washKey, top, bot) => {
@@ -810,7 +850,8 @@ export function buildArena(world, preset, textures, opts = {}) {
       addSteelSolid(steelBuf, trussBuf, trimBuf, railBuf, s, trimCol[ek], trimCol[warnKey], dimCol.uv);
       return;
     }
-    const style = PAINT_STYLES.includes(s.paint) ? s.paint : null;
+    let style = PAINT_STYLES.includes(s.paint) ? s.paint : null;
+    if (s.boundary && cycle) style = PAINT_STYLES[(boundaryIdx++) % PAINT_STYLES.length];
     // farba: kolor A = kolor listwy (lub losowy główny), B = inny główny
     const aKey = (tk && tk !== 'accent') ? tk : MAIN_KEYS[Math.floor(rng() * 3)];
     const others = MAIN_KEYS.filter((k) => k !== aKey);
@@ -826,7 +867,11 @@ export function buildArena(world, preset, textures, opts = {}) {
     rubberFor(rubberBuf, trimBuf, s, world, tk && dimCol[tk] ? dimCol[tk] : dimCol.uv);
     if (!tk) return;
     const col = trimCol[tk];
-    if (s.boundary) { boundaryTrims(trimBuf, s, col, world); return; }
+    if (s.boundary) {
+      boundaryTrims(trimBuf, s, col, world);
+      if (A.signs.maps.includes(world.id)) addSigns(signBuf, s, world, signIdx++);
+      return;
+    }
     if (s.kind === 'pillar') { pillarTrims(trimBuf, s, pillarCol[tk] || col); return; }
     trimLoop(trimBuf, s, s.y1 - A.trimSize / 2, col);
     if (s.trimBottom) trimLoop(trimBuf, s, s.y0 + A.trimSize / 2 + A.trimBottomLift, col);
@@ -1008,6 +1053,22 @@ export function buildArena(world, preset, textures, opts = {}) {
       }));
       const m = new THREE.Mesh(own(geo), mat);
       m.name = 'steel';
+      group.add(m);
+    }
+  }
+
+  // tablice na ścianach obwodowych (atlas): litera sektora + znaki
+  {
+    const geo = signBuf.toGeometry();
+    if (geo) {
+      const mat = own(new THREE.MeshBasicMaterial({
+        map: textures.get('signs'), transparent: true, depthWrite: false, fog: true,
+        color: new THREE.Color(1, 1, 1).multiplyScalar(A.signs.intensity),
+        polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1,
+      }));
+      const m = new THREE.Mesh(own(geo), mat);
+      m.name = 'signs';
+      m.renderOrder = 1;
       group.add(m);
     }
   }

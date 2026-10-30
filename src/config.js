@@ -178,15 +178,19 @@ export const CONFIG = Object.freeze({
       core: {
         coverScale: 1.21,           // promień wizualu = r × to (ośmiokąt pokrywa gwiazdę 2 kwadratów kolizji)
         columnRadius: 0.55,         // walec energii = R × to
-        intensity: 1.6,
+        intensity: 1.1,
         plinth: 1.2,                // cokół stalowy (m)
         collar: 0.6,                // kołnierz pod sufitem (m)
         cageRings: [2.4, 4.4, 6.2],
         glowRings: [1.6, 3.0, 3.8, 5.2, 6.8],
         ringIntensity: 1.6,
         warnIntensity: 1.4,
-        steelGlow: 0.04,
+        steelGlow: 0.015,
         glassOpacity: 0.12,
+        collarIntensity: 1.1,
+        pipes: 6,
+        pipeRing: 0.7,              // promień okręgu rur = R × to
+        pipeRadius: 0.12,
       },
     },
     // Arena (render/arenaBuilder.js)

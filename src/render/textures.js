@@ -452,6 +452,8 @@ function drawSigns(S, palette, rng) {
   g.clearRect(0, 0, c.width, c.height);
   const lw = S * 0.035;
   const frame = (x0, y0, col) => {
+    g.fillStyle = 'rgba(3,3,8,0.92)';          // ciemne tło tablicy (zasłania farbę ściany pod spodem)
+    g.fillRect(x0 + S * 0.06, y0 + S * 0.06, S * 0.88, S * 0.88);
     g.strokeStyle = col; g.lineWidth = lw;
     g.strokeRect(x0 + S * 0.06, y0 + S * 0.06, S * 0.88, S * 0.88);
     g.lineWidth = lw * 0.4;
@@ -501,6 +503,8 @@ function drawSigns(S, palette, rng) {
   // pasy ostrzegawcze (pełny panel)
   {
     const x0 = cw * 2, y0 = ch;
+    g.fillStyle = 'rgba(3,3,8,0.92)';
+    g.fillRect(x0 + S * 0.06, y0 + S * 0.3, S * 0.88, S * 0.4);
     g.save(); g.beginPath(); g.rect(x0 + S * 0.06, y0 + S * 0.3, S * 0.88, S * 0.4); g.clip();
     g.fillStyle = palette.accent;
     for (let k = -4; k < 12; k++) {

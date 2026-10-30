@@ -217,6 +217,14 @@ function buildReactorCore(d, world, own) {
     const [x0, z0] = oct[i], [x1, z1] = oct[(i + 1) % 8];
     steel.push(stripForMerge(bar(x0, D.core.plinth, z0, x1, D.core.cageRings[1] || h * 0.5, z1, 0.06, 0.06), ['position', 'normal']));
   }
+  // rury z kołnierza do stropu (detal pokrywy rdzenia)
+  for (let k = 0; k < D.core.pipes; k++) {
+    const a = (k / D.core.pipes) * Math.PI * 2 + Math.PI / 8;
+    const pr = R * D.core.pipeRing;
+    const pipe = new THREE.CylinderGeometry(D.core.pipeRadius, D.core.pipeRadius, world.ceiling - h + D.core.collar, 10, 1, true);
+    pipe.translate(Math.cos(a) * pr, h - D.core.collar + (world.ceiling - h + D.core.collar) / 2, Math.sin(a) * pr);
+    steel.push(stripForMerge(pipe, ['position', 'normal']));
+  }
   const steelGeo = own(mergeGeometries(steel));
   for (const g of steel) g.dispose();
   const steelMat = own(new THREE.MeshStandardMaterial({
@@ -240,6 +248,20 @@ function buildReactorCore(d, world, own) {
       withAttr(g, 'color', 3, [green.r * nk, green.g * nk, green.b * nk]);
       withAttr(g, 'aPhase', 1, [y]);
       neon.push(g);
+    }
+  }
+  // kołnierz górny: listwa w kolorze drugim palety (cyjan) — czytelny detal pokrywy, bez przepalonej zieleni
+  {
+    const sec = new THREE.Color(pal.secondary), kk = D.core.collarIntensity;
+    const topOct = octagonPoints(R * 1.03 + 0.03);
+    for (let i = 0; i < 8; i++) {
+      const [x0, z0] = topOct[i], [x1, z1] = topOct[(i + 1) % 8];
+      for (const y of [h - D.core.collar + 0.05, h - 0.05]) {
+        const g = stripForMerge(bar(x0, y, z0, x1, y, z1, 0.05, 0.05), ['position']);
+        withAttr(g, 'color', 3, [sec.r * kk, sec.g * kk, sec.b * kk]);
+        withAttr(g, 'aPhase', 1, [-1]);
+        neon.push(g);
+      }
     }
   }
   // cokół: górna krawędź czerwona + skośne pasy ostrzegawcze na ścianach cokołu
