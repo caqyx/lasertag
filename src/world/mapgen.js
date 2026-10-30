@@ -1,0 +1,369 @@
+// Generator świata: MapData (PLAN §1) → World (PLAN §2). Czysty JS, bez three, działa w Node.
+//
+// Konwencja obrotu brył (zgodna z Three.js, mesh.rotation.y = rot):
+//   świat ← lokalny:  wx = cx + lx*cos + lz*sin,   wz = cz - lx*sin + lz*cos
+//   lokalny ← świat:  lx = dx*cos - dz*sin,        lz = dx*sin + dz*cos      (dx = wx-cx, dz = wz-cz)
+
+import { CONFIG } from '../config.js';
+import { createRng } from '../core/rng.js';
+
+// Domyślne wymiary brył z siatki (dane mapy mogą nadpisać w grid.heights / grid.pillarSize).
+const DEFAULT_WALL_H = 2.4;
+const DEFAULT_HALF_H = 1.1;
+const DEFAULT_PILLAR_SIZE = 0.6;
+const PERIMETER_THICKNESS = 1.0;   // ściany obwodowe leżą na zewnątrz bounds
+const GRID_CELL = 4;               // rozmiar kubełka SpatialGrid (m), niezależny od CONFIG
+const GRID_MARGIN = 2;             // margines siatki poza bounds (ściany obwodowe)
+const MAX_QUERY = 1024;            // pojemność buforów wyników zapytań
+
+const PAINTS = ['stripes', 'geo', 'splatter', 'grid'];
+const TRIM_PS = ['primary', 'secondary'];
+const TRIM_HALF = ['accent', 'secondary'];
+
+const KIND_OF = { '#': 'wall', h: 'half', o: 'pillar' };
+
+/**
+ * @param {object} mapData  MapData (PLAN §1)
+ * @param {{ strict?: boolean }} [opts]  strict (domyślnie true) → błędy walidacji rzucają wyjątek; false → console.warn
+ * @returns {object} World (PLAN §2)
+ */
+export function buildWorld(mapData, opts) {
+  const strict = !opts || opts.strict !== false;
+  const w = mapData.size.w;
+  const d = mapData.size.d;
+  const ceiling = mapData.ceiling;
+  const bounds = { minX: -w / 2, maxX: w / 2, minZ: -d / 2, maxZ: d / 2 };
+
+  const solids = [];
+  if (mapData.grid) addGridSolids(mapData, bounds, solids);
+  for (const wall of mapData.walls || []) solids.push(solidFromWall(wall));
+  addPerimeter(mapData, bounds, solids);
+
+  const ramps = (mapData.ramps || []).map(rampFromData);
+
+  assignLooks(solids, mapData.seed >>> 0);
+
+  const world = {
+    id: mapData.id,
+    name: mapData.name,
+    seed: mapData.seed,
+    palette: mapData.palette,
+    ceiling,
+    size: { w, d },
+    bounds,
+    solids,
+    ramps,
+    grid: null,
+    spawns: (mapData.spawns || []).map((s) => ({ x: s.x, y: s.y || 0, z: s.z, yaw: s.yaw || 0, team: s.team | 0 })),
+    lights: (mapData.lights || []).map((l) => ({ ...l })),
+    cams: (mapData.cams || []).map((c) => ({ name: c.name, pos: c.pos.slice(), look: c.look.slice() })),
+    decor: (mapData.decor || []).map((x) => ({ ...x })),
+  };
+  world.grid = createSpatialGrid(bounds, solids, ramps);
+
+  validate(world, strict);
+  return world;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Siatka znakowa → bryły
+
+function addGridSolids(mapData, bounds, out) {
+  const g = mapData.grid;
+  const cell = g.cell;
+  const rows = g.rows;
+  const nr = rows.length;
+  const nc = nr ? rows[0].length : 0;
+  for (let r = 0; r < nr; r++) {
+    if (rows[r].length !== nc) throw new Error(`mapgen(${mapData.id}): wiersz ${r} ma długość ${rows[r].length}, oczekiwano ${nc}`);
+  }
+  if (Math.abs(nc * cell - mapData.size.w) > 1e-6 || Math.abs(nr * cell - mapData.size.d) > 1e-6) {
+    throw new Error(`mapgen(${mapData.id}): siatka ${nc}×${nr}×${cell} m nie pasuje do size ${mapData.size.w}×${mapData.size.d}`);
+  }
+  const heights = g.heights || {};
+  const hWall = heights.wall ?? DEFAULT_WALL_H;
+  const hHalf = heights.half ?? DEFAULT_HALF_H;
+  const hPillar = heights.pillar ?? mapData.ceiling;
+  const pillar = g.pillarSize ?? DEFAULT_PILLAR_SIZE;
+  const heightOf = (ch) => (ch === '#' ? hWall : hHalf);
+
+  const used = new Uint8Array(nr * nc);
+  const x0 = bounds.minX;
+  const z0 = bounds.minZ;
+
+  const box = (kind, c0, c1, r0, r1, h) => {
+    // komórki [c0..c1] × [r0..r1] włącznie
+    out.push(makeSolid(kind,
+      x0 + (c0 + c1 + 1) * cell / 2, z0 + (r0 + r1 + 1) * cell / 2,
+      (c1 - c0 + 1) * cell / 2, (r1 - r0 + 1) * cell / 2, 0, h, 0));
+  };
+
+  // 1) runy poziome tego samego znaku, długość ≥ 2
+  for (let r = 0; r < nr; r++) {
+    let c = 0;
+    while (c < nc) {
+      const ch = rows[r][c];
+      if (ch !== '#' && ch !== 'h') { c++; continue; }
+      let e = c;
+      while (e + 1 < nc && rows[r][e + 1] === ch) e++;
+      if (e > c) {
+        box(KIND_OF[ch], c, e, r, r, heightOf(ch));
+        for (let k = c; k <= e; k++) used[r * nc + k] = 1;
+      }
+      c = e + 1;
+    }
+  }
+  // 2) pozostałe pojedyncze komórki — scalane w pionie
+  for (let c = 0; c < nc; c++) {
+    let r = 0;
+    while (r < nr) {
+      const ch = rows[r][c];
+      if ((ch !== '#' && ch !== 'h') || used[r * nc + c]) { r++; continue; }
+      let e = r;
+      while (e + 1 < nr && rows[e + 1][c] === ch && !used[(e + 1) * nc + c]) e++;
+      box(KIND_OF[ch], c, c, r, e, heightOf(ch));
+      for (let k = r; k <= e; k++) used[k * nc + c] = 1;
+      r = e + 1;
+    }
+  }
+  // 3) filary
+  for (let r = 0; r < nr; r++) {
+    for (let c = 0; c < nc; c++) {
+      if (rows[r][c] !== 'o') continue;
+      out.push(makeSolid('pillar', x0 + (c + 0.5) * cell, z0 + (r + 0.5) * cell, pillar / 2, pillar / 2, 0, hPillar, 0));
+    }
+  }
+}
+
+function solidFromWall(wl) {
+  const y0 = wl.y || 0;
+  const s = makeSolid(wl.kind || 'wall', wl.x, wl.z, wl.w / 2, wl.d / 2, y0, y0 + wl.h, wl.rot || 0);
+  if (wl.paint !== undefined) s.paint = wl.paint;
+  if (wl.trim !== undefined) s.trim = wl.trim;
+  if (wl.trimBottom !== undefined) s.trimBottom = !!wl.trimBottom;
+  return s;
+}
+
+function addPerimeter(mapData, b, out) {
+  const p = mapData.perimeter;
+  if (!p) return;
+  const t = PERIMETER_THICKNESS;
+  const h = p.h ?? mapData.ceiling;
+  const w = b.maxX - b.minX;
+  const d = b.maxZ - b.minZ;
+  const mk = (cx, cz, hx, hz) => {
+    const s = makeSolid('wall', cx, cz, hx, hz, 0, h, 0);
+    s.boundary = true;
+    if (p.paint !== undefined) s.paint = p.paint;
+    s.trim = p.trim ?? 'primary';
+    s.trimBottom = true;
+    out.push(s);
+  };
+  // N i S obejmują narożniki
+  mk(0, b.minZ - t / 2, w / 2 + t, t / 2);
+  mk(0, b.maxZ + t / 2, w / 2 + t, t / 2);
+  mk(b.minX - t / 2, 0, t / 2, d / 2);
+  mk(b.maxX + t / 2, 0, t / 2, d / 2);
+}
+
+function makeSolid(kind, cx, cz, hx, hz, y0, y1, rot) {
+  return {
+    kind, cx, cz, hx, hz, y0, y1, rot,
+    cos: Math.cos(rot), sin: Math.sin(rot),
+    paint: undefined, trim: undefined, trimBottom: undefined, boundary: false,
+  };
+}
+
+function rampFromData(r) {
+  const rot = r.rot || 0;
+  return { cx: r.x, cz: r.z, hx: r.w / 2, hz: r.d / 2, rot, cos: Math.cos(rot), sin: Math.sin(rot), y0: r.y0, y1: r.y1 };
+}
+
+// Deterministyczne paint/trim z seed. Każda bryła zużywa stałą liczbę losowań (niezależnie od nadpisań),
+// więc jawne nadpisanie jednej ściany nie zmienia wyglądu pozostałych.
+function assignLooks(solids, seed) {
+  const rng = createRng(seed);
+  for (const s of solids) {
+    const rPaint = rng.next();
+    const rTrim = rng.next();
+    const rPick = rng.next();
+    const rBottom = rng.next();
+    const paint = PAINTS[Math.floor(rPaint * PAINTS.length)];
+    let trim;
+    let trimBottom = false;
+    if (s.kind === 'half') {
+      trim = TRIM_HALF[Math.floor(rPick * TRIM_HALF.length)];
+    } else if (s.kind === 'pillar') {
+      trim = 'uv';
+    } else {
+      trim = rTrim < 0.1 ? 'accent' : TRIM_PS[Math.floor(rPick * TRIM_PS.length)];
+      trimBottom = s.kind === 'wall' && rBottom < 0.3;
+    }
+    if (s.paint === undefined) s.paint = paint;
+    if (s.trim === undefined) s.trim = trim;
+    if (s.trimBottom === undefined) s.trimBottom = trimBottom;
+  }
+}
+
+// ---------------------------------------------------------------------------------------------
+// SpatialGrid — kubełki indeksów (CSR). Zapytania bez alokacji: wyniki do prealokowanych Int32Array.
+
+/** AABB w XZ bryły/rampy (OBB) — zapis do out[0..3] = minX, minZ, maxX, maxZ. */
+function obbAabb(o, out) {
+  const c = Math.abs(o.cos);
+  const s = Math.abs(o.sin);
+  const ex = c * o.hx + s * o.hz;
+  const ez = s * o.hx + c * o.hz;
+  out[0] = o.cx - ex; out[1] = o.cz - ez; out[2] = o.cx + ex; out[3] = o.cz + ez;
+}
+
+function buildBuckets(g, list) {
+  const n = g.cols * g.rows;
+  const counts = new Int32Array(n + 1);
+  const ab = [0, 0, 0, 0];
+  const ranges = [];
+  for (let i = 0; i < list.length; i++) {
+    obbAabb(list[i], ab);
+    const c0 = cellCol(g, ab[0]); const c1 = cellCol(g, ab[2]);
+    const r0 = cellRow(g, ab[1]); const r1 = cellRow(g, ab[3]);
+    ranges.push(c0, c1, r0, r1);
+    for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) counts[r * g.cols + c + 1]++;
+  }
+  for (let k = 1; k <= n; k++) counts[k] += counts[k - 1];
+  const start = counts;
+  const fill = new Int32Array(n);
+  const items = new Int32Array(start[n]);
+  for (let i = 0; i < list.length; i++) {
+    const c0 = ranges[i * 4]; const c1 = ranges[i * 4 + 1]; const r0 = ranges[i * 4 + 2]; const r1 = ranges[i * 4 + 3];
+    for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) {
+      const k = r * g.cols + c;
+      items[start[k] + fill[k]++] = i;
+    }
+  }
+  return { start, items };
+}
+
+export function createSpatialGrid(bounds, solids, ramps) {
+  const minX = bounds.minX - GRID_MARGIN;
+  const minZ = bounds.minZ - GRID_MARGIN;
+  const maxX = bounds.maxX + GRID_MARGIN;
+  const maxZ = bounds.maxZ + GRID_MARGIN;
+  const g = {
+    cell: GRID_CELL,
+    inv: 1 / GRID_CELL,
+    minX, minZ, maxX, maxZ,
+    cols: Math.max(1, Math.ceil((maxX - minX) / GRID_CELL)),
+    rows: Math.max(1, Math.ceil((maxZ - minZ) / GRID_CELL)),
+    solidStart: null, solidItems: null,
+    rampStart: null, rampItems: null,
+    // deduplikacja zapytań: znacznik per bryła/rampa
+    stamp: 0,
+    solidStamp: new Uint32Array(solids.length),
+    rampStamp: new Uint32Array(ramps.length),
+    // bufory wyników (nadpisywane przy każdym zapytaniu — nie zagnieżdżać zapytań)
+    outSolids: new Int32Array(Math.max(MAX_QUERY, solids.length)),
+    outRamps: new Int32Array(Math.max(16, ramps.length)),
+  };
+  const bs = buildBuckets(g, solids);
+  g.solidStart = bs.start; g.solidItems = bs.items;
+  const br = buildBuckets(g, ramps);
+  g.rampStart = br.start; g.rampItems = br.items;
+  return g;
+}
+
+export function cellCol(g, x) {
+  const c = Math.floor((x - g.minX) * g.inv);
+  return c < 0 ? 0 : c >= g.cols ? g.cols - 1 : c;
+}
+
+export function cellRow(g, z) {
+  const r = Math.floor((z - g.minZ) * g.inv);
+  return r < 0 ? 0 : r >= g.rows ? g.rows - 1 : r;
+}
+
+/** Nowy znacznik zapytania (dedupe). Bez alokacji. */
+export function nextStamp(g) {
+  g.stamp = (g.stamp + 1) >>> 0;
+  if (g.stamp === 0) { g.solidStamp.fill(0); g.rampStamp.fill(0); g.stamp = 1; }
+  return g.stamp;
+}
+
+/** Indeksy brył, których kubełki przecinają AABB → g.outSolids[0..n). Zwraca n. Bez alokacji. */
+export function querySolids(g, minX, minZ, maxX, maxZ) {
+  const st = nextStamp(g);
+  const c0 = cellCol(g, minX); const c1 = cellCol(g, maxX);
+  const r0 = cellRow(g, minZ); const r1 = cellRow(g, maxZ);
+  const start = g.solidStart; const items = g.solidItems; const stamps = g.solidStamp; const out = g.outSolids;
+  let n = 0;
+  for (let r = r0; r <= r1; r++) {
+    for (let c = c0; c <= c1; c++) {
+      const k = r * g.cols + c;
+      for (let j = start[k], e = start[k + 1]; j < e; j++) {
+        const i = items[j];
+        if (stamps[i] === st) continue;
+        stamps[i] = st;
+        if (n < out.length) out[n++] = i;
+      }
+    }
+  }
+  return n;
+}
+
+/** Jak querySolids, dla ramp → g.outRamps. */
+export function queryRamps(g, minX, minZ, maxX, maxZ) {
+  if (g.rampItems.length === 0) return 0;
+  const st = nextStamp(g);
+  const c0 = cellCol(g, minX); const c1 = cellCol(g, maxX);
+  const r0 = cellRow(g, minZ); const r1 = cellRow(g, maxZ);
+  const start = g.rampStart; const items = g.rampItems; const stamps = g.rampStamp; const out = g.outRamps;
+  let n = 0;
+  for (let r = r0; r <= r1; r++) {
+    for (let c = c0; c <= c1; c++) {
+      const k = r * g.cols + c;
+      for (let j = start[k], e = start[k + 1]; j < e; j++) {
+        const i = items[j];
+        if (stamps[i] === st) continue;
+        stamps[i] = st;
+        if (n < out.length) out[n++] = i;
+      }
+    }
+  }
+  return n;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Walidacja
+
+function circleHitsObb(s, x, z, r) {
+  const dx = x - s.cx; const dz = z - s.cz;
+  const lx = dx * s.cos - dz * s.sin;
+  const lz = dx * s.sin + dz * s.cos;
+  const qx = lx < -s.hx ? -s.hx : lx > s.hx ? s.hx : lx;
+  const qz = lz < -s.hz ? -s.hz : lz > s.hz ? s.hz : lz;
+  const ex = lx - qx; const ez = lz - qz;
+  return ex * ex + ez * ez < r * r;
+}
+
+function validate(world, strict) {
+  const P = CONFIG.player;
+  const problems = [];
+  world.spawns.forEach((sp, i) => {
+    const b = world.bounds;
+    if (sp.x < b.minX + P.radius || sp.x > b.maxX - P.radius || sp.z < b.minZ + P.radius || sp.z > b.maxZ - P.radius) {
+      problems.push(`spawn #${i} (${sp.x}, ${sp.z}) poza areną`);
+    }
+    world.solids.forEach((s, j) => {
+      const blocks = s.y1 > sp.y + P.stepHeight && s.y0 < sp.y + P.height;
+      if (blocks && circleHitsObb(s, sp.x, sp.z, P.radius)) problems.push(`spawn #${i} (${sp.x}, ${sp.z}) w bryle #${j} (${s.kind})`);
+    });
+  });
+  world.ramps.forEach((r, i) => {
+    const slope = Math.abs(r.y1 - r.y0) / (2 * r.hz);
+    if (slope > P.maxSlopeY) problems.push(`rampa #${i}: nachylenie ${slope.toFixed(2)} > maxSlopeY ${P.maxSlopeY}`);
+  });
+  if (problems.length) {
+    const msg = `mapgen(${world.id}): ` + problems.join('; ');
+    if (strict) throw new Error(msg);
+    console.warn(msg);
+  }
+}
