@@ -113,8 +113,63 @@ export const CONFIG = Object.freeze({
     near: 0.05,
     far: 120,
     toneMappingExposure: 1.0,
-    fogDensity: 0.045,
+    fogDensity: 0.06,
     clearColor: '#05030a',
+    msaaSamples: 4,
+    // Oświetlenie (render/graphics.js): ciemność dominuje — ambient/hemi bardzo słabe.
+    lights: {
+      hemiIntensity: 0.9,     // HemisphereLight w kolorze palette.ambient
+      hemiGround: 0.35,       // ziemia = ambient × to
+      pointScale: 1.0,        // intensywność PointLight = light.intensity × to (decay 2)
+      rangeScale: 1.0,
+      drop: 0.35,             // PointLight pod oprawą lampy (m)
+    },
+    // Tekstury proceduralne (render/textures.js)
+    textures: {
+      paintMeters: [6, 2.4],  // kafel farby UV = 6 × 2.4 m
+      floorMeters: 2,         // kafel podłogi (linia siatki co 2 m)
+      floorLine: 0.012,       // grubość linii siatki podłogi (m)
+      smokeSize: 256,
+    },
+    // Arena (render/arenaBuilder.js)
+    arena: {
+      wallColor: '#07060d',
+      wallRoughness: 0.82,
+      paintIntensity: 1.0,          // emissive × farba UV (HDR → bloom)
+      boundaryPaintScale: 1.875,    // ściany obwodowe: kafel 11.25 × 4.5 m (duże murale)
+      trimSize: 0.05,
+      trimGap: 0.006,               // odsunięcie listwy od ściany (bez z-fightingu)
+      trimBottomLift: 0.03,
+      trimIntensity: 2.2,           // vertexColors HDR (> 1 → bloom)
+      trimUvBoost: 1.5,             // fiolet jest ciemny percepcyjnie
+      trimAccentScale: 0.8,
+      pillarTrimTop: 4.5,
+      pillarRings: [2.4],
+      boundaryTrimHeights: [0.06, 2.6],
+      floorRoughness: 0.6,          // × roughnessMap (≈0.6) → ~0.35
+      floorMetalness: 0.3,
+      floorEmissiveIntensity: 0.2,
+      floorEnvIntensity: 1.0,
+      // odbicia planarne (preset.envReflections): krycie podłogi nad lustrzaną kopią sceny
+      floorReflect: { alphaGloss: 0.72, alphaRough: 0.93, fresnel: 0.35, alphaMin: 0.5 },
+      envBakeHeight: 1.6,
+      envBlur: 0.02,
+      ceilingTile: 4.8,
+      trussColor: '#2a2638',
+      trussSpacing: 4,
+      trussWidth: 0.4,
+      trussDepth: 0.4,
+      trussDrop: 0.15,
+      trussChord: 0.06,
+      trussBay: 0.8,
+      lampSize: [0.9, 0.12, 0.05],  // długość, szerokość, grubość (m)
+      lampIntensity: 4.0,
+      conesMinSmoke: 48,            // stożki światła tylko gdy preset.smoke ≥ (High/Ultra)
+      coneTopRadius: 0.25,
+      coneBottomRadius: 1.9,
+      coneBottom: 0.0,
+      coneOpacity: 0.25,
+    },
   },
 
   presets: {
@@ -123,15 +178,15 @@ export const CONFIG = Object.freeze({
       smoke: 0, pointLights: 0, envReflections: false, texSize: 256, anisotropy: 1,
     },
     medium: {
-      pixelRatio: 1.0, aa: 'fxaa', bloom: { strength: 0.9, radius: 0.55, threshold: 0.18, scale: 0.5 },
+      pixelRatio: 1.0, aa: 'fxaa', bloom: { strength: 0.55, radius: 0.4, threshold: 0.4, scale: 0.5 },
       smoke: 24, pointLights: 2, envReflections: false, texSize: 512, anisotropy: 2,
     },
     high: {
-      pixelRatio: 1.5, aa: 'msaa', bloom: { strength: 1.0, radius: 0.6, threshold: 0.16, scale: 1.0 },
+      pixelRatio: 1.5, aa: 'msaa', bloom: { strength: 0.6, radius: 0.45, threshold: 0.36, scale: 1.0 },
       smoke: 48, pointLights: 4, envReflections: true, texSize: 1024, anisotropy: 4,
     },
     ultra: {
-      pixelRatio: 2.0, aa: 'msaa', bloom: { strength: 1.15, radius: 0.7, threshold: 0.14, scale: 1.0 },
+      pixelRatio: 2.0, aa: 'msaa', bloom: { strength: 0.65, radius: 0.5, threshold: 0.34, scale: 1.0 },
       smoke: 96, pointLights: 6, envReflections: true, texSize: 1024, anisotropy: 8,
     },
   },
@@ -150,6 +205,15 @@ export const CONFIG = Object.freeze({
     drift: 0.18,            // m/s
     heightMin: 0.4,
     heightMax: 3.2,
+    driftRadius: 1.4,       // promień wolnej orbity kłębu (m); prędkość = drift
+    spin: 0.05,             // maks. prędkość obrotu tekstury (rad/s)
+    baseGlow: 2.0,          // jasność bazowa (odcień palety uv/primary)
+    lightGain: 5.0,         // ile koloru lampy łapie dym
+    lightRangeScale: 0.9,
+    lightDrop: 1.0,
+    nearFade: [1.2, 3.5],   // zanik przy kamerze (m, głębia środka kłębu)
+    margin: 1.0,
+    wallClearance: 0.6,     // min. odstęp środka kłębu od bryły
   },
 
   pools: {
