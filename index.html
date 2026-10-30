@@ -7,6 +7,7 @@
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%2305030a'/%3E%3Ccircle cx='8' cy='8' r='4.5' fill='none' stroke='%2322e8ff' stroke-width='1.6'/%3E%3Ccircle cx='8' cy='8' r='1.3' fill='%23ff2bd6'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="styles.css">
   <link rel="stylesheet" href="src/ui/hud.css">
+  <link rel="stylesheet" href="src/ui/menu.css">
   <script type="importmap">
     {
       "imports": {
@@ -29,10 +30,11 @@
     </div>
   </div>
 
-  <div id="start" class="overlay" role="button" tabindex="0">
+  <div id="start" class="overlay hidden" role="button" tabindex="0">
     <div class="start-card">
       <h1 class="title">LASER<span>TAG</span></h1>
       <p class="cta" id="start-cta">Kliknij, aby grać</p>
+      <div class="start-btns"><button type="button" id="start-menu" class="lt-btn hidden">MENU</button></div>
       <p class="keys">WASD ruch &middot; Mysz celowanie &middot; LPM strzał &middot; Shift sprint &middot; Spacja skok &middot; Esc pauza</p>
     </div>
   </div>

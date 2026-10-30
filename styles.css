@@ -106,6 +106,7 @@ html, body {
   text-shadow: 0 0 8px rgba(166, 255, 0, 0.7);
   animation: pulse 1.6s ease-in-out infinite;
 }
+.start-btns { margin: 0 0 16px; }
 .keys {
   margin: 0;
   font-size: 12px;
