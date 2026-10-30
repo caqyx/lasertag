@@ -42,6 +42,7 @@ export function createKeyboardMouse(canvas, opts = {}) {
   let yaw = 0;
   let pitch = 0;
   let locked = false;
+  let pending = false; // requestPointerLock wysłane, pointerlockchange jeszcze nie przyszło
 
   function clearKeys() {
     keys.fill(0);
@@ -93,6 +94,7 @@ export function createKeyboardMouse(canvas, opts = {}) {
 
   function onLockStateChange() {
     const now = document.pointerLockElement === canvas;
+    pending = false;
     if (now === locked) return;
     locked = now;
     if (!locked) clearKeys();
@@ -101,6 +103,7 @@ export function createKeyboardMouse(canvas, opts = {}) {
 
   function onLockError() {
     // Np. zbyt szybkie ponowne żądanie po Esc (Chrome wymaga ~1 s przerwy) — informujemy, użytkownik kliknie ponownie.
+    pending = false;
     if (onLockErrorCb) onLockErrorCb();
   }
 
@@ -115,6 +118,7 @@ export function createKeyboardMouse(canvas, opts = {}) {
   // Wywoływać wyłącznie z obsługi gestu użytkownika (klik).
   function requestLock() {
     if (locked || typeof canvas.requestPointerLock !== 'function') return;
+    pending = true;
     try {
       const p = canvas.requestPointerLock();
       if (p && typeof p.catch === 'function') p.catch(onLockError);
@@ -157,8 +161,11 @@ export function createKeyboardMouse(canvas, opts = {}) {
       pitch = p > pitchLimit ? pitchLimit : (p < -pitchLimit ? -pitchLimit : p);
     },
     requestLock,
+    /** Zwalnia lock bezwarunkowo — także gdy żądanie jest w toku (pointerlockchange jeszcze nie przyszło). */
     exitLock() {
-      if (locked && document.exitPointerLock) document.exitPointerLock();
+      const inFlight = pending;
+      pending = false;
+      if (document.exitPointerLock && (locked || inFlight || document.pointerLockElement)) document.exitPointerLock();
     },
     /** Tab trzymany (dla UI; nie zużywa zbocza strzału jak sample). */
     get scoreboard() { return keys[K_SCORE] === 1; },

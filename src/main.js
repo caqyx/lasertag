@@ -118,7 +118,11 @@ function boot(graphics) {
 
   // --- Wejście ---
   const km = createKeyboardMouse(canvas, {
-    onLockChange: updatePause,
+    onLockChange(locked) {
+      // spóźniony lock (np. szybkie Menu zaraz po starcie) poza meczem → natychmiast zwolnij
+      if (locked && app !== 'match') { km.exitLock(); return; }
+      updatePause();
+    },
     onLockError: () => { if (paused) ctaEl.textContent = 'Nie udało się przechwycić myszy — kliknij ponownie'; },
     captureUnlocked: () => app === 'match' && params.autostart,
   });
@@ -185,6 +189,8 @@ function boot(graphics) {
   }
 
   function startMatch(cfgIn) {
+    // Lock na samym początku — w obrębie gestu użytkownika (Enter/klik); przebudowa mapy/presetu trwa i gest by wygasł.
+    if (!params.autostart && !debugCam) km.requestLock();
     const cfg = sanitize(cfgIn);
     lastCfg = cfg;
     if (cfg.preset !== graphics.presetName) graphics.setPreset(cfg.preset);
@@ -221,7 +227,6 @@ function boot(graphics) {
     refreshVisibility();
     paused = false;
     updatePause();
-    if (!params.autostart && !debugCam) km.requestLock(); // wołane z gestu (Enter/klik)
   }
 
   function endMatch() {
