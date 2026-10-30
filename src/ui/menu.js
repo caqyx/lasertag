@@ -99,10 +99,11 @@ export function createMenu(rootEl, opts, onStart) {
   const rMode = section('mode', 'TRYB', 'lt-mn-modes');
   for (const m of modes) {
     const card = el(rMode.list, 'lt-mn-card lt-mn-modecard');
-    el(card, 'lt-mn-card-tag', m.short || m.id);
+    const top = el(card, 'lt-mn-card-top');
+    el(top, 'lt-mn-card-tag', m.short || m.id);
+    rosterDots(top, m);
     el(card, 'lt-mn-card-name', m.name || m.id);
     el(card, 'lt-mn-card-desc', m.desc || '');
-    rosterDots(card, m);
     addItem(rMode, m.id, card);
   }
 

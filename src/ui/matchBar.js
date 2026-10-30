@@ -44,6 +44,7 @@ export function createMatchBar(rootEl) {
     if (nt !== cTeams) {
       cTeams = nt;
       root.classList.toggle('ffa', nt === 0);
+      root.classList.toggle('t4', nt >= 4);
       for (let i = 0; i < MAX_TEAMS; i++) teams[i].chip.style.display = i < nt ? '' : 'none';
     }
     if (nt > 0) {

@@ -51,16 +51,16 @@
 .lt-mn-inner {
   max-width: 1040px;
   margin: 0 auto;
-  padding: 34px 28px 28px;
+  padding: 22px 24px 18px;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 4px;
 }
 
-.lt-mn-head { text-align: center; margin-bottom: 6px; }
+.lt-mn-head { text-align: center; margin-bottom: 4px; }
 .lt-mn-title {
   margin: 0;
-  font-size: clamp(42px, 7vw, 76px);
+  font-size: clamp(36px, 5.6vw, 62px);
   letter-spacing: 0.2em;
   line-height: 1;
   font-weight: 800;
@@ -68,14 +68,14 @@
 .lt-mn-t1 { color: var(--neon-cyan); text-shadow: 0 0 6px var(--neon-cyan), 0 0 22px rgba(34, 232, 255, 0.65), 0 0 46px rgba(34, 232, 255, 0.3); }
 .lt-mn-t2 { color: var(--neon-magenta); text-shadow: 0 0 6px var(--neon-magenta), 0 0 22px rgba(255, 43, 214, 0.65), 0 0 46px rgba(255, 43, 214, 0.3); }
 .lt-mn-tagline {
-  margin-top: 12px;
-  font-size: 12px;
+  margin-top: 8px;
+  font-size: 11px;
   letter-spacing: 0.6em;
   color: rgba(216, 212, 255, 0.6);
 }
 
 .lt-mn-row {
-  padding: 12px 14px 14px;
+  padding: 8px 12px 10px;
   border: 1px solid transparent;
   border-radius: 8px;
   transition: border-color 0.12s, background 0.12s;
@@ -88,7 +88,7 @@
   display: flex;
   align-items: baseline;
   gap: 12px;
-  margin-bottom: 10px;
+  margin-bottom: 7px;
   font-size: 12px;
   letter-spacing: 0.32em;
   color: rgba(216, 212, 255, 0.72);
@@ -106,7 +106,7 @@
 .lt-mn-card {
   --c: var(--neon-cyan);
   position: relative;
-  padding: 14px 16px 14px;
+  padding: 12px 14px;
   border: 1px solid rgba(216, 212, 255, 0.16);
   border-radius: 7px;
   background: rgba(10, 5, 22, 0.72);
@@ -123,7 +123,7 @@
   content: '';
   position: absolute;
   right: 12px;
-  top: 12px;
+  bottom: 12px;
   width: 8px;
   height: 8px;
   border-radius: 50%;
@@ -143,9 +143,9 @@
   line-height: 1.45;
   color: rgba(216, 212, 255, 0.66);
 }
+.lt-mn-card-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
 .lt-mn-card-tag {
   display: inline-block;
-  margin-bottom: 8px;
   padding: 2px 7px;
   font-size: 10px;
   letter-spacing: 0.25em;
@@ -158,7 +158,7 @@
 .lt-mn-palette {
   display: flex;
   height: 8px;
-  margin-bottom: 12px;
+  margin-bottom: 10px;
   border-radius: 4px;
   overflow: hidden;
   gap: 2px;
@@ -169,7 +169,7 @@
   box-shadow: 0 0 8px var(--c);
 }
 
-.lt-mn-dots { display: flex; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
+.lt-mn-dots { display: flex; gap: 8px; flex-wrap: wrap; margin-right: 18px; }
 .lt-mn-dotgroup { display: flex; gap: 4px; }
 .lt-mn-dot {
   width: 9px;
@@ -182,7 +182,7 @@
 /* --- pigułki (boty, grafika) --- */
 .lt-mn-pill {
   --c: var(--neon-cyan);
-  padding: 10px 12px;
+  padding: 8px 12px;
   text-align: center;
   border: 1px solid rgba(216, 212, 255, 0.16);
   border-radius: 6px;
@@ -204,12 +204,12 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 10px;
-  padding-top: 8px;
+  gap: 8px;
+  padding-top: 10px;
 }
 .lt-mn-play {
   min-width: 280px;
-  padding: 16px 40px;
+  padding: 13px 40px;
   font-size: 24px;
   letter-spacing: 0.5em;
   text-indent: 0.5em;
@@ -237,6 +237,7 @@
 }
 .lt-mn-foot { margin-top: 4px; }
 
+@media (max-height: 700px) { .lt-mn-foot, .lt-mn-tagline { display: none; } }
 @media (max-width: 760px) {
   .lt-mn-modes .lt-mn-options { grid-template-columns: 1fr; }
   .lt-mn-seg .lt-mn-options { grid-auto-flow: row; }
@@ -292,7 +293,6 @@
 }
 .lt-st-team .lt-st-c0 { color: var(--c); }
 .lt-st-team .lt-st-dot { display: none; }
-.lt-st-team:first-of-type { margin-top: 0; }
 
 /* ================= TABLICA (Tab) ================= */
 .lt-sb {
@@ -406,6 +406,7 @@
 .lt-mb:not(.ffa) .lt-mb-teams { display: contents; }
 .lt-mb:not(.ffa) .lt-mb-team:nth-child(n+2) { order: 2; }
 .lt-mb:not(.ffa) .lt-mb-timer { order: 1; }
+.lt-mb.t4 .lt-mb-team:nth-child(2) { order: 0; } /* tdm4: 2 drużyny po lewej, 2 po prawej */
 .lt-mb:not(.ffa) .lt-mb-sub { display: none; }
 .lt-mb-team {
   --c: #ffffff;
@@ -455,3 +456,4 @@
 .lt-countdown-num.tick { animation: lt-cd-pop 0.5s ease-out; }
 @keyframes lt-cd-pop { from { transform: scale(1.5); opacity: 0.2; } to { transform: scale(1); opacity: 1; } }
 .lt-countdown-label { font-size: 12px; letter-spacing: 0.5em; color: rgba(216, 212, 255, 0.7); }
+.lt-st-head + .lt-st-team { margin-top: 0; }
