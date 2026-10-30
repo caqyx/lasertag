@@ -1,6 +1,7 @@
 // Bootstrap aplikacji: URL → menu → mecz (sim + boty) → ekran końca → (mecz | menu). PLAN §9.3.
 // Stan aplikacji: app = 'menu' | 'match' | 'end'. Grafika, efekty (wiązki, awatary, view model), wejście i UI
 // tworzone raz; zmiana mapy = graphics.setWorld (zwalnia poprzednią arenę) + nowy nav; każdy mecz = nowy sim/adapt/HUD.
+import { Vector3 } from 'three';
 import { CONFIG } from './config.js';
 import { parseParams } from './core/urlParams.js';
 import { createLoop } from './core/loop.js';
@@ -102,7 +103,15 @@ function controlActive() {
   return app === 'match' && !debugCam && (km.locked || params.autostart);
 }
 
+let playerWasAlive = true;
+const muzzle = new Vector3();
+
+/** InputSource gracza. Respawn (eliminated → alive): kąty myszy = yaw spawnu PRZED sample (inaczej przy kilku
+ *  krokach sim na klatkę stary yaw myszy nadpisałby kierunek spawnu). */
 function samplePlayer(P, ctx, out) {
+  const alive = P.state === 'alive';
+  if (alive && !playerWasAlive) km.setAngles(P.body.yaw, 0);
+  playerWasAlive = alive;
   if (controlActive()) km.sample(P, ctx, out);
   else resetInputState(out);
 }
@@ -175,6 +184,7 @@ function startMatch(cfgIn) {
   if (hud !== null) hud.dispose();
   hud = createHud(hudEl);
   km.setAngles(player.body.yaw, 0);
+  playerWasAlive = true;
 
   app = 'match';
   menu.hide();
@@ -234,10 +244,14 @@ function consumeEvents() {
     const e = q.at(i);
     if (e.type === EV.SHOT) {
       const shooter = findParticipant(sim, e.a);
-      if (shooter !== null) beams.spawn(e.x, e.y, e.z, e.x2, e.y2, e.z2, shooter.color, e.value === 1);
+      if (e.a === player.id && !debugCam) {
+        // wizualnie wiązka gracza startuje z widocznej lufy FPP (sim liczy strzał z oka)
+        viewModel.muzzleWorld(muzzle);
+        beams.spawn(muzzle.x, muzzle.y, muzzle.z, e.x2, e.y2, e.z2, player.color, e.value === 1);
+      } else if (shooter !== null) {
+        beams.spawn(e.x, e.y, e.z, e.x2, e.y2, e.z2, shooter.color, e.value === 1);
+      }
       if (e.a === player.id) fired = true;
-    } else if (e.type === EV.RESPAWN && e.a === player.id) {
-      km.setAngles(player.body.yaw, 0);
     }
   }
   return fired;

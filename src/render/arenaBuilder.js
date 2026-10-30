@@ -820,7 +820,7 @@ export function buildArena(world, preset, textures, opts = {}) {
       }
       const h = top - bottomY;
       if (h < A.coneMinHeight) return;
-      const rb = A.coneTopRadius + (A.coneBottomRadius - A.coneTopRadius) * h / (top - A.coneBottom);
+      const rb = Math.min(A.coneCheckRadius, A.coneTopRadius + (A.coneBottomRadius - A.coneTopRadius) * h / (top - A.coneBottom));
       const g = new THREE.CylinderGeometry(A.coneTopRadius, rb, h, 24, 1, true);
       g.translate(L.x, bottomY + h / 2, L.z);
       const c = new THREE.Color(lightColorHex(world, L.color));
