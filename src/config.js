@@ -1,0 +1,166 @@
+// CONFIG — jedyne źródło liczb w grze (SPEC §12). Moduły importują stąd, nie hardkodują wartości.
+// Sekcje odpowiadają modułom. Wartości z SPEC §2/§5/§7.
+
+export const CONFIG = Object.freeze({
+  sim: {
+    hz: 60,                 // stały krok symulacji
+    maxSubSteps: 5,         // limit kroków na klatkę (ochrona przed spiralą śmierci)
+  },
+
+  player: {
+    radius: 0.35,
+    height: 1.8,
+    eyeHeight: 1.65,
+    walkSpeed: 5.2,
+    sprintSpeed: 7.6,
+    accelGround: 60,
+    accelAir: 12,
+    friction: 12,
+    jumpSpeed: 5.0,
+    gravity: 20,
+    stepHeight: 0.45,       // max wysokość stopnia pokonywana bez skoku
+    maxSlopeY: 0.6,         // nachylenie rampy: tan(kąta) maks. ~31°
+    mouseSensitivity: 0.0022,
+    pitchLimit: 1.45,       // rad
+    fov: 78,
+  },
+
+  physics: {
+    skin: 0.001,
+    maxIterations: 4,       // iteracje rozwiązywania kolizji na krok
+    groundSnap: 0.12,
+  },
+
+  weapon: {
+    range: 50,
+    fireInterval: 0.22,
+    heatPerShot: 0.11,
+    coolRate: 0.45,
+    coolDelay: 0.25,
+    overheatCoolRate: 0.6,
+    overheatRecover: 0.35,
+    beamDuration: 0.12,
+    muzzleOffset: [0.22, -0.18, -0.45], // względem kamery (prawo, dół, przód)
+  },
+
+  combat: {
+    maxHp: 4,
+    damage: 1,
+    eliminatedTime: 3.0,
+    protectionTime: 2.0,
+    hitFlashTime: 0.15,
+    friendlyFire: false,
+    hitCapsuleRadius: 0.42,
+    hitCapsuleBottom: 0.2,
+    hitCapsuleTop: 1.85,
+    // sensory kamizelki: offset od stóp (x prawo, y, z przód); kolejność gaśnięcia: tył, lewe, prawe, przód
+    sensors: {
+      front: [0, 1.35, 0.22],
+      back: [0, 1.35, -0.22],
+      left: [-0.28, 1.55, 0],
+      right: [0.28, 1.55, 0],
+    },
+    loseOrder: ['back', 'left', 'right', 'front'],
+  },
+
+  scoring: {
+    hit: 10,
+    elimination: 50,
+  },
+
+  modes: {
+    ffa: { teams: 0, participants: 8, timeLimit: 300, elimLimit: 25 },
+    tdm2: { teams: 2, perTeam: 4, timeLimit: 300, elimLimit: 60 },
+    tdm4: { teams: 4, perTeam: 2, timeLimit: 300, elimLimit: 30 },
+  },
+
+  colors: {
+    teams: ['#ff3355', '#2f8bff', '#3dff7a', '#ffd600'],
+    ffa: ['#ff3355', '#2f8bff', '#3dff7a', '#ffd600', '#ff4dff', '#00f0ff', '#ff8a00', '#b0ff00'],
+  },
+
+  bots: {
+    levels: {
+      easy:   { reaction: 0.65, aimSigmaDeg: 5.5, turnDegPerSec: 160, viewDist: 28, fovDeg: 100, strafe: 0,   coverHp: 1, coverOnOverheat: false },
+      normal: { reaction: 0.40, aimSigmaDeg: 3.0, turnDegPerSec: 260, viewDist: 38, fovDeg: 120, strafe: 0.5, coverHp: 2, coverOnOverheat: false },
+      hard:   { reaction: 0.24, aimSigmaDeg: 1.6, turnDegPerSec: 400, viewDist: 48, fovDeg: 140, strafe: 0.8, coverHp: 2, coverOnOverheat: true },
+    },
+    chaseTime: 4.0,
+    burstShots: [2, 5],
+    burstPause: [0.35, 0.9],
+    thinkInterval: 0.1,     // s między decyzjami FSM (rozłożone między botów)
+    arriveDist: 0.6,
+    stuckTime: 1.2,
+    adapt: {
+      evalInterval: 30,
+      window: 60,
+      maxOffset: 0.25,
+      step: 0.05,
+      decay: 0.025,
+      highRatio: 1.5,
+      lowRatio: 0.67,
+    },
+  },
+
+  nav: {
+    cell: 1.0,              // rozdzielczość próbkowania węzłów
+    clearance: 0.45,        // min. odległość węzła od ściany
+    maxClimb: 0.45,
+    linkDiagonal: true,
+  },
+
+  render: {
+    near: 0.05,
+    far: 120,
+    toneMappingExposure: 1.0,
+    fogDensity: 0.045,
+    clearColor: '#05030a',
+  },
+
+  presets: {
+    low: {
+      pixelRatio: 0.75, aa: 'none', bloom: null,
+      smoke: 0, pointLights: 0, envReflections: false, texSize: 256, anisotropy: 1,
+    },
+    medium: {
+      pixelRatio: 1.0, aa: 'fxaa', bloom: { strength: 0.9, radius: 0.55, threshold: 0.18, scale: 0.5 },
+      smoke: 24, pointLights: 2, envReflections: false, texSize: 512, anisotropy: 2,
+    },
+    high: {
+      pixelRatio: 1.5, aa: 'msaa', bloom: { strength: 1.0, radius: 0.6, threshold: 0.16, scale: 1.0 },
+      smoke: 48, pointLights: 4, envReflections: true, texSize: 1024, anisotropy: 4,
+    },
+    ultra: {
+      pixelRatio: 2.0, aa: 'msaa', bloom: { strength: 1.15, radius: 0.7, threshold: 0.14, scale: 1.0 },
+      smoke: 96, pointLights: 6, envReflections: true, texSize: 1024, anisotropy: 8,
+    },
+  },
+
+  budget: {
+    low:    { calls: 60,  triangles: 120000, textures: 20, geometries: 80 },
+    medium: { calls: 90,  triangles: 200000, textures: 28, geometries: 80 },
+    high:   { calls: 120, triangles: 350000, textures: 36, geometries: 90 },
+    ultra:  { calls: 160, triangles: 600000, textures: 44, geometries: 100 },
+  },
+
+  smoke: {
+    sizeMin: 3.5,
+    sizeMax: 7.0,
+    opacity: 0.07,
+    drift: 0.18,            // m/s
+    heightMin: 0.4,
+    heightMax: 3.2,
+  },
+
+  pools: {
+    beams: 48,
+    sparks: 64,
+  },
+
+  defaults: {
+    map: 'uvmaze',
+    preset: 'high',
+    mode: 'ffa',
+    diff: 'normal',
+  },
+});

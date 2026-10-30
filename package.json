@@ -1,0 +1,13 @@
+{
+  "name": "lasertag-arena",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Neonowa gra laser tag 3D (HTML + Three.js)",
+  "scripts": {
+    "serve": "node tools/serve.mjs 8080",
+    "test": "node --test tests/unit/",
+    "smoke": "NODE_PATH=$(npm root -g) node tests/smoke/smoke.mjs",
+    "screens": "NODE_PATH=$(npm root -g) node tests/tools/screens.mjs"
+  }
+}
