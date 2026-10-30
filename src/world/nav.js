@@ -23,6 +23,7 @@ const COVER_HEIGHT = 1.0;     // m — bryła o y1 ≥ tej wysokości (nad węz�
 const COVER_DIST = 1.1;       // m — maks. odległość krawędzi bryły od węzła dla flagi cover
 const SMOOTH_SAMPLE = 0.5;    // m — próbkowanie korytarza przy smoothPath
 const FLAT_DY = 0.05;         // m — smoothPath wygładza tylko odcinki płaskie
+const SMOOTH_MARGIN = 0.1;    // m — zapas ponad radius przy smoothPath (bot ścina narożniki; węzły leżą ≥ clearance od ścian)
 
 // ---------------------------------------------------------------------------------------------
 // Pomocnicze (build — mogą alokować; tu wygoda > wydajność)
@@ -531,7 +532,7 @@ function straightOk(nav, a, b) {
   const d = nav.y[b] - ha;
   if (d >= FLAT_DY || d <= -FLAT_DY) return false;
   SEG[0] = nav.x[a]; SEG[1] = nav.z[a]; SEG[2] = nav.x[b]; SEG[3] = nav.z[b]; SEG[4] = ha;
-  SEG[5] = CONFIG.player.radius + EDGE_MARGIN;
+  SEG[5] = CONFIG.player.radius + SMOOTH_MARGIN;
   if (!segFree(nav.world)) return false;
   return corridorCovered(nav);
 }
