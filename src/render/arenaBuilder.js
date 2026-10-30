@@ -614,7 +614,7 @@ float floorMask() {
     // zanik z odległością od podłogi: głębia punktu odbitego − głębia podłogi ≈ droga za lustrem
     float rDepth = texture2D( tReflectDepth, ruv ).x;
     float rViewZ = perspectiveDepthToViewZ( rDepth, camNear, camFar );
-    float behind = max( -rViewZ - ( -vViewPosition.z ), 0.0 );
+    float behind = max( -rViewZ - vViewPosition.z, 0.0 );   // vViewPosition.z = głębia podłogi (dodatnia)
     float hFade = exp( -behind / ${A.reflect.fadeLen.toFixed(2)} );
     vec3 fN = normalize( ( viewMatrix * vec4( 0.0, 1.0, 0.0, 0.0 ) ).xyz );
     float ndv = clamp( abs( dot( fN, normalize( vViewPosition ) ) ), 0.0, 1.0 );
