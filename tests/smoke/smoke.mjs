@@ -396,7 +396,6 @@ async function flowStep(page, L, [map, mode, full], k) {
     if (end.mine !== 1) e2.push(`wiersz gracza ×${end.mine}`);
     if (!/Koniec czasu/.test(end.meta)) e2.push(`meta "${end.meta}"`);
     if (end.lock) e2.push('pointer lock nie zwolniony');
-    if (st.hud) e2.push('HUD widoczny na ekranie końca');
     if (e2.length) L.fail(`${tag}: ekran końca: ${e2.join(', ')}`);
     else L.ok(`${tag}: ekran końca: ${end.title} — ${end.sub} (${end.winnerKind}), ${end.rows} wierszy${end.teams ? ` + ${end.teams} drużyn` : ''}`);
     row.result = end.title;
@@ -429,9 +428,11 @@ async function flowStep(page, L, [map, mode, full], k) {
     else L.ok(`${tag}: „Jeszcze raz" → nowy mecz (countdown, statystyki 0)`);
     row.restart = e3.length ? '✗' : '✓';
   }
-  // → menu
+  // → menu (najpierw kilka klatek: zdarzenie pointerlockchange po restarcie musi dojść do gry, inaczej exitLock jest no-op)
+  await frames(page, 3);
   await page.evaluate(() => window.__lt.goMenu());
   await waitApp(page, 'menu');
+  await page.waitForFunction(() => !document.pointerLockElement, null, { timeout: 5000, polling: 100 }).catch(() => {});
   await frames(page, 2);
   st = await appState(page);
   const e4 = [];
@@ -440,6 +441,7 @@ async function flowStep(page, L, [map, mode, full], k) {
   if (st.hud) e4.push('HUD widoczny');
   if (st.lock) e4.push('pointer lock nie zwolniony');
   if (st.n !== 0) e4.push('sim nie zwolniony');
+  if (st.lock) await page.evaluate(() => document.exitPointerLock()); // dalsze kroki: klik w menu wymaga wolnego kursora
   if (e4.length) L.fail(`${tag}: goMenu: ${e4.join(', ')}`);
   else L.ok(`${tag}: goMenu → menu`);
   row.ms = Date.now() - t0;

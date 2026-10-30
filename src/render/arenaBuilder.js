@@ -16,7 +16,8 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { CONFIG } from '../config.js';
-import { PAINT_STYLES, makeRng } from './textures.js';
+import { PAINT_STYLES } from './textures.js';
+import { createRng } from '../core/rng.js';
 
 const A = CONFIG.render.arena;
 const TX = CONFIG.render.textures;
@@ -185,15 +186,17 @@ function trimLoop(buf, s, y, col) {
   loop(buf, s, y, t, t, t / 2 + A.trimGap, col);
 }
 
+// filar: tylko pionowe listwy na narożnikach (cieńsze) na całą wysokość + obrys u góry;
+// u dołu zamknięte gumowym cokołem (rubberFor), u góry wchodzą w strop (bez „ramki" w połowie słupa)
 function pillarTrims(buf, s, col) {
-  const t = A.trimSize, o = t / 2 + A.trimGap;
-  const top = Math.min(s.y1, A.pillarTrimTop);
+  const P = A.pillar;
+  const t = A.trimSize * P.trimScale, o = t / 2 + A.trimGap;
+  const y0 = s.y0 + A.rubber.baseHeight, top = s.y1 - P.topGap;
   for (const [ix, iz] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) {
     toWorld(s, ix * (s.hx + o * 0.5), iz * (s.hz + o * 0.5), _wa);
-    addBar(buf, _wa[0], s.y0 + 0.02, _wa[1], _wa[0], top, _wa[1], t, t, col.r, col.g, col.b);
+    addBar(buf, _wa[0], y0, _wa[1], _wa[0], top, _wa[1], t, t, col.r, col.g, col.b);
   }
-  trimLoop(buf, s, s.y0 + t / 2 + 0.02, col);
-  trimLoop(buf, s, top - t / 2, col);
+  loop(buf, s, top - t / 2, t, t, o, col);
 }
 
 // strona bryły obwodowej zwrócona do środka areny: { longX, sign }
@@ -223,6 +226,21 @@ function boundaryTrims(buf, s, col, world) {
 }
 
 // gumowe odboje: listwa przypodłogowa (pętla) + narożniki pionowe
+// narożnik wolny = tuż za nim (wzdłuż obu ścian) nie ma innej bryły; przy łączeniu ścian odbój tworzyłby czarną szczelinę
+function freeCorner(world, s, ix, iz) {
+  const e = A.rubber.junctionProbe;
+  for (const [px, pz] of [[ix * (s.hx + e), iz * (s.hz - e)], [ix * (s.hx - e), iz * (s.hz + e)], [ix * (s.hx + e), iz * (s.hz + e)]]) {
+    toWorld(s, px, pz, _wb);
+    for (const o of world.solids) {
+      if (o === s || o.y0 > A.rubber.baseHeight || o.y1 < 1.0) continue;
+      const dx = _wb[0] - o.cx, dz = _wb[1] - o.cz;
+      const lx = dx * o.cos - dz * o.sin, lz = dx * o.sin + dz * o.cos;
+      if (Math.abs(lx) <= o.hx + e && Math.abs(lz) <= o.hz + e) return false;
+    }
+  }
+  return true;
+}
+
 function rubberFor(buf, trimBuf, s, world, dim) {
   if (s.y0 > 0.001) return;
   const R = A.rubber;
@@ -235,9 +253,10 @@ function rubberFor(buf, trimBuf, s, world, dim) {
   loop(buf, s, R.baseHeight / 2, R.baseDepth, R.baseHeight, R.baseDepth / 2, WHITE, R.baseDepth / 2);
   if (dim && !s.trimBottom) loop(trimBuf, s, lineY, R.lineSize, R.lineSize, R.baseDepth - R.lineSize / 2, dim, R.lineSize / 2);
   if (s.kind === 'pillar') return;
-  const top = s.y1 - A.trimSize - 0.04;
+  const top = s.y1 - A.trimSize - R.topGap;
   const o = R.cornerSize / 2 - R.cornerInset;
   for (const [ix, iz] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+    if (!freeCorner(world, s, ix, iz)) continue;
     toWorld(s, ix * (s.hx + o), iz * (s.hz + o), _wa);
     addBar(buf, _wa[0], R.baseHeight, _wa[1], _wa[0], top, _wa[1], R.cornerSize, R.cornerSize);
   }
@@ -271,7 +290,7 @@ function spawnPanel(rubberBuf, trimBuf, world, sp, frameColor, teamColor) {
   const cx = px + nx * P.depth / 2, cz = pz + nz * P.depth / 2;
   addBar(rubberBuf, cx - tx * P.width / 2, P.y, cz - tz * P.width / 2, cx + tx * P.width / 2, P.y, cz + tz * P.width / 2,
     P.depth, P.height);
-  const t = A.trimSize * 0.8, fx = cx + nx * (P.depth / 2 + t / 2), fz = cz + nz * (P.depth / 2 + t / 2);
+  const t = A.trimSize * A.spawnPanel.trimScale, fx = cx + nx * (P.depth / 2 + t / 2), fz = cz + nz * (P.depth / 2 + t / 2);
   const hw = P.width / 2, hh = P.height / 2;
   const c = frameColor;
   addBar(trimBuf, fx - tx * hw, P.y + hh, fz - tz * hw, fx + tx * hw, P.y + hh, fz + tz * hw, t, t, c.r, c.g, c.b);
@@ -398,10 +417,11 @@ function addSteelRamp(steelBuf, beamBuf, trimBuf, r, warnCol, sideCol) {
     addBar(trimBuf, _wa[0], y0 - t / 2, _wa[1], _wb[0], y1 - t / 2, _wb[1], t, t, warnCol.r, warnCol.g, warnCol.b);
   }
   // pasy ostrzegawcze w poprzek na początku i końcu rampy (krawędź stopnia)
-  for (const [lz, y] of [[-hz + 0.08, y0 + 0.01], [hz - 0.08, y1 + 0.01]]) {
-    const yy = y + (lz < 0 ? 0 : -0.02);
+  const RW = A.rampWarn;
+  for (const [lz, y] of [[-hz + RW.inset, y0 + RW.lift], [hz - RW.inset, y1 + RW.lift]]) {
+    const yy = y + (lz < 0 ? 0 : -RW.lift * 2);
     toWorld(r, -hx, lz, _wa); toWorld(r, hx, lz, _wb);
-    addBar(trimBuf, _wa[0], yy, _wa[1], _wb[0], yy, _wb[1], 0.06, 0.012, warnCol.r * 0.6, warnCol.g * 0.6, warnCol.b * 0.6);
+    addBar(trimBuf, _wa[0], yy, _wa[1], _wb[0], yy, _wb[1], RW.width, RW.height, warnCol.r * RW.k, warnCol.g * RW.k, warnCol.b * RW.k);
   }
 }
 
@@ -522,13 +542,18 @@ function patchNeonMaterial(mat) {
   const N = A.neon;
   mat.onBeforeCompile = (sh) => {
     sh.vertexShader = sh.vertexShader
-      .replace('#include <common>', '#include <common>\nvarying float vNearK;\nvarying float vNDepth;')
+      .replace('#include <common>', '#include <common>\nvarying float vNearK;\nvarying float vNDepth;\nvarying vec3 vTubeN;\nvarying vec3 vTubeV;')
       .replace('#include <fog_vertex>', `#include <fog_vertex>
   vNDepth = -mvPosition.z;
+  vTubeN = normalize( normalMatrix * normal );
+  vTubeV = -mvPosition.xyz;
   vNearK = mix( ${N.nearMin.toFixed(3)}, 1.0, smoothstep( ${N.near[0].toFixed(2)}, ${N.near[1].toFixed(2)}, vNDepth ) );`);
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', '#include <common>\nvarying float vNearK;\nvarying float vNDepth;')
-      .replace('#include <color_fragment>', '#include <color_fragment>\n  diffuseColor.rgb *= vNearK;')
+      .replace('#include <common>', '#include <common>\nvarying float vNearK;\nvarying float vNDepth;\nvarying vec3 vTubeN;\nvarying vec3 vTubeV;')
+      .replace('#include <color_fragment>', `#include <color_fragment>
+  // „rurka": ściany zwrócone do kamery jasne, boczne ciemniejsze → gradient rdzeń → brzeg zamiast płaskiej taśmy
+  float tubeF = abs( dot( normalize( vTubeN ), normalize( vTubeV ) ) );
+  diffuseColor.rgb *= vNearK * mix( ${N.tubeEdge.toFixed(3)}, 1.0, pow( tubeF, ${N.tubePow.toFixed(2)} ) );`)
       .replace('#include <fog_fragment>', `
 #ifdef USE_FOG
 #ifdef FOG_EXP2
@@ -629,7 +654,7 @@ export function accentMode(world) {
 export function lampPosition(world, L, out = { x: 0, y: 0, z: 0, color: '' }) {
   out.x = L.x; out.y = L.y; out.z = L.z; out.color = L.color;
   for (const s of world.solids) {
-    if (s.y1 < L.y - 0.5) continue;
+    if (s.y1 < L.y - A.lampClearance) continue;
     const dx = L.x - s.cx, dz = L.z - s.cz;
     const lx = dx * s.cos - dz * s.sin, lz = dx * s.sin + dz * s.cos;
     const m = A.lampClearance;
@@ -651,7 +676,7 @@ export function buildArena(world, preset, textures, opts = {}) {
   group.name = 'arena';
   const disposables = [];
   const own = (x) => { disposables.push(x); return x; };
-  const rng = makeRng((world.seed ^ 0xa11ce) >>> 0);
+  const rng = createRng((world.seed ^ A.seedSalt) >>> 0).next;
   const pal = world.palette;
   const lin = (hex, k = 1) => new THREE.Color(hex).multiplyScalar(k);
   const palLin = { primary: lin(pal.primary), secondary: lin(pal.secondary), uv: lin(pal.uv), accent: lin(pal.accent) };
@@ -672,10 +697,12 @@ export function buildArena(world, preset, textures, opts = {}) {
   const lumNorm = (hex) => {
     const c = lin(hex);
     const l = 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
-    return Math.min(1.7, Math.max(0.55, Math.sqrt(A.trimLumRef / Math.max(l, 1e-3))));
+    return Math.min(A.lumNormRange[1], Math.max(A.lumNormRange[0], Math.sqrt(A.trimLumRef / Math.max(l, 1e-3))));
   };
   for (const k of MAIN_KEYS) trimCol[k] = saturate(lin(pal[k], A.trimIntensity * lumNorm(pal[k])), A.trimSaturation);
   trimCol.accent = saturate(lin(pal.accent, A.trimIntensity * lumNorm(pal.accent)), A.trimSaturation);
+  const pillarCol = {};
+  for (const k of MAIN_KEYS) pillarCol[k] = saturate(lin(pal[k], A.trimIntensity * A.pillar.intensity * Math.min(lumNorm(pal[k]), A.pillar.lumMax)), A.pillar.saturation);
   const dimCol = {};
   for (const k of MAIN_KEYS) dimCol[k] = lin(pal[k], A.rubber.lineIntensity * lumNorm(pal[k]));
   const accentLin = lin(pal.accent, A.paintIntensity * A.accentPaintScale);
@@ -695,7 +722,8 @@ export function buildArena(world, preset, textures, opts = {}) {
 
   const setCur = (buf, aKey, bKey, washKey, top, bot) => {
     const c = buf.cur;
-    const ka = A.paintIntensity * boost(aKey), kb = A.paintIntensity * boost(bKey);
+    const pk = A.paintIntensity * (buf.curBoundary ? A.boundaryPaintIntensity : 1);
+    const ka = pk * boost(aKey), kb = pk * boost(bKey);
     c.pa[0] = palLin[aKey].r * ka; c.pa[1] = palLin[aKey].g * ka; c.pa[2] = palLin[aKey].b * ka;
     c.pb[0] = palLin[bKey].r * kb; c.pb[1] = palLin[bKey].g * kb; c.pb[2] = palLin[bKey].b * kb;
     const w = washKey ? palLin[washKey] : null, kw = boost(washKey);
@@ -716,6 +744,7 @@ export function buildArena(world, preset, textures, opts = {}) {
     const bot = hasBottom ? s.y0 + A.trimSize / 2 + A.trimBottomLift : -1;
     const top = s.boundary ? Math.min(s.y1, A.boundaryTrimHeights[A.boundaryTrimHeights.length - 1]) : s.y1;
     const buf = style ? paintBufs[style] : plainBuf;
+    buf.curBoundary = !!s.boundary;
     setCur(buf, aKey, bKey, tk, top, bot);
     setCur(plainBuf, aKey, bKey, tk, top, bot);
     addSolid(buf, plainBuf, s, rng);
@@ -723,7 +752,7 @@ export function buildArena(world, preset, textures, opts = {}) {
     if (!tk) return;
     const col = trimCol[tk];
     if (s.boundary) { boundaryTrims(trimBuf, s, col, world); return; }
-    if (s.kind === 'pillar') { pillarTrims(trimBuf, s, col); return; }
+    if (s.kind === 'pillar') { pillarTrims(trimBuf, s, pillarCol[tk] || col); return; }
     trimLoop(trimBuf, s, s.y1 - A.trimSize / 2, col);
     if (s.trimBottom) trimLoop(trimBuf, s, s.y0 + A.trimSize / 2 + A.trimBottomLift, col);
   });
@@ -777,7 +806,7 @@ export function buildArena(world, preset, textures, opts = {}) {
     scaleUv(geo, W / A.ceilingTile, D / A.ceilingTile);
     const tex = textures.get('ceiling');
     const mat = own(new THREE.MeshStandardMaterial({
-      color: 0xffffff, map: tex, roughness: 0.95, metalness: 0,
+      color: 0xffffff, map: tex, roughness: A.ceilingRoughness, metalness: 0,
       emissive: new THREE.Color(pal.uv), emissiveMap: tex, emissiveIntensity: A.ceilingGlow * darkNorm,
     }));
     const lamps = { pos: [], col: [] };
@@ -792,13 +821,14 @@ export function buildArena(world, preset, textures, opts = {}) {
     patchCeilingMaterial(mat, lamps);
     const m = new THREE.Mesh(geo, mat);
     m.name = 'ceiling';
+    m.layers.set(LAYER_NO_REFLECT);
     group.add(m);
   }
   const yTop = ceil - A.trussDrop, yBot = ceil - A.trussDrop - A.trussDepth;
   const trussZ = [];
   {
     const tw = A.trussChord;
-    for (let z = b.minZ + A.trussSpacing; z < b.maxZ - 0.5; z += A.trussSpacing) {
+    for (let z = b.minZ + A.trussSpacing; z < b.maxZ - A.trussEdge; z += A.trussSpacing) {
       trussZ.push(z);
       for (const dz of [-A.trussWidth / 2, A.trussWidth / 2]) {
         addBar(trussBuf, b.minX, yTop, z + dz, b.maxX, yTop, z + dz, tw, tw);
@@ -806,36 +836,39 @@ export function buildArena(world, preset, textures, opts = {}) {
         let up = true;
         for (let x = b.minX; x < b.maxX - 0.01; x += A.trussBay) {
           const x2 = Math.min(b.maxX, x + A.trussBay);
-          addBar(trussBuf, x, up ? yBot : yTop, z + dz, x2, up ? yTop : yBot, z + dz, tw * 0.6, tw * 0.6);
+          addBar(trussBuf, x, up ? yBot : yTop, z + dz, x2, up ? yTop : yBot, z + dz, tw * A.trussBrace, tw * A.trussBrace);
           up = !up;
         }
       }
       for (let x = b.minX + A.trussBay; x < b.maxX; x += A.trussBay * 2) {
-        addBar(trussBuf, x, yBot, z - A.trussWidth / 2, x, yBot, z + A.trussWidth / 2, tw * 0.6, tw * 0.6);
+        addBar(trussBuf, x, yBot, z - A.trussWidth / 2, x, yBot, z + A.trussWidth / 2, tw * A.trussBrace, tw * A.trussBrace);
       }
     }
-    for (let x = b.minX + A.trussSpacing; x < b.maxX - 0.5; x += A.trussSpacing) {
-      addBar(trussBuf, x, yTop + tw, b.minZ, x, yTop + tw, b.maxZ, tw * 1.2, tw * 1.6);
+    for (let x = b.minX + A.trussSpacing; x < b.maxX - A.trussEdge; x += A.trussSpacing) {
+      addBar(trussBuf, x, yTop + tw, b.minZ, x, yTop + tw, b.maxZ, tw * A.trussCross[0], tw * A.trussCross[1]);
       // zawiesia dźwigarów do stropu (kratownica nie „pływa")
-      for (const z of trussZ) addBar(trussBuf, x, yTop, z, x, ceil, z, 0.035, 0.035);
+      for (const z of trussZ) addBar(trussBuf, x, yTop, z, x, ceil, z, A.trussHanger, A.trussHanger);
     }
   }
   // świetlówki UV: w oprawach przykręconych pod pasem dolnym dźwigara
   {
     const U = A.uvTube;
-    const hy = yBot - A.trussChord / 2 - U.housing / 2;          // korytko przylega do pasa dolnego
+    const hy = yBot - A.trussChord / 2 - U.housing / 2 - U.drop;  // oprawa pod pasem dolnym (na wspornikach)
     const yT = hy - U.housing / 2 - U.thickness / 2;
     const c = lin(pal.uv, U.intensity * Math.sqrt(darkNorm));
     const hl = U.length / 2;
-    trussZ.forEach((z, row) => {
-      const zz = z + (row % 2 ? 1 : -1) * A.trussWidth / 2;
-      const start = b.minX + U.spacing * (row % 2 ? 0.5 : 0.25);
-      for (let x = start; x < b.maxX - hl; x += U.spacing) {
+    // regularny rytm: ten sam układ w każdym rzędzie, oprawa pod osią dźwigara na wspornikach do obu pasów dolnych
+    trussZ.forEach((z) => {
+      for (let x = b.minX + U.spacing / 2; x < b.maxX - hl; x += U.spacing) {
         let nearLamp = false;
-        for (const L of world.lights || []) if (Math.abs(L.x - x) < 1.5 && Math.abs(L.z - z) < 2.5) nearLamp = true;
+        for (const L of world.lights || []) if (Math.abs(L.x - x) < U.lampClear[0] && Math.abs(L.z - z) < U.lampClear[1]) nearLamp = true;
         if (nearLamp) continue;
-        addBar(trussBuf, x - hl - 0.05, hy, zz, x + hl + 0.05, hy, zz, U.thickness * 2.4, U.housing); // oprawa
-        addBar(trimBuf, x - hl, yT, zz, x + hl, yT, zz, U.thickness, U.thickness, c.r, c.g, c.b);
+        for (const ex of [-hl + U.bracketInset, hl - U.bracketInset]) {
+          addBar(trussBuf, x + ex, yBot, z - A.trussWidth / 2, x + ex, yBot, z + A.trussWidth / 2, U.bracket, U.bracket);
+          addBar(trussBuf, x + ex, yBot, z, x + ex, hy, z, U.bracket, U.bracket);
+        }
+        addBar(trussBuf, x - hl - U.housingPad, hy, z, x + hl + U.housingPad, hy, z, U.housingWidth, U.housing); // oprawa
+        addBar(trimBuf, x - hl, yT, z, x + hl, yT, z, U.thickness, U.thickness, c.r, c.g, c.b);
       }
     });
   }
@@ -846,13 +879,14 @@ export function buildArena(world, preset, textures, opts = {}) {
     let z0 = -Infinity, z1 = Infinity;
     for (const z of trussZ) { if (z <= L.z && z > z0) z0 = z; if (z >= L.z && z < z1) z1 = z; }
     if (!isFinite(z0)) z0 = b.minZ; if (!isFinite(z1)) z1 = b.maxZ;
-    if (z1 - z0 < 0.5) { z0 -= A.trussSpacing / 2; z1 += A.trussSpacing / 2; }
+    const LM = A.lampMount;
+    if (z1 - z0 < LM.minSpan) { z0 -= A.trussSpacing / 2; z1 += A.trussSpacing / 2; }
     const yb = yBot - A.trussChord;
-    addBar(trussBuf, L.x, yb, z0 - A.trussWidth / 2, L.x, yb, z1 + A.trussWidth / 2, 0.08, 0.08);
+    addBar(trussBuf, L.x, yb, z0 - A.trussWidth / 2, L.x, yb, z1 + A.trussWidth / 2, LM.crossbar, LM.crossbar);
     const hl = A.lampSize[0] / 2;
-    const yh = yb - 0.04 - 0.06;
-    addBar(trussBuf, L.x - hl - 0.06, yh, L.z, L.x + hl + 0.06, yh, L.z, A.lampSize[1] + 0.1, 0.12);
-    const y = yh - 0.06 - A.lampSize[2] / 2;
+    const yh = yb - LM.crossbar / 2 - LM.housingHeight / 2;
+    addBar(trussBuf, L.x - hl - LM.housingPad, yh, L.z, L.x + hl + LM.housingPad, yh, L.z, A.lampSize[1] + 2 * LM.housingPad, LM.housingHeight);
+    const y = yh - LM.housingHeight / 2 - A.lampSize[2] / 2;
     lampY.push(y);
     const c = saturate(lin(lightColorHex(world, L.color), A.lampIntensity), A.trimSaturation);
     addBar(trimBuf, L.x - hl, y, L.z, L.x + hl, y, L.z, A.lampSize[1], A.lampSize[2], c.r, c.g, c.b);
@@ -862,11 +896,12 @@ export function buildArena(world, preset, textures, opts = {}) {
     if (geo) {
       geo.deleteAttribute('uv');
       const mat = own(new THREE.MeshStandardMaterial({
-        color: A.trussColor, roughness: 0.5, metalness: 0.6,
+        color: A.trussColor, roughness: A.trussRoughness, metalness: A.trussMetalness,
         emissive: new THREE.Color(pal.uv), emissiveIntensity: A.trussGlow,
       }));
       const m = new THREE.Mesh(own(geo), mat);
       m.name = 'truss';
+      m.layers.set(LAYER_NO_REFLECT);
       group.add(m);
     }
   }
@@ -875,7 +910,10 @@ export function buildArena(world, preset, textures, opts = {}) {
     const geo = rubberBuf.toGeometry();
     if (geo) {
       geo.deleteAttribute('uv');
-      const mat = own(new THREE.MeshStandardMaterial({ color: A.rubber.color, roughness: 0.85, metalness: 0 }));
+      const mat = own(new THREE.MeshStandardMaterial({
+        color: A.rubber.color, roughness: A.rubber.roughness, metalness: 0,
+        emissive: new THREE.Color(pal.uv), emissiveIntensity: A.rubber.glow * darkNorm,
+      }));
       const m = new THREE.Mesh(own(geo), mat);
       m.name = 'rubber';
       group.add(m);
@@ -901,7 +939,6 @@ export function buildArena(world, preset, textures, opts = {}) {
     const geo = trimBuf.toGeometry();
     if (geo) {
       geo.deleteAttribute('uv');
-      geo.deleteAttribute('normal');
       const mat = own(new THREE.MeshBasicMaterial({ vertexColors: true, fog: true }));
       patchNeonMaterial(mat);
       const m = new THREE.Mesh(own(geo), mat);
@@ -961,7 +998,7 @@ export function buildArena(world, preset, textures, opts = {}) {
       const h = top - bottomY;
       if (h < A.coneMinHeight) return;
       const rb = Math.min(A.coneCheckRadius, A.coneTopRadius + (A.coneBottomRadius - A.coneTopRadius) * h / (top - A.coneBottom));
-      const g = new THREE.CylinderGeometry(A.coneTopRadius, rb, h, 24, 1, true);
+      const g = new THREE.CylinderGeometry(A.coneTopRadius, rb, h, A.coneSegments, 1, true);
       g.translate(L.x, bottomY + h / 2, L.z);
       const c = new THREE.Color(lightColorHex(world, L.color));
       const n = g.attributes.position.count;
@@ -1000,7 +1037,7 @@ export function buildArena(world, preset, textures, opts = {}) {
     if (coneMesh) coneMesh.visible = false;
     floorMesh.visible = false;
     const pmrem = new THREE.PMREMGenerator(opts.renderer);
-    envRT = pmrem.fromScene(tmp, A.envBlur, 0.05, Math.max(W, D) * 1.5);
+    envRT = pmrem.fromScene(tmp, A.envBlur, A.envNear, Math.max(W, D) * A.envFarScale);
     pmrem.dispose();
     floorMesh.visible = true;
     if (coneMesh) coneMesh.visible = true;
@@ -1098,12 +1135,13 @@ function insideSolid(world, x, z, y, m) {
 function findBakePoint(world) {
   const b = world.bounds;
   const cx = (b.minX + b.maxX) / 2, cz = (b.minZ + b.maxZ) / 2;
-  for (let r = 0; r < 12; r += 0.5) {
+  const S = A.bakeSearch;
+  for (let r = 0; r < S.maxRadius; r += S.step) {
     const steps = Math.max(1, Math.round(r * 8));
     for (let k = 0; k < steps; k++) {
       const a = (k / steps) * Math.PI * 2;
       const x = cx + Math.cos(a) * r, z = cz + Math.sin(a) * r;
-      if (!insideSolid(world, x, z, A.envBakeHeight, 0.6)) return { x, z };
+      if (!insideSolid(world, x, z, A.envBakeHeight, S.margin)) return { x, z };
     }
   }
   return { x: cx, z: cz };
