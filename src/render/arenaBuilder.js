@@ -449,6 +449,28 @@ export function lightColorHex(world, hex) {
   return hex && p.accent && hex.toLowerCase() === p.accent.toLowerCase() ? p.uv : hex;
 }
 
+/**
+ * Pozycja oprawy lampy: dane światła, ale odsunięta od bryły sięgającej sufitu (filar), żeby oprawa i stożek
+ * nie wchodziły w słup. out = { x, y, z, color } (bez alokacji przy ponownym użyciu out).
+ */
+export function lampPosition(world, L, out = { x: 0, y: 0, z: 0, color: '' }) {
+  out.x = L.x; out.y = L.y; out.z = L.z; out.color = L.color;
+  for (const s of world.solids) {
+    if (s.y1 < L.y - 0.5) continue;
+    const dx = L.x - s.cx, dz = L.z - s.cz;
+    const lx = dx * s.cos - dz * s.sin, lz = dx * s.sin + dz * s.cos;
+    const m = A.lampClearance;
+    if (Math.abs(lx) < s.hx + m && Math.abs(lz) < s.hz + m) {
+      // przesuń wzdłuż lokalnej osi X na zewnątrz bryły
+      const nlx = (lx >= 0 ? 1 : -1) * (s.hx + m) ;
+      out.x = s.cx + nlx * s.cos + lz * s.sin;
+      out.z = s.cz - nlx * s.sin + lz * s.cos;
+    }
+  }
+  return out;
+}
+const _lamp = { x: 0, y: 0, z: 0, color: '' };
+
 // ---------------------------------------------------------------- główna funkcja
 
 export function buildArena(world, preset, textures, opts = {}) {
@@ -461,8 +483,14 @@ export function buildArena(world, preset, textures, opts = {}) {
   const lin = (hex, k = 1) => new THREE.Color(hex).multiplyScalar(k);
   const palLin = { primary: lin(pal.primary), secondary: lin(pal.secondary), uv: lin(pal.uv) };
   const boost = (key) => (key === 'uv' ? A.uvBoost : 1);
+  // listwy: kolor nasycony (ACES przy HDR wybiela — podbijamy nasycenie, rdzeń zostaje kolorowy)
+  const saturate = (c, k) => {
+    const l = 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
+    c.r = Math.max(0, l + (c.r - l) * k); c.g = Math.max(0, l + (c.g - l) * k); c.b = Math.max(0, l + (c.b - l) * k);
+    return c;
+  };
   const trimCol = {};
-  for (const k of MAIN_KEYS) trimCol[k] = lin(pal[k], A.trimIntensity * boost(k));
+  for (const k of MAIN_KEYS) trimCol[k] = saturate(lin(pal[k], A.trimIntensity * boost(k)), A.trimSaturation);
   const accentLin = lin(pal.accent, A.paintIntensity * A.accentPaintScale);
   // akcent z danych → kolor główny (deterministycznie per bryła)
   const mainKey = (key, i) => (MAIN_KEYS.includes(key) ? key : (key === 'accent' ? (i % 2 ? 'secondary' : 'primary') : null));
@@ -612,7 +640,8 @@ export function buildArena(world, preset, textures, opts = {}) {
   }
   // lampy: poprzeczka między sąsiednimi dźwigarami + oprawa + emisyjny prostokąt (kolor światła, akcent → UV)
   const lampY = [];
-  for (const L of world.lights || []) {
+  for (const L0 of world.lights || []) {
+    const L = lampPosition(world, L0, _lamp);
     let z0 = -Infinity, z1 = Infinity;
     for (const z of trussZ) { if (z <= L.z && z > z0) z0 = z; if (z >= L.z && z < z1) z1 = z; }
     if (!isFinite(z0)) z0 = b.minZ; if (!isFinite(z1)) z1 = b.maxZ;
@@ -624,7 +653,7 @@ export function buildArena(world, preset, textures, opts = {}) {
     addBar(trussBuf, L.x - hl - 0.06, yh, L.z, L.x + hl + 0.06, yh, L.z, A.lampSize[1] + 0.1, 0.12);
     const y = yh - 0.06 - A.lampSize[2] / 2;
     lampY.push(y);
-    const c = lin(lightColorHex(world, L.color), A.lampIntensity);
+    const c = saturate(lin(lightColorHex(world, L.color), A.lampIntensity), A.trimSaturation);
     addBar(trimBuf, L.x - hl, y, L.z, L.x + hl, y, L.z, A.lampSize[1], A.lampSize[2], c.r, c.g, c.b);
   }
   {
@@ -692,7 +721,8 @@ export function buildArena(world, preset, textures, opts = {}) {
   let coneMat = null, coneMesh = null;
   if (preset.smoke >= A.conesMinSmoke && (world.lights || []).length) {
     const list = [];
-    world.lights.forEach((L, i) => {
+    world.lights.forEach((L0, i) => {
+      const L = lampPosition(world, L0, _lamp);
       const top = lampY[i];
       const h = top - A.coneBottom;
       const g = new THREE.CylinderGeometry(A.coneTopRadius, A.coneBottomRadius, h, 24, 1, true);

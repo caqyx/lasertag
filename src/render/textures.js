@@ -257,7 +257,7 @@ function paintSplatter(g, W, H, ppm, cols, rng) {
       const col = rng() < 0.7 ? colA : pickD(rng, cols);
       const kind = Math.floor(rng() * 3); // 0 kleks z kroplami, 1 gwiazda (uderzenie), 2 smuga (rozbryzg pod kątem)
       const rot = rng() * Math.PI * 2;
-      const stretch = kind === 2 ? rr(rng, 1.8, 3.2) : rr(rng, 0.8, 1.3);
+      const stretch = kind === 2 ? rr(rng, 1.4, 2.2) : rr(rng, 0.8, 1.3);
       const spikes = [];
       const ns = kind === 1 ? 7 + Math.floor(rng() * 6) : 3 + Math.floor(rng() * 3);
       for (let k = 0; k < ns; k++) {
@@ -377,9 +377,9 @@ function drawWallColor(S, rng) {
   }
   g.putImageData(img, 0, 0);
   // pionowe smugi wałka (bardzo subtelne)
-  for (let i = 0; i < 60; i++) {
-    const x = rng() * S, w = rr(rng, 0.01, 0.05) * S;
-    g.fillStyle = `rgba(${rng() < 0.5 ? '0,0,0' : '255,255,255'},${rr(rng, 0.03, 0.08)})`;
+  for (let i = 0; i < 30; i++) {
+    const x = rng() * S, w = rr(rng, 0.01, 0.04) * S;
+    g.fillStyle = `rgba(${rng() < 0.5 ? '0,0,0' : '255,255,255'},${rr(rng, 0.015, 0.04)})`;
     wrapX(S, (dx) => g.fillRect(x + dx, 0, w, S));
   }
   // przetarcia / odbicia butów nisko

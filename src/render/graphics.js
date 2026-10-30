@@ -11,7 +11,7 @@ import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { FXAAShader } from 'three/addons/shaders/FXAAShader.js';
 import { CONFIG } from '../config.js';
 import { createTextures, makeRng } from './textures.js';
-import { buildArena } from './arenaBuilder.js';
+import { buildArena, lightColorHex, lampPosition, LAYER_NO_REFLECT } from './arenaBuilder.js';
 import { createSmoke } from './smoke.js';
 
 const R = CONFIG.render;
@@ -29,6 +29,7 @@ export function createGraphics({ canvas, presetName = CONFIG.defaults.preset }) 
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(CONFIG.player.fov, 1, R.near, R.far);
   camera.position.set(0, CONFIG.player.eyeHeight, 0);
+  camera.layers.enable(LAYER_NO_REFLECT); // podłoga/dym/stożki: widoczne, ale pomijane w renderze odbicia
 
   const hemi = new THREE.HemisphereLight(0x000000, 0x000000, R.lights.hemiIntensity);
   scene.add(hemi);
@@ -41,6 +42,7 @@ export function createGraphics({ canvas, presetName = CONFIG.defaults.preset }) 
   let smoke = null;
   let composer = null, bloomPass = null, fxaaPass = null, outputPass = null, renderPass = null;
   const size = new THREE.Vector2();
+  const fogTintColor = new THREE.Color();
 
   const infoOut = { calls: 0, triangles: 0, points: 0, lines: 0, textures: 0, geometries: 0, programs: 0 };
 
@@ -100,8 +102,9 @@ export function createGraphics({ canvas, presetName = CONFIG.defaults.preset }) 
     const n = Math.min(preset.pointLights, (world.lights || []).length);
     for (let i = 0; i < n; i++) {
       const L = world.lights[i];
-      const pl = new THREE.PointLight(L.color, L.intensity * R.lights.pointScale, (L.range || 12) * R.lights.rangeScale, 2);
-      pl.position.set(L.x, L.y - R.lights.drop, L.z);
+      const pl = new THREE.PointLight(lightColorHex(world, L.color), L.intensity * R.lights.pointScale, (L.range || 12) * R.lights.rangeScale, 2);
+      const lp = lampPosition(world, L);
+      pl.position.set(lp.x, L.y - R.lights.drop, lp.z);
       pl.castShadow = false;
       scene.add(pl);
       pointLights.push(pl);
@@ -125,16 +128,20 @@ export function createGraphics({ canvas, presetName = CONFIG.defaults.preset }) 
     });
     arena = buildArena(world, preset, textures, { renderer });
     scene.add(arena.group);
+    renderer.getDrawingBufferSize(size);
+    arena.setSize(size.x, size.y);
     smoke = createSmoke(world, preset.smoke, makeRng((world.seed ^ 0x5307e) >>> 0),
       { texture: preset.smoke > 0 ? textures.get('smoke') : null });
-    if (smoke.mesh) scene.add(smoke.mesh);
+    if (smoke.mesh) { smoke.mesh.layers.set(LAYER_NO_REFLECT); scene.add(smoke.mesh); }
   }
 
   function applyFog() {
     if (!world) { scene.fog = null; return; }
     if (!scene.fog) scene.fog = new THREE.FogExp2(world.palette.fog, R.fogDensity);
-    scene.fog.color.set(world.palette.fog);
+    // mgła: kolor palety podbarwiony fioletem UV (widoczna fioletowo-granatowa głębia, nie czarna)
+    scene.fog.color.set(world.palette.fog).lerp(fogTintColor.set(world.palette.uv), R.fogTint);
     scene.fog.density = R.fogDensity;
+    renderer.setClearColor(scene.fog.color, 1);
   }
 
   // ------------------------------------------------------------ API
@@ -169,14 +176,13 @@ export function createGraphics({ canvas, presetName = CONFIG.defaults.preset }) 
     renderer.setSize(w, h, false);
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
+    renderer.getDrawingBufferSize(size);
     if (composer) {
       composer.setPixelRatio(pr);
       composer.setSize(w, h);
-      if (fxaaPass) {
-        renderer.getDrawingBufferSize(size);
-        fxaaPass.material.uniforms.resolution.value.set(1 / size.x, 1 / size.y);
-      }
+      if (fxaaPass) fxaaPass.material.uniforms.resolution.value.set(1 / size.x, 1 / size.y);
     }
+    if (arena) arena.setSize(size.x, size.y);
   }
 
   function update(dt, time) {
@@ -186,6 +192,7 @@ export function createGraphics({ canvas, presetName = CONFIG.defaults.preset }) 
 
   function render() {
     renderer.info.reset();
+    if (arena) arena.renderReflection(renderer, scene, camera);
     composer.render();
   }
 

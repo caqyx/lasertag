@@ -7,7 +7,7 @@
 
 import { CONFIG } from '../../config.js';
 import { segmentClear } from '../../world/physics.js';
-import { nearestNode, findPath, randomNode } from '../../world/nav.js';
+import { nearestNode, findPath, randomNode, smoothPath } from '../../world/nav.js';
 import { isEnemy, sameTeam } from '../combat.js';
 import { skillScale, stepAdapt } from './adapt.js';
 
@@ -48,7 +48,7 @@ export function createBotBrain(o) {
     path: new Int32Array(CONFIG.bots.pathCapacity), pathLen: 0, pathIdx: 0, goal: -1,
     moving: false, strafeDir: 0, strafeTimer: 0.5, repathTimer: 0.5,
     stuckX: 0.5, stuckZ: 0.5, stuckTimer: 0.5, stuckCount: 0, jumpNow: false,
-    moveWX: 0.5, moveWZ: 0.5,
+    moveWX: 0.5, moveWZ: 0.5, onRamp: false,
     // osłona
     coverHold: 0.5, coverCooldown: 0.5, coverNode: -1,
     // patrol: odwiedzone węzły
@@ -107,13 +107,13 @@ function sampleBot(B, P, sim, out) {
   updateSkill(B, P, sim);
   trackShots(B, P);
 
+  timers(B);
   B.thinkTimer -= B.dt;
   if (B.thinkTimer <= 0) {
     B.thinkTimer += CONFIG.bots.thinkInterval;
     if (B.thinkTimer < 0) B.thinkTimer = 0;
     think(B, P, sim);
   }
-  timers(B);
 
   steerAim(B, P);
   steerMove(B, P, sim);
@@ -122,7 +122,7 @@ function sampleBot(B, P, sim, out) {
   out.yaw = B.yaw;
   out.pitch = B.pitch;
   localMove(B, out);
-  if (B.state === BOT_STATE.CHASE || B.state === BOT_STATE.COVER) out.sprint = true;
+  if ((B.state === BOT_STATE.CHASE || B.state === BOT_STATE.COVER) && !B.onRamp) out.sprint = true;
   if (B.jumpNow) { out.jump = true; B.jumpNow = false; }
 }
 
@@ -331,6 +331,7 @@ function pathTo(B, P, x, y, z) {
 }
 
 function setPath(B, P, len) {
+  if (len > 2) len = smoothPath(B.nav, B.path, len);
   B.pathLen = len;
   B.pathIdx = 0;
   // pomiń pierwszy węzeł, jeśli jesteśmy już bliżej drugiego
@@ -439,10 +440,18 @@ function steerMove(B, P, sim) {
   B.moveWX = 0; B.moveWZ = 0;
 
   // przejście przez kolejne węzły ścieżki
+  B.onRamp = false;
   while (B.pathIdx < B.pathLen) {
     const n = B.path[B.pathIdx];
     const dx = nav.x[n] - b.x, dz = nav.z[n] - b.z;
-    if (dx * dx + dz * dz > C.arriveDist * C.arriveDist) break;
+    // odcinek ze zmianą wysokości (rampa): dojście bliżej, bez sprintu (inaczej spadnie z boku wąskiej rampy)
+    const py = B.pathIdx > 0 ? nav.y[B.path[B.pathIdx - 1]] : b.y;
+    const dyN = nav.y[n] - py;
+    const dyB = nav.y[n] - b.y;
+    const ramp = dyN > C.rampDy || dyN < -C.rampDy || dyB > C.rampDy || dyB < -C.rampDy;
+    const ad = ramp ? C.rampArriveDist : C.arriveDist;
+    if (ramp) B.onRamp = true;
+    if (dx * dx + dz * dz > ad * ad) break;
     if (B.visited[n] === 0) { B.visited[n] = 1; B.visitedCount++; }
     B.pathIdx++;
   }

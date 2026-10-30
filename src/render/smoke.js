@@ -7,6 +7,7 @@
 import * as THREE from 'three';
 import { CONFIG } from '../config.js';
 import { createTextures } from './textures.js';
+import { lightColorHex, lampPosition } from './arenaBuilder.js';
 
 const SM = CONFIG.smoke;
 const MAX_LIGHTS = 8;
@@ -93,8 +94,9 @@ export function createSmoke(world, count, rng, opts = {}) {
   const lightPos = [], lightCol = [], lightRange = [];
   for (let i = 0; i < MAX_LIGHTS; i++) {
     const L = lights[i];
-    lightPos.push(L ? new THREE.Vector3(L.x, L.y - SM.lightDrop, L.z) : new THREE.Vector3());
-    lightCol.push(L ? new THREE.Color(L.color).multiplyScalar(SM.lightGain) : new THREE.Color(0, 0, 0));
+    const lp = L ? lampPosition(world, L) : null;
+    lightPos.push(L ? new THREE.Vector3(lp.x, L.y - SM.lightDrop, lp.z) : new THREE.Vector3());
+    lightCol.push(L ? new THREE.Color(lightColorHex(world, L.color)).multiplyScalar(SM.lightGain) : new THREE.Color(0, 0, 0));
     lightRange.push(L ? (L.range || 10) * SM.lightRangeScale : 1);
   }
 
@@ -132,9 +134,12 @@ export function createSmoke(world, count, rng, opts = {}) {
   const m = SM.margin;
   const mtx = new THREE.Matrix4();
   for (let i = 0; i < count; i++) {
-    // warstwy: niżej większe i gęstsze płachty, wyżej mniejsze kłęby
+    // dwie warstwy: nisko nad podłogą (większe płachty) i pod sufitem (wokół lamp); trochę pomiędzy
+    const r0 = rnd();
+    const band = r0 < SM.lowShare ? SM.lowBand : (r0 < SM.lowShare + SM.highShare ? SM.highBand : [SM.heightMin, SM.heightMax]);
+    const top = Math.min(band[1], world.ceiling - 0.45);
     const layer = rnd();
-    const y = SM.heightMin + Math.pow(layer, 1.4) * (Math.min(SM.heightMax, world.ceiling - 0.6) - SM.heightMin);
+    const y = band[0] + layer * Math.max(0, top - band[0]);
     // środek kłębu w wolnej przestrzeni (nie w bryle) — inaczej marnuje się w ścianie
     let x = 0, z = 0;
     for (let tries = 0; tries < 24; tries++) {
@@ -146,7 +151,7 @@ export function createSmoke(world, count, rng, opts = {}) {
     mesh.setMatrixAt(i, mtx);
     params[i * 4] = rnd();
     params[i * 4 + 1] = (rnd() - 0.5) * 2 * SM.spin;
-    params[i * 4 + 2] = SM.sizeMin + (SM.sizeMax - SM.sizeMin) * (1 - layer * 0.5) * (0.6 + 0.4 * rnd());
+    params[i * 4 + 2] = SM.sizeMin + (SM.sizeMax - SM.sizeMin) * (band === SM.lowBand ? 1 : 0.7) * (0.6 + 0.4 * rnd());
     params[i * 4 + 3] = rnd();
   }
   geo.setAttribute('aParams', new THREE.InstancedBufferAttribute(params, 4));

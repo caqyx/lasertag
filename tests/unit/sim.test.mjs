@@ -134,10 +134,10 @@ test('ciągły ogień w sim: kadencja, HIT ×4 → ELIM, OVERHEAT dokładnie raz
   assert.ok(Math.abs(respT - elimT - C.eliminatedTime) <= DT + 1e-9, `respawn ${respT - elimT} s po eliminacji`);
   assert.equal(B.body.x, 25);
   assert.equal(B.hp, C.maxHp);
-  // A strzelał w ścianę/powietrze, gdy B był wyeliminowany? Nie: aimInput nie strzela bez żywego celu.
-  // B po respawnie (25,25) jest widoczny → A strzela dalej, B chroniony przez 2 s
-  assert.equal(overheats >= 1, true);
-  assert.equal(shotsAtOverheat, 10);
+  // aimInput nie strzela bez żywego celu → przez 3 s eliminacji broń stygnie do 0; B po respawnie (25,25) jest widoczny,
+  // A strzela dalej (B chroniony 2 s) → przegrzanie przy 10. strzale serii po respawnie (4 + 10 łącznie)
+  assert.equal(overheats, 1);
+  assert.equal(shotsAtOverheat, 14);
 });
 
 test('wyeliminowany nie strzela i nie rusza się (input.fire = true, moveZ = 1)', () => {
@@ -195,8 +195,20 @@ test('manekin: nigdy nie strzela; strafe deterministyczny (okres strafePeriod), 
   assert.equal(S.body.yaw, yaw, 'manekin zmienił kierunek patrzenia');
 });
 
+// arena z filarami i 8 spawnami (na uvmaze spawny są w korytarzu obwodowym — bez ruchu ku celowi brak walki)
+const pillars = buildWorld({
+  id: 'p', name: 'p', seed: 3, size: { w: 40, d: 40 }, ceiling: 6, perimeter: { h: 6 },
+  walls: [
+    { x: -6, z: -6, w: 2, d: 2, h: 3 }, { x: 6, z: -6, w: 2, d: 2, h: 3 },
+    { x: -6, z: 6, w: 2, d: 2, h: 3 }, { x: 6, z: 6, w: 2, d: 2, h: 3 }, { x: 0, z: 0, w: 6, d: 0.4, h: 2.5 },
+  ],
+  ramps: [], cams: [], lights: [], decor: [], palette: {},
+  spawns: [[-15, -15], [15, -15], [15, 15], [-15, 15], [0, -16], [0, 16], [-16, 0], [16, 0]]
+    .map(([x, z], i) => ({ x, z, team: i % 4, yaw: Math.atan2(x, z) })),
+});
+
 function runMatch(seed, steps) {
-  const sim = createSim({ world: uv, seed });
+  const sim = createSim({ world: pillars, seed });
   for (let i = 0; i < 4; i++) addParticipant(sim, createParticipant({ id: i, inputSource: aimInput({ strafe: 0.8 }) }));
   for (let i = 4; i < 7; i++) addParticipant(sim, createParticipant({ id: i, inputSource: createDummyInput({ strafe: i % 2 === 1 }) }));
   const log = [];

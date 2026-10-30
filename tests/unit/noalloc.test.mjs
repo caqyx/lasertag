@@ -16,6 +16,10 @@ import { createBody, stepMovement } from '../../src/game/movement.js';
 import { createInputState } from '../../src/game/input/inputState.js';
 import { createRng } from '../../src/core/rng.js';
 import uvmaze from '../../src/world/maps/uvmaze.js';
+import { createSim, addParticipant, stepSim } from '../../src/game/sim.js';
+import { createParticipant } from '../../src/game/participant.js';
+import { createDummyInput } from '../../src/game/input/dummyInput.js';
+import { EV } from '../../src/core/events.js';
 
 const N = 100_000;
 const LIMIT = 64 * 1024;
@@ -65,6 +69,61 @@ const rng = createRng(9);
 const arr = [1, 2, 3];
 const acc = new Float64Array(1);
 
+// --- stepSim: kilku uczestników w ciągłym ogniu (strzały, trafienia, eliminacje, respawn/pickSpawn, ochrona, przegrzanie)
+/** InputSource bez alokacji: celuje w najbliższego żywego wroga, ciągły ogień, chód bokiem/do przodu. */
+function createShooterInput() {
+  return {
+    sample(P, sim, out) {
+      const ps = sim.participants;
+      const b = P.body;
+      let best = -1;
+      let bd = 1e18;
+      for (let i = 0; i < ps.length; i++) {
+        const Q = ps[i];
+        if (Q === P || Q.state !== 'alive' || (Q.team >= 0 && Q.team === P.team)) continue;
+        const dx = Q.body.x - b.x, dz = Q.body.z - b.z;
+        const d = dx * dx + dz * dz;
+        if (d < bd) { bd = d; best = i; }
+      }
+      out.fire = true;
+      out.jump = false;
+      out.sprint = false;
+      out.pitch = 0;
+      out.moveZ = 0.6;
+      out.moveX = Math.sin(sim.time * 1.7 + P.id) * 0.8;
+      out.yaw = best < 0 ? b.yaw : Math.atan2(-(ps[best].body.x - b.x), -(ps[best].body.z - b.z));
+    },
+  };
+}
+const arena = buildWorld({
+  id: 'na', name: 'na', seed: 3, size: { w: 40, d: 40 }, ceiling: 6, perimeter: { h: 6 },
+  walls: [
+    { x: -6, z: -6, w: 2, d: 2, h: 3 }, { x: 6, z: -6, w: 2, d: 2, h: 3 },
+    { x: -6, z: 6, w: 2, d: 2, h: 3 }, { x: 6, z: 6, w: 2, d: 2, h: 3 }, { x: 0, z: 0, w: 6, d: 0.4, h: 2.5 },
+  ],
+  ramps: [], cams: [], lights: [], decor: [], palette: {},
+  spawns: [[-15, -15], [15, -15], [15, 15], [-15, 15], [0, -16], [0, 16], [-16, 0], [16, 0]]
+    .map(([x, z], i) => ({ x, z, team: i % 4, yaw: Math.atan2(x, z) })),
+});
+/** Mecz: `shooters` strzelców + `dummies` manekinów; opts → createSim. */
+function makeMatch(w, shooters, dummies, opts = {}, teamOf = () => -1) {
+  const sim = createSim({ world: w, seed: 11, ...opts });
+  let id = 0;
+  for (let i = 0; i < shooters; i++, id++) addParticipant(sim, createParticipant({ id, team: teamOf(id), inputSource: createShooterInput() }));
+  for (let i = 0; i < dummies; i++, id++) addParticipant(sim, createParticipant({ id, team: teamOf(id), inputSource: createDummyInput({ strafe: (i & 1) === 1 }) }));
+  return sim;
+}
+const ffaSim = makeMatch(arena, 4, 2);
+const teamSim = makeMatch(arena, 6, 0, { teamCount: 2, friendlyFire: false }, (id) => id & 1);
+const ffSim = makeMatch(arena, 4, 0, { teamCount: 2, friendlyFire: true }, (id) => id & 1);
+const uvSim = makeMatch(world, 4, 3);
+const SUB = 4; // kroki symulacji na „klatkę" (kolejkę czyści właściciel pętli raz na klatkę)
+/** Jeden krok + czyszczenie kolejki co SUB kroków (jak main.js). */
+function simStep(sim, i) {
+  stepSim(sim, 1 / 60);
+  if ((i % SUB) === SUB - 1) sim.events.clear();
+}
+
 const SCENARIOS = {
   moveBody: (i) => {
     const a = (i % 360) * 0.0174533;
@@ -89,7 +148,24 @@ const SCENARIOS = {
     stepMovement(smBody, input, 1 / 60, world);
   },
   rng: () => { acc[0] += rng.next() + rng.range(-1, 1) + rng.int(0, 9) + rng.pick(arr); },
+  'stepSim (FFA, 4 strzelców + 2 manekiny)': (i) => simStep(ffaSim, i),
+  'stepSim (TDM 3v3, teamCount 2)': (i) => simStep(teamSim, i),
+  'stepSim (friendlyFire, 2v2)': (i) => simStep(ffSim, i),
+  'stepSim (uvmaze, 4 strzelców + 3 manekiny)': (i) => simStep(uvSim, i),
 };
+
+test('stepSim scenariusze alokacji faktycznie walczą (strzały, trafienia, eliminacje, respawny, przegrzania)', () => {
+  const sim = makeMatch(arena, 4, 2);
+  const seen = new Set();
+  for (let i = 0; i < 60 * 60; i++) {
+    stepSim(sim, 1 / 60);
+    for (let k = 0; k < sim.events.count; k++) seen.add(sim.events.at(k).type);
+    sim.events.clear();
+  }
+  for (const t of [EV.SHOT, EV.HIT, EV.ELIM, EV.RESPAWN, EV.OVERHEAT, EV.PROTECT_END]) {
+    assert.ok(seen.has(t), `scenariusz nie generuje zdarzenia ${t}`);
+  }
+});
 
 test('kontrola negatywna: pomiar wykrywa alokację {} na wywołanie', (t) => {
   if (!HAS_GC) { t.skip('brak global.gc — uruchom z node --expose-gc'); return; }

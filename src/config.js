@@ -101,6 +101,8 @@ export const CONFIG = Object.freeze({
     // --- bots/ai.js (M2)
     stuckMinMove: 0.35,     // m postępu w oknie stuckTime, poniżej = utknięcie (skok + nowa ścieżka)
     pathCapacity: 256,      // maks. długość ścieżki (węzły)
+    rampDy: 0.15,           // m — różnica wysokości węzłów oznaczająca odcinek rampy
+    rampArriveDist: 0.3,    // m — dojście do waypointu na rampie (zamiast arriveDist), bez sprintu
     patrolSamples: 6,       // losowane kandydaty celu patrolu (preferencja nieodwiedzonych)
     patrolMinDist: 6,       // m — min. odległość celu patrolu
     aimHeight: 1.3,         // m nad stopami celu (klatka)
@@ -136,10 +138,11 @@ export const CONFIG = Object.freeze({
     near: 0.05,
     far: 120,
     toneMappingExposure: 1.0,
-    fogDensity: 0.06,
+    fogDensity: 0.055,
+    fogTint: 0.07,          // kolor mgły = lerp(palette.fog, palette.uv, fogTint)
     clearColor: '#05030a',
     msaaSamples: 4,
-    bloomFactors: [1.0, 0.75, 0.42, 0.18, 0.06], // wagi 5 mipów UnrealBloomPass (domyślnie 1/.8/.6/.4/.2)
+    bloomFactors: [1.0, 0.5, 0.2, 0.07, 0.02],  // wagi 5 mipów UnrealBloomPass (domyślnie 1/.8/.6/.4/.2)
     // Oświetlenie (render/graphics.js): ciemność dominuje — ambient/hemi bardzo słabe.
     lights: {
       hemiIntensity: 0.9,     // HemisphereLight w kolorze palette.ambient
@@ -172,6 +175,8 @@ export const CONFIG = Object.freeze({
       trimGap: 0.006,               // odsunięcie listwy od ściany (bez z-fightingu)
       trimBottomLift: 0.05,
       trimIntensity: 1.25,          // vertexColors HDR (> 1 → bloom); rdzeń nasycony, nie biały
+      trimSaturation: 1.35,         // podbicie nasycenia listew/lamp (ACES wybiela jasne kolory)
+      lampClearance: 0.7,           // oprawa lampy min. tyle od bryły sięgającej sufitu (filar)
       pillarTrimTop: 2.4,           // filar: ramka neonowa do wysokości ścian, wyżej czysty słup
       boundaryTrimHeights: [0.12, 2.6],
       rubber: { color: '#0b0a12', baseHeight: 0.1, baseDepth: 0.022, cornerSize: 0.06, cornerInset: 0.012 },
@@ -247,6 +252,10 @@ export const CONFIG = Object.freeze({
     nearFade: [1.2, 3.5],   // zanik przy kamerze (m, głębia środka kłębu)
     margin: 1.0,
     wallClearance: 0.6,     // min. odstęp środka kłębu od bryły
+    lowBand: [0.3, 1.3],    // warstwa dolna (m)
+    highBand: [3.0, 4.2],   // warstwa podsufitowa (m)
+    lowShare: 0.45,
+    highShare: 0.4,
   },
 
   // Efekty strzału (render/beams.js). Jasności > 1 = HDR → bloom.
