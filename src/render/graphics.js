@@ -10,8 +10,9 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { FXAAShader } from 'three/addons/shaders/FXAAShader.js';
 import { CONFIG } from '../config.js';
-import { createTextures, makeRng } from './textures.js';
-import { buildArena, lightColorHex, lampPosition, LAYER_NO_REFLECT } from './arenaBuilder.js';
+import { createTextures } from './textures.js';
+import { createRng } from '../core/rng.js';
+import { buildArena, lightColorHex, lampPosition, darkNormFor, paletteFor, LAYER_NO_REFLECT } from './arenaBuilder.js';
 import { createSmoke } from './smoke.js';
 import { createDecor } from './decor.js';
 
@@ -105,7 +106,7 @@ export function createGraphics({ canvas, presetName = CONFIG.defaults.preset }) 
     const n = Math.min(preset.pointLights, (world.lights || []).length);
     for (let i = 0; i < n; i++) {
       const L = world.lights[i];
-      const pl = new THREE.PointLight(lightColorHex(world, L.color), L.intensity * R.lights.pointScale, (L.range || 12) * R.lights.rangeScale, 2);
+      const pl = new THREE.PointLight(lightColorHex(world, L.color), L.intensity * R.lights.pointScale, (L.range || R.lights.defaultRange) * R.lights.rangeScale, 2);
       const lp = lampPosition(world, L);
       pl.position.set(lp.x, L.y - R.lights.drop, lp.z);
       pl.castShadow = false;
@@ -136,7 +137,7 @@ export function createGraphics({ canvas, presetName = CONFIG.defaults.preset }) 
     scene.add(arena.group);
     renderer.getDrawingBufferSize(size);
     arena.setSize(size.x, size.y);
-    smoke = createSmoke(world, preset.smoke, makeRng((world.seed ^ 0x5307e) >>> 0),
+    smoke = createSmoke(world, preset.smoke, createRng((world.seed ^ CONFIG.smoke.seedSalt) >>> 0),
       { texture: preset.smoke > 0 ? textures.get('smoke') : null });
     if (smoke.mesh) { smoke.mesh.layers.set(LAYER_NO_REFLECT); scene.add(smoke.mesh); }
   }
@@ -145,7 +146,7 @@ export function createGraphics({ canvas, presetName = CONFIG.defaults.preset }) 
     if (!world) { scene.fog = null; return; }
     if (!scene.fog) scene.fog = new THREE.FogExp2(world.palette.fog, R.fogDensity);
     // mgła: kolor palety podbarwiony fioletem UV (widoczna fioletowo-granatowa głębia, nie czarna)
-    scene.fog.color.set(world.palette.fog).lerp(fogTintColor.set(world.palette.uv), R.fogTint);
+    scene.fog.color.set(world.palette.fog).lerp(fogTintColor.set(paletteFor(world).uv), R.fogTint * darkNormFor(world));
     scene.fog.density = R.fogDensity;
     renderer.setClearColor(scene.fog.color, 1);
   }

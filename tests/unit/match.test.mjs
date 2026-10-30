@@ -214,3 +214,38 @@ test('createMatch: limity i czas z trybu; nieznany tryb → domyślny', () => {
   const M = createMatch(fakeSim(setupRoster('ffa', {})), 'xyz');
   assert.equal(M.modeId, CONFIG.defaults.mode);
 });
+
+// Spawny drużyn na prawdziwych mapach (createSim({ teamCount }) + addParticipant jak w main.js, seed = world.seed).
+const { buildWorld } = await import(R + 'world/mapgen.js');
+const { MAPS } = await import(R + 'world/maps/index.js');
+const { createSim, addParticipant } = await import(R + 'game/sim.js');
+const { createParticipant } = await import(R + 'game/participant.js');
+function startPositions(mapId, mode, seed) {
+  const w = buildWorld(MAPS[mapId]);
+  const sim = createSim({ world: w, seed: seed ?? w.seed, teamCount: spawnTeamCount(mode) });
+  for (const r of setupRoster(mode, {})) addParticipant(sim, createParticipant({ id: r.id, team: r.team, isPlayer: r.isPlayer }));
+  return { w, sim };
+}
+for (const mapId of Object.keys(MAPS)) {
+  test(`${mapId}: start meczu tdm2/tdm4 — każdy na spawnie swojej drużyny (sp.team % teams)`, () => {
+    for (const mode of ['tdm2', 'tdm4']) {
+      const { w, sim } = startPositions(mapId, mode);
+      const n = spawnTeamCount(mode);
+      for (const P of sim.participants) {
+        const sp = w.spawns.find((s) => s.x === P.body.x && s.z === P.body.z);
+        assert.ok(sp, `${mode} #${P.id} nie na spawnie`);
+        assert.equal(sp.team % n, P.team, `${mode} #${P.id} (team ${P.team}) na spawnie drużyny ${sp.team}`);
+      }
+    }
+  });
+  const dupTodo = mapId === 'uvmaze' ? undefined
+    : 'BUG combat.pickSpawn: preferuje spawn niewidoczny dla wrogów nad wolnym — przy starcie tdm członkowie drużyny stoją na tym samym ' +
+      'spawnie (neonhive tdm2: 6/8 różnych, tdm4: 4/8; reactor tdm2: 4/8, tdm4: 4/8), mimo że drużyna ma ≥ perTeam własnych spawnów';
+  test(`${mapId}: start meczu (ffa/tdm2/tdm4) — 8 uczestników na 8 różnych spawnach`, { todo: dupTodo }, () => {
+    for (const mode of ['ffa', 'tdm2', 'tdm4']) {
+      const { sim } = startPositions(mapId, mode);
+      const pos = sim.participants.map((P) => `${P.body.x},${P.body.z}`);
+      assert.equal(new Set(pos).size, pos.length, `${mode}: ${new Set(pos).size} różnych spawnów dla ${pos.length} uczestników`);
+    }
+  });
+}

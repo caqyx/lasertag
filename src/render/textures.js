@@ -7,19 +7,9 @@
 // Kolory przypisuje shader ścian per bryła (arenaBuilder) → 1–2 kolory przewodnie na ścianę, akcent rzadko.
 import * as THREE from 'three';
 import { CONFIG } from '../config.js';
+import { createRng } from '../core/rng.js';
 
 export const PAINT_STYLES = ['stripes', 'geo', 'splatter', 'grid'];
-
-// Lokalny mulberry32 (deterministyczny; orkiestrator może podmienić na src/core/rng.js).
-export function makeRng(seed) {
-  let a = (seed >>> 0) || 0x9e3779b9;
-  return function rng() {
-    a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
 
 function hashString(s) {
   let h = 2166136261;
@@ -48,10 +38,11 @@ export function createTextures({ size, anisotropy, palette, seed }) {
   function get(name) {
     let tex = cache.get(name);
     if (tex) return tex;
-    const rng = makeRng((seed ^ hashString(name)) >>> 0);
+    const rng = createRng((seed ^ hashString(name)) >>> 0).next;
     if (name.startsWith('paint:')) tex = finish(drawPaint(name.slice(6), S, palette, rng), { srgb: false });
     else if (name === 'wall:color') tex = finish(drawWallColor(S, rng));
     else if (name === 'steel:grate') tex = finish(drawGrate(Math.min(S, 512), rng));
+    else if (name === 'signs') tex = finish(drawSigns(Math.min(S, CONFIG.render.arena.signs.texSize), palette, rng), { repeat: false });
     else if (name === 'floor:color') tex = finish(drawFloorColor(S, rng));
     else if (name === 'floor:rough') tex = finish(drawFloorRough(S, rng), { srgb: false });
     else if (name === 'floor:emissive') tex = finish(drawFloorEmissive(S, palette));
@@ -98,8 +89,9 @@ function wrapX(W, fn) { fn(-W); fn(0); fn(W); }
 // Kafel = T.paintMeters[0] × T.paintMeters[1] m (domyślnie 6 × 2.4).
 
 function drawPaint(style, S, palette, rng) {
-  const W = S * 2;
-  const H = Math.round(S * 0.8);
+  // szerokość kafla: 2.5×S przy dużych teksturach (ostrzejsze krawędzie z bliska), 2×S poniżej
+  const W = Math.round(S * (S >= T.paintWideFrom ? T.paintWide : 2));
+  const H = Math.round(W * T.paintMeters[1] / T.paintMeters[0]);
   const c = makeCanvas(W, H);
   const g = c.getContext('2d');
   g.fillStyle = '#000';
@@ -172,7 +164,7 @@ function paintStripes(g, W, H, ppm, cols, rng) {
     const y = rng() * H;
     const x = rng() * W;
     const l = rr(rng, 0.4, 2.5) * ppm;
-    g.fillStyle = pickD(rng, cols);
+    g.fillStyle = pick(rng, cols);
     wrapX(W, (dx) => g.fillRect(x + dx, y, l, Math.max(1, 0.006 * ppm)));
   }
 }
@@ -244,6 +236,25 @@ function paintGeo(g, W, H, ppm, cols, rng) {
 }
 
 function paintSplatter(g, W, H, ppm, cols, rng) {
+  // 1–2 duże kleksy z zaciekami na kafel (kontrast skali z drobnymi skupiskami)
+  const bigs = 1 + Math.floor(rng() * 2);
+  for (let i = 0; i < bigs; i++) {
+    const x = rng() * W, y = rr(rng, 0.25, 0.55) * H, r = rr(rng, 0.1, 0.17) * ppm;
+    const col = pick(rng, cols);
+    const lobes = [], drips = [];
+    for (let k = 0; k < 9; k++) { const a = rng() * Math.PI * 2; lobes.push(Math.cos(a) * r * 0.7, Math.sin(a) * r * 0.6, r * rr(rng, 0.3, 0.6)); }
+    for (let k = 0; k < 3 + Math.floor(rng() * 3); k++) drips.push(rr(rng, -0.8, 0.8) * r, Math.max(1, r * rr(rng, 0.1, 0.2)), rr(rng, 0.25, 0.8) * ppm);
+    wrapX(W, (dx) => {
+      g.fillStyle = col;
+      g.beginPath(); g.arc(x + dx, y, r, 0, Math.PI * 2); g.fill();
+      for (let k = 0; k < lobes.length; k += 3) { g.beginPath(); g.arc(x + dx + lobes[k], y + lobes[k + 1], lobes[k + 2], 0, Math.PI * 2); g.fill(); }
+      for (let k = 0; k < drips.length; k += 3) {
+        const px = x + dx + drips[k], w = drips[k + 1], len = drips[k + 2];
+        g.fillRect(px - w / 2, y, w, len);
+        g.beginPath(); g.arc(px, y + len, w * 0.9, 0, Math.PI * 2); g.fill();
+      }
+    });
+  }
   // 2–3 skupiska małych rozbryzgów (różne kształty, obroty, kilka kropel), pył tylko wokół plam; reszta kafla czysta
   const clusters = 5 + Math.floor(rng() * 3);
   for (let c = 0; c < clusters; c++) {
@@ -404,17 +415,17 @@ function drawGrate(S, rng) {
   // krata pomostowa: płaskowniki nośne co ~3 cm, poprzeczki co ~10 cm, otwory ciemne; lekkie przetarcia
   const c = makeCanvas(S, S);
   const g = c.getContext('2d');
-  g.fillStyle = 'rgb(10,10,14)';
+  g.fillStyle = 'rgb(28,28,34)';
   g.fillRect(0, 0, S, S);
-  const n = 16, m = 5;                      // przy kaflu 0.5 m: 3.1 cm × 10 cm
-  const bw = Math.max(1, S / n * 0.28), cw = Math.max(1, S / m * 0.08);
+  const n = 16, m = 6;                      // przy kaflu 1.0 m: oczka 6 × 16 cm (bez mory)
+  const bw = Math.max(1, S / n * 0.3), cw = Math.max(1, S / m * 0.1);
   for (let i = 0; i < n; i++) {
-    const v = 120 + Math.floor(rng() * 40);
+    const v = 78 + Math.floor(rng() * 16);
     g.fillStyle = `rgb(${v},${v},${v + 8})`;
     g.fillRect(i * S / n, 0, bw, S);
   }
   for (let j = 0; j < m; j++) {
-    const v = 100 + Math.floor(rng() * 30);
+    const v = 70 + Math.floor(rng() * 14);
     g.fillStyle = `rgb(${v},${v},${v + 8})`;
     g.fillRect(0, j * S / m, S, cw);
   }
@@ -425,6 +436,91 @@ function drawGrate(S, rng) {
     grd.addColorStop(1, 'rgba(0,0,0,0)');
     g.fillStyle = grd;
     g.fillRect(x - r, y - r, r * 2, r * 2);
+  }
+  return c;
+}
+
+// ---------------------------------------------------------------- tablice (atlas 4 × 2): litery sektorów A–D, symbol
+// promieniowania, strzałka, pasy ostrzegawcze, numer; kolory palety (sRGB), tło przezroczyste (alfa)
+
+export const SIGN_CELLS = { sector: [0, 1, 2, 3], trefoil: 4, arrow: 5, hazard: 6, number: 7 };
+
+function drawSigns(S, palette, rng) {
+  const cw = S, ch = S;                       // komórka S × S, atlas 4S × 2S
+  const c = makeCanvas(cw * 4, ch * 2);
+  const g = c.getContext('2d');
+  g.clearRect(0, 0, c.width, c.height);
+  const lw = S * 0.035;
+  const frame = (x0, y0, col) => {
+    g.strokeStyle = col; g.lineWidth = lw;
+    g.strokeRect(x0 + S * 0.06, y0 + S * 0.06, S * 0.88, S * 0.88);
+    g.lineWidth = lw * 0.4;
+    g.strokeRect(x0 + S * 0.11, y0 + S * 0.11, S * 0.78, S * 0.78);
+  };
+  const cols = [palette.primary, palette.secondary, palette.primary, palette.secondary];
+  // litery sektorów
+  for (let i = 0; i < 4; i++) {
+    const x0 = i * cw;
+    frame(x0, 0, cols[i]);
+    g.fillStyle = cols[(i + 1) % 4];
+    g.font = `bold ${Math.round(S * 0.62)}px sans-serif`;
+    g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillText(String.fromCharCode(65 + i), x0 + S / 2, S * 0.52);
+    // skośne pasy u dołu
+    g.fillStyle = palette.accent;
+    for (let k = 0; k < 6; k++) {
+      const px = x0 + S * (0.16 + k * 0.12);
+      g.beginPath(); g.moveTo(px, S * 0.86); g.lineTo(px + S * 0.05, S * 0.86); g.lineTo(px + S * 0.1, S * 0.8); g.lineTo(px + S * 0.05, S * 0.8); g.fill();
+    }
+  }
+  // symbol promieniowania
+  {
+    const x0 = 0, y0 = ch, cx = x0 + S / 2, cy = y0 + S / 2;
+    frame(x0, y0, palette.accent);
+    g.fillStyle = palette.accent;
+    for (let k = 0; k < 3; k++) {
+      const a = -Math.PI / 2 + k * 2 * Math.PI / 3;
+      g.beginPath(); g.moveTo(cx, cy);
+      g.arc(cx, cy, S * 0.34, a - Math.PI / 6, a + Math.PI / 6); g.closePath(); g.fill();
+    }
+    g.fillStyle = 'rgba(0,0,0,1)';
+    g.beginPath(); g.arc(cx, cy, S * 0.1, 0, Math.PI * 2); g.fill();
+    g.fillStyle = palette.accent;
+    g.beginPath(); g.arc(cx, cy, S * 0.06, 0, Math.PI * 2); g.fill();
+  }
+  // strzałka
+  {
+    const x0 = cw, y0 = ch;
+    frame(x0, y0, palette.secondary);
+    g.fillStyle = palette.secondary;
+    g.beginPath();
+    g.moveTo(x0 + S * 0.2, y0 + S * 0.42); g.lineTo(x0 + S * 0.55, y0 + S * 0.42); g.lineTo(x0 + S * 0.55, y0 + S * 0.28);
+    g.lineTo(x0 + S * 0.82, y0 + S * 0.5); g.lineTo(x0 + S * 0.55, y0 + S * 0.72); g.lineTo(x0 + S * 0.55, y0 + S * 0.58);
+    g.lineTo(x0 + S * 0.2, y0 + S * 0.58); g.closePath(); g.fill();
+  }
+  // pasy ostrzegawcze (pełny panel)
+  {
+    const x0 = cw * 2, y0 = ch;
+    g.save(); g.beginPath(); g.rect(x0 + S * 0.06, y0 + S * 0.3, S * 0.88, S * 0.4); g.clip();
+    g.fillStyle = palette.accent;
+    for (let k = -4; k < 12; k++) {
+      const px = x0 + k * S * 0.12;
+      g.beginPath(); g.moveTo(px, y0 + S * 0.7); g.lineTo(px + S * 0.06, y0 + S * 0.7); g.lineTo(px + S * 0.46, y0 + S * 0.3); g.lineTo(px + S * 0.4, y0 + S * 0.3); g.fill();
+    }
+    g.restore();
+    g.strokeStyle = palette.accent; g.lineWidth = lw * 0.5;
+    g.strokeRect(x0 + S * 0.06, y0 + S * 0.3, S * 0.88, S * 0.4);
+  }
+  // numer sektora / oznaczenie techniczne
+  {
+    const x0 = cw * 3, y0 = ch;
+    frame(x0, y0, palette.primary);
+    g.fillStyle = palette.primary;
+    g.font = `bold ${Math.round(S * 0.3)}px monospace`;
+    g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillText('R-' + String(10 + Math.floor(rng() * 89)), x0 + S / 2, y0 + S * 0.42);
+    g.font = `${Math.round(S * 0.11)}px monospace`;
+    g.fillText('CORE ACCESS', x0 + S / 2, y0 + S * 0.7);
   }
   return c;
 }

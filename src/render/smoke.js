@@ -7,10 +7,10 @@
 import * as THREE from 'three';
 import { CONFIG } from '../config.js';
 import { createTextures } from './textures.js';
-import { lightColorHex, lampPosition } from './arenaBuilder.js';
+import { lightColorHex, lampPosition, paletteFor, darkNormFor } from './arenaBuilder.js';
 
 const SM = CONFIG.smoke;
-const MAX_LIGHTS = 8;
+const MAX_LIGHTS = SM.maxLights;
 
 const VERT = /* glsl */`
 attribute vec4 aParams;   // x faza, y prędkość obrotu (rad/s, ze znakiem), z rozmiar, w mieszanie odcienia
@@ -39,7 +39,7 @@ void main() {
     sin(time * w * 0.63 + ph * 11.0) * 0.22,
     cos(time * w * 0.81 + ph * 4.7) * driftR);
   // kolor: odcień palety + światło lamp w pobliżu (dym „łapie" kolor)
-  vec3 col = mix(tintA, tintB, aParams.w) * baseGlow;
+  vec3 col = mix(tintA, tintB, aParams.w * 0.5) * baseGlow;
   for (int i = 0; i < ${MAX_LIGHTS}; i++) {
     if (i >= lightCount) break;
     float d = distance(pos, lightPos[i]);
@@ -50,9 +50,11 @@ void main() {
   vec4 mvC = modelViewMatrix * vec4(pos, 1.0);
   vCenterDepth = -mvC.z;
   float size = aParams.z * (1.0 + 0.08 * sin(time * 0.11 + ph * 9.0));
-  float a = ph * 6.2831 + time * aParams.y;
+  float a = (ph - 0.5) * ${SM.tilt.toFixed(3)} + sin(time * aParams.y + ph * 6.0) * ${(SM.tilt * 0.5).toFixed(3)};
+  float aspect = instanceMatrix[1][1];   // poziome smugi: szerokość / wysokość
   float c = cos(a), s = sin(a);
-  vec2 p = vec2(c * position.x - s * position.y, s * position.x + c * position.y) * size;
+  vec2 q = vec2(position.x * aspect, position.y);
+  vec2 p = vec2(c * q.x - s * q.y, s * q.x + c * q.y) * size;
   vec4 mv = mvC + vec4(p, 0.0, 0.0);
   vDepth = -mv.z;
   // wysokość narożnika billboardu w świecie (oś „góra" kamery) → zanik przy podłodze/suficie (brak twardych cięć)
@@ -107,7 +109,7 @@ export function createSmoke(world, count, rng, opts = {}) {
     const lp = L ? lampPosition(world, L) : null;
     lightPos.push(L ? new THREE.Vector3(lp.x, L.y - SM.lightDrop, lp.z) : new THREE.Vector3());
     lightCol.push(L ? new THREE.Color(lightColorHex(world, L.color)).multiplyScalar(SM.lightGain) : new THREE.Color(0, 0, 0));
-    lightRange.push(L ? (L.range || 10) * SM.lightRangeScale : 1);
+    lightRange.push(L ? (L.range || CONFIG.render.lights.defaultRange) * SM.lightRangeScale : 1);
   }
 
   const mat = new THREE.ShaderMaterial({
@@ -118,9 +120,10 @@ export function createSmoke(world, count, rng, opts = {}) {
       opacity: { value: SM.opacity },
       driftRadius: { value: SM.driftRadius },
       driftSpeed: { value: SM.drift },
-      tintA: { value: new THREE.Color(pal.uv) },
-      tintB: { value: new THREE.Color(pal.primary) },
-      baseGlow: { value: SM.baseGlow },
+      // chłodna, ciemna mgiełka (uv palety + mgła); kolor dają głównie lampy
+      tintA: { value: new THREE.Color(paletteFor(world).uv).lerp(new THREE.Color(pal.fog), SM.fogMix) },
+      tintB: { value: new THREE.Color(paletteFor(world).uv) },
+      baseGlow: { value: SM.baseGlow * darkNormFor(world) },
       lightPos: { value: lightPos },
       lightCol: { value: lightCol },
       lightRange: { value: lightRange },
@@ -166,8 +169,11 @@ export function createSmoke(world, count, rng, opts = {}) {
     // prześwit do ścian: kłąb (z dryfem) nie może przecinać brył — inaczej widać prostą krawędź billboardu
     const clear = clearanceXZ(world, x, z, y);
     const amp = Math.min(SM.driftRadius, Math.max(0, clear - SM.wallClearance) * 0.5);
-    size = Math.min(size, Math.max(SM.sizeFloor, (clear - amp) * SM.sizePerClearance));
-    mtx.elements[0] = amp; // amplituda dryfu w instanceMatrix[0][0] (translacja w [3])
+    const aspect = SM.aspect[0] + (SM.aspect[1] - SM.aspect[0]) * rnd();
+    // szerokość smugi (size × aspect) ograniczona prześwitem
+    size = Math.min(size, Math.max(SM.sizeFloor, (clear - amp) * SM.sizePerClearance) / aspect);
+    mtx.elements[0] = amp;    // amplituda dryfu w instanceMatrix[0][0] (translacja w [3])
+    mtx.elements[5] = aspect; // proporcje smugi w [1][1]
     mesh.setMatrixAt(i, mtx);
     params[i * 4 + 2] = size;
     params[i * 4 + 3] = rnd();

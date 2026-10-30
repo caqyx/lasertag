@@ -156,6 +156,7 @@ export const CONFIG = Object.freeze({
     lights: {
       hemiIntensity: 0.3,     // HemisphereLight w kolorze palette.ambient
       hemiGround: 0.35,       // ziemia = ambient × to
+      defaultRange: 12,       // zasięg światła, gdy dane mapy go nie podają (graphics + smoke)
       pointScale: 0.65,       // intensywność PointLight = light.intensity × to (decay 2)
       rangeScale: 1.0,
       drop: 0.35,             // PointLight pod oprawą lampy (m)
@@ -167,6 +168,8 @@ export const CONFIG = Object.freeze({
       floorLine: 0.012,       // grubość linii siatki podłogi (m)
       smokeSize: 256,
       wallMeters: 2.44,       // kafel faktury ściany (2 płyty 1.22 m)
+      paintWide: 2.5,         // szerokość kafla farby = S × to (S ≥ paintWideFrom), inaczej 2 × S
+      paintWideFrom: 1024,
       accentShare: 0.08,      // udział akcentu wśród drobnych elementów farby
     },
     // Dekoracje (render/decor.js)
@@ -188,12 +191,17 @@ export const CONFIG = Object.freeze({
     },
     // Arena (render/arenaBuilder.js)
     arena: {
+      seedSalt: 0xa11ce,            // sól ziarna RNG areny (offsety farby, kolory per bryła)
       wallColor: '#090a18',         // prawie czarny granat (× faktura sklejki)
       wallRoughness: 0.85,
       paintIntensity: 0.75,         // emisja farby UV (maski × kolor bryły; HDR → bloom)
       accentPaintScale: 0.8,        // akcent (limonka) tylko w drobnych elementach farby
-      uvBoost: 1.45,                // fiolet jest ciemny percepcyjnie (listwy, farba, poświata)
-      boundaryPaintScale: 1.875,    // ściany obwodowe: kafel 11.25 × 4.5 m (duże murale)
+      boundaryPaintScale: 1.4,      // ściany obwodowe: kafel 8.4 × 3.36 m (duże murale, ostre z bliska)
+      boundaryPaintIntensity: 0.6,  // farba na ścianach obwodowych przygaszona (nie dominuje kadru)
+      wallUScale: [0.85, 1.2],      // losowa skala farby wzdłuż ściany per bryła (mniej powtórzeń)
+      boundaryCycle: ['reactor'],   // mapy, w których ściany obwodowe dostają różne style farby per strona
+      uvRemap: { reactor: 'secondary' },   // mapy bez fioletu w palecie: kolor 'uv' (listwy, lampy, stożki, sufit) → ten klucz
+      coneTint: { neonhive: { key: 'primary', mix: 0.55 } }, // stożki światła podbarwione kolorem przewodnim mapy
       // poświata UV/neonu na licu ściany (× kolor listwy bryły × faktura): mocna przy listwie, gaśnie w dół
       wash: { top: 0.06, fall: 0.38, bottom: 0.035, base: 0.0, edge: 0.03, edgeWidth: 0.03 },
       capWash: 0.2,                 // poświata na wierzchu brył (× wash)
@@ -201,34 +209,53 @@ export const CONFIG = Object.freeze({
       trimGap: 0.006,               // odsunięcie listwy od ściany (bez z-fightingu)
       trimBottomLift: 0.05,
       trimIntensity: 1.1,           // vertexColors HDR (> 1 → bloom); rdzeń nasycony, nie biały
-      trimLumRef: 0.35,             // listwy: intensywność × sqrt(ref / luminancja koloru), zakres 0.55–1.7
-      trimSaturation: 1.35,         // podbicie nasycenia listew/lamp (ACES wybiela jasne kolory)
+      trimLumRef: 0.35,             // listwy: intensywność × sqrt(ref / luminancja koloru), zakres lumNormRange
+      lumNormRange: [0.55, 1.7],
+      trimSaturation: 1.35,         // podbicie nasycenia listew/lamp (tone mapping wybiela jasne kolory)
       lampClearance: 0.7,           // oprawa lampy min. tyle od bryły sięgającej sufitu (filar)
-      pillarTrimTop: 2.4,           // filar: ramka neonowa do wysokości ścian, wyżej czysty słup
+      // filar: pionowe listwy na narożnikach (cieńsze) + obrys pod stropem; kolor nasycony (bez lawendy)
+      pillar: { trimScale: 0.6, topGap: 0.05, intensity: 0.85, lumMax: 1.15, saturation: 1.6 },
       boundaryTrimHeights: [0.12, 2.6],
-      rubber: { color: '#0b0a12', baseHeight: 0.1, baseDepth: 0.022, cornerSize: 0.06, cornerInset: 0.012, lineSize: 0.014, lineIntensity: 0.3 },
+      rubber: { color: '#0d0c1c', roughness: 0.85, glow: 0.03, baseHeight: 0.1, baseDepth: 0.022,
+        cornerSize: 0.05, cornerInset: 0.012, topGap: 0.04, junctionProbe: 0.08, lineSize: 0.014, lineIntensity: 0.3 },
       paintMargin: { edge: 0.09, bottom: 0.17, strip: 0.09, maxY: 4.4 },   // farba nie dochodzi do krawędzi/listew (m)
-      neon: { nearMin: 0.6, near: [0.6, 3.5], fog: 0.65 },      // przygaszenie bliskich listew; udział mgły na listwach
+      // przygaszenie bliskich listew; udział mgły; cieniowanie „rurki" (boki ciemniejsze → gradient rdzeń/brzeg)
+      neon: { nearMin: 0.6, near: [0.6, 3.5], fog: 0.65, tubeEdge: 0.55, tubePow: 0.6 },
       ceilingPool: { radius: 2.8, strength: 0.06, panelRef: 0.006 },            // plamy światła lamp na stropie
-      spawnPanel: { width: 1.6, height: 0.9, depth: 0.04, y: 1.45, intensity: 0.9, marker: 0.16 },
+      spawnPanel: { width: 1.6, height: 0.9, depth: 0.04, y: 1.45, intensity: 0.9, marker: 0.16, trimScale: 0.8 },
+      rampWarn: { inset: 0.08, lift: 0.01, width: 0.06, height: 0.012, k: 0.8 },   // pasy ostrzegawcze na końcach ramp
+      platformWarn: { spacing: 1.8, length: 0.32, k: 0.75 },   // krótkie skośne pasy ostrzegawcze na czołach galerii
+      rail: { kick: 0.25, postSpacing: 1.2, post: 0.06, rail: 0.05, midY: 0.5, meshAlphaTest: 0.35 },   // barierki: ażur
       floorRoughness: 0.75,         // × roughnessMap (≈0.6) → ~0.45 (półpołysk)
       floorMetalness: 0.2,
       floorEmissiveIntensity: 0.16,
       floorEnvIntensity: 0.25,      // PMREM (ogólny połysk); odbicia neonów robi RT (reflect)
-      // odbicie planarne podłogi (preset.envReflections): RT w skali rozdz., rozmycie mipmapą + smuga pionowa
-      reflect: { scale: 0.5, mipBias: 2.0, streak: 5, strength: 0.55, f0: 0.18, maskSoft: 0.45 }, // maskSoft: brzeg maski pod platformami (m)
+      // odbicie planarne podłogi (preset.envReflections): RT w skali rozdz., rozmycie mipmapą + smuga pionowa (taps),
+      // zanik z odległością od podłogi (głębia RT), farba przygaszona w odbiciu (odbijają się głównie listwy)
+      reflect: { scale: 0.5, mipBias: 2.6, streak: 9, taps: 9, strength: 0.3, f0: 0.25, maskSoft: 0.45,
+        fadeLen: 2.2, paintInReflection: 0.25 },
       accentPolicy: { default: 'full', uvmaze: 'paint' },   // 'paint' = akcent tylko w farbie; 'full' = też listwy/światła
       darkNormRef: 0.15,            // emisja tła w kolorze uv × min(1, ref / luminancja uv) (jasny uv → ciemniej)
       darkNormMin: 0.25,
       steelMinY: 1.5,               // bryły z y0 > tego (galerie, barierki na galerii) → stalowa konstrukcja
-      steel: { color: '#8a8a9c', metalness: 0.35, roughness: 0.5, glow: 0.45, tile: 0.5,
+      steel: { color: '#5a5a68', metalness: 0.3, roughness: 0.62, glow: 0.12, tile: 1.0,
         beam: { spacing: 1.6, width: 0.1, depth: 0.16 } },
       envBakeHeight: 1.6,
       envBlur: 0.02,
+      envNear: 0.05,
+      envFarScale: 1.5,             // far PMREM = max(szer., gł. areny) × to
+      bakeSearch: { maxRadius: 12, step: 0.5, margin: 0.6 },   // szukanie punktu bake envMap poza bryłami
       ceilingTile: 4.8,
       ceilingGlow: 1.8,             // emisja paneli sufitu (tekstura × palette.uv)
+      ceilingRoughness: 0.95,
       trussColor: '#2a2638',
-      trussGlow: 0.035,             // emisja kratownicy (palette.uv) — sylwetki belek czytelne w ciemności
+      trussGlow: 0.035,             // emisja kratownicy (palette.uv × darkNorm) — sylwetki belek czytelne w ciemności
+      trussRoughness: 0.5,
+      trussMetalness: 0.6,
+      trussBrace: 0.6,              // przekrój krzyżulców × pas
+      trussHanger: 0.035,           // zawiesia do stropu (m)
+      trussCross: [1.2, 1.6],       // poprzeczne belki stropowe (× pas)
+      trussEdge: 0.5,               // min. odstęp dźwigara od ściany obwodowej (m)
       trussSpacing: 4,
       trussWidth: 0.4,
       trussDepth: 0.4,
@@ -236,16 +263,22 @@ export const CONFIG = Object.freeze({
       trussChord: 0.06,
       trussBay: 0.8,
       lampSize: [0.9, 0.14, 0.05],  // długość, szerokość, grubość (m)
-      lampIntensity: 2.6,
-      uvTube: { length: 1.2, thickness: 0.035, spacing: 4, housing: 0.05, intensity: 1.8 }, // świetlówki UV pod dźwigarami
+      lampIntensity: 1.7,
+      lampMount: { minSpan: 0.5, crossbar: 0.08, housingHeight: 0.12, housingPad: 0.06 },
+      // świetlówki UV pod osią dźwigara: oprawa na 2 wspornikach, regularny rytm
+      uvTube: { length: 1.2, thickness: 0.035, spacing: 4, housing: 0.06, housingWidth: 0.1, housingPad: 0.05,
+        drop: 0.12, bracket: 0.03, bracketInset: 0.15, intensity: 1.5, lampClear: [1.5, 2.5] },
       conesMinSmoke: 48,            // stożki światła tylko gdy preset.smoke ≥ (High/Ultra)
+      coneSegments: 24,
       coneTopRadius: 0.22,
       coneBottomRadius: 1.7,
       coneBottom: 0.0,
-      coneOpacity: 0.5,
+      coneOpacity: 0.45,
       coneMargin: 0.15,             // stożek ≥ tyle od brył (brak twardych przecięć)
       coneMinHeight: 0.8,
       coneCheckRadius: 1.0,         // promień sprawdzania kolizji stożka z bryłami (m)
+      // tablice (decale) na ścianach obwodowych: symbol sektora + znaki — orientacja w hali
+      signs: { maps: ['reactor', 'neonhive'], size: 2.2, y: 2.6, intensity: 1.1, texSize: 512 },
     },
   },
 
@@ -284,8 +317,8 @@ export const CONFIG = Object.freeze({
     heightMax: 3.2,
     driftRadius: 1.4,       // promień wolnej orbity kłębu (m); prędkość = drift
     spin: 0.05,             // maks. prędkość obrotu tekstury (rad/s)
-    baseGlow: 3.0,          // jasność bazowa (odcień palety uv/primary)
-    lightGain: 5.0,         // ile koloru lampy łapie dym
+    baseGlow: 2.2,          // jasność bazowa (× darkNorm mapy)
+    lightGain: 3.5,         // ile koloru lampy łapie dym
     lightRangeScale: 0.9,
     lightDrop: 1.0,
     nearFade: [1.2, 3.5],   // zanik przy kamerze (m, głębia środka kłębu)
@@ -294,10 +327,15 @@ export const CONFIG = Object.freeze({
     planeFade: 0.6,         // zanik kłębu przy podłodze i suficie (m)
     sizeFloor: 0.9,         // min. rozmiar kłębu w ciasnych miejscach
     sizePerClearance: 2.4,  // rozmiar ≤ (prześwit − dryf) × to (brak przecięć ze ścianami)
-    lowBand: [0.3, 1.3],    // warstwa dolna (m)
+    lowBand: [0.25, 1.0],   // warstwa dolna (m) — równomierna przyziemna mgiełka
     highBand: [3.0, 4.2],   // warstwa podsufitowa (m)
-    lowShare: 0.45,
-    highShare: 0.4,
+    lowShare: 0.6,
+    highShare: 0.25,
+    aspect: [2.2, 3.6],     // kłęby jako poziome smugi (szerokość / wysokość)
+    tilt: 0.25,             // maks. przechył smugi (rad)
+    fogMix: 0.6,            // odcień bazowy = lerp(uv palety, mgła, fogMix) — ciemny, chłodny
+    maxLights: 8,           // lampy łapane przez dym (uniform array)
+    seedSalt: 0x5307e,
   },
 
   // Efekty strzału (render/beams.js). Jasności > 1 = HDR → bloom.
