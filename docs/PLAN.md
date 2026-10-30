@@ -201,9 +201,37 @@ stepAdapt(A, time) → void                        // co CONFIG.bots.adapt.evalI
 skillScale(A, level) → { aimSigma, reaction, turn }   // zapis do prealokowanego obiektu; dotyczy botów-przeciwników gracza
 ```
 
-## 9. Etapy późniejsze (szkic)
-- **M3**: `modes.js`, `match.js` (timer, limity, koniec), `ui/scoreboard.js`, `ui/menu.js`, `ui/endScreen.js`.
-- **M4**: `maps/neonhive.js`, `maps/reactor.js` + decor (rdzeń reaktora).
+## 9. M3 — tryby (kontrakty)
+
+### 9.1 Tryby i mecz (`src/game/modes.js`, `src/game/match.js`) — czyste
+```js
+// modes.js
+MODES = { ffa, tdm2, tdm4 }                        // z CONFIG.modes
+setupRoster(modeId, opts:{ bots, diff, playerName }) → Roster[]  // [{ id, name, team, color, isPlayer, level }] — gracz id 0;
+                                                    // ffa: team = -1, kolory CONFIG.colors.ffa; tdm: team = 0..n-1, kolory CONFIG.colors.teams
+spawnTeamCount(modeId) → 0 | 2 | 4                 // dla createSim({ teamCount }); tdm2 używa spawnów team%2
+// match.js
+createMatch(sim, modeId) → M = { modeId, timeLeft, state: 'countdown'|'playing'|'ended', winner, ... }
+stepMatch(M, sim, dt)                              // odliczanie startu (3 s, uczestnicy zamrożeni), timer, limit eliminacji, koniec
+standings(M, sim, out) → out                       // posortowane wiersze tablicy (gracze lub drużyny + członkowie), bez alokacji w trakcie gry (out prealokowany)
+```
+Zwycięzca: najwyższy wynik punktowy (remis → więcej eliminacji → remis).
+
+### 9.2 UI (`src/ui/`)
+```js
+createMenu(rootEl, { maps, modes, presets, diffs, initial }, onStart(cfg)) → { show(), hide(), dispose() }
+   // ekran startowy: wybór mapy, trybu, liczby botów (opcjonalnie), poziomu botów, presetu grafiki; „Graj"
+createScoreboard(rootEl) → { update(M, sim, visible), dispose() }   // Tab: tabela (pozycja, nazwa, drużyna/kolor, wynik, E, D), drużyny z sumami
+createEndScreen(rootEl, onRestart, onMenu) → { show(M, sim), hide(), dispose() }   // zwycięzca, tabela końcowa, „Jeszcze raz" / „Menu"
+```
+HUD: timer meczu i wynik drużyn (w tdm) — dopisane w `hud.js` lub osobny `ui/matchBar.js`.
+
+### 9.3 Integracja (`src/main.js`)
+Stan aplikacji: `menu` → `match` → `end` → (`match` | `menu`). Zmiana mapy/trybu = dispose świata/efektów i budowa od nowa (bez wycieków).
+`?autostart=1` pomija menu (parametry z URL). `?cam=` / `?nohud=1` jak dotychczas.
+
+## 9b. M4 — mapy
+`maps/neonhive.js`, `maps/reactor.js` + decor `reactorCore` (renderer).
 
 ## 10. Podział pracy M0 (równolegle, rozłączne pliki)
 | Coder | Pliki |
