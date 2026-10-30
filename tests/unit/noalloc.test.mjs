@@ -175,17 +175,9 @@ SCENARIOS['pickSpawn (ruchomi uczestnicy)'] = () => {
   pickSpawn(psSim, ps[0]);
 };
 
-// Znane błędy (wariant ostry) — test oznaczony todo, opis w raporcie testera.
-const BOXING = 'BUG: combat.pickSpawn woła physics.segmentClear(world, qb.x, qb.y+eye, qb.z, sp.x, sp.y+eye, sp.z) z doublami ' +
-  'jako argumentami; V8 nie inline\'uje segmentClear (budżet inliningu), więc każdy argument double jest pakowany w HeapNumber ' +
-  '(~kilka KB śmieci na respawn: spawny × uczestnicy wywołań). Poprawka: przekazywać współrzędne przez Float64Array scratch ' +
-  '(jak capsuleHitS/S[] w combat.js) lub wariant segmentClear czytający scratch.';
-const TODO = {
-  'stepSim (FFA, 4 strzelców + 2 manekiny)': BOXING,
-  'stepSim (TDM 3v3, teamCount 2)': BOXING,
-  'stepSim (friendlyFire, 2v2)': BOXING,
-  'pickSpawn (ruchomi uczestnicy)': BOXING,
-};
+// Wcześniej (wariant ostry) todo: combat.pickSpawn / stepSim pakowały argumenty double w segmentClear (boxing V8).
+// Naprawione: combat.js i bots/ai.js używają segmentClearSeg/SEG, raycastWorldBuf/RAYARG, nearestNodeBuf/NEAR.
+const TODO = {};
 
 test('stepSim scenariusze alokacji faktycznie walczą (strzały, trafienia, eliminacje, respawny, przegrzania)', () => {
   const sim = makeMatch(arena, 4, 2);
