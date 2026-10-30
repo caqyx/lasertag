@@ -217,3 +217,11 @@ tests/                unit/*.test.mjs (node --test), smoke/*.mjs (Playwright), t
 | D-004 | 2026-10-30 | Trafienie liczone na kapsule ciała, segment = najbliższy sensor. | Czytelne i uczciwe w FPP; sensory jako czysto wizualne/feedbackowe. |
 | D-005 | 2026-10-30 | Fizyka własna (OBB w XZ + zakres Y, powierzchnie/rampy), bez silnika fizyki. | Prosta geometria aren, testowalność w Node, zero zależności. |
 | D-006 | 2026-10-30 | Własne role subagentów (coder/tester/ux-reviewer/qa-security) niedostępne — `general-purpose` z rolą w prompcie. | Brak zdefiniowanych agentów w środowisku. |
+| D-007 | 2026-10-30 | Tone mapping Neutral zamiast ACES (`CONFIG.render.toneMapping`). | ACES wybielał rdzenie cyjanowych listew i mieszał kanały. |
+| D-008 | 2026-10-30 | Kolor `accent` (limonka) mapowany w rendererze na kolory główne dla listew/świateł; akcent tylko w ~8% farby. | Recenzja: limonka ważyła tyle co kolory przewodnie → „tęcza". |
+| D-009 | 2026-10-30 | Strzał w chronionego: wiązka zatrzymuje się na nim (SHOT value=2), brak HIT i zmian HP. | Czytelny feedback, zgodny z §2.2. |
+| D-010 | 2026-10-30 | Utrata pointer locka (Esc) w meczu = pauza symulacji (single-player); `?autostart=1` nie pauzuje. | Uczciwość wobec gracza; testy automatyczne. |
+| D-011 | 2026-10-30 | Odbicia podłogi High/Ultra: render z lustrzanej kamery (½ rozdz., rozmyty) zamiast samej env mapy. | Env map dawała nietrafione, ledwo widoczne odbicia. |
+| D-012 | 2026-10-30 | Gorąca ścieżka przekazuje współrzędne przez bufory Float64Array (SEG/RAYARG/NEAR/BOX). | V8 pakuje double w HeapNumber przy nie-inline'owanych wywołaniach → alokacje. |
+| D-013 | 2026-10-30 | Sprint tylko gdy moveZ > 0 i moveZ ≥ |moveX|. | Brak sprintu bokiem przy wejściu analogowym/botach. |
+| D-014 | 2026-10-30 | Obwód areny: ściany 1 m na zewnątrz bounds; spawny team = strona (N0,S1,E2,W3); tdm2 używa team%2. | Jedna konwencja danych dla wszystkich trybów. |
