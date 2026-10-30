@@ -15,6 +15,12 @@ const PERIMETER_THICKNESS = 1.0;   // ściany obwodowe leżą na zewnątrz bound
 const GRID_CELL = 4;               // rozmiar kubełka SpatialGrid (m), niezależny od CONFIG
 const GRID_MARGIN = 2;             // margines siatki poza bounds (ściany obwodowe)
 const MAX_QUERY = 1024;            // pojemność buforów wyników zapytań
+// yaw: 'auto' spawnów — kierunek z najdłuższą wolną linią wzroku na wysokości oka
+const AUTO_YAW_DIRS = 32;          // liczba badanych kierunków
+const AUTO_YAW_TIE = 0.8;          // remis: kierunki z linią ≥ 80% najdłuższej → wybierz najbardziej ku środkowi
+const AUTO_YAW_MIN_DOT = 0.1;      // tylko półprzestrzeń zwrócona ku środkowi mapy (cos kąta do środka)
+const AUTO_YAW_MAX = 60;           // m — zasięg badania
+const MIN_SPAWN_VIEW = 6;          // m — minimalna wymagana linia wzroku spawnu 'auto'
 
 const PAINTS = ['stripes', 'geo', 'splatter', 'grid'];
 const TRIM_PS = ['primary', 'secondary'];
@@ -54,14 +60,21 @@ export function buildWorld(mapData, opts) {
     solids,
     ramps,
     grid: null,
-    spawns: (mapData.spawns || []).map((s) => ({ x: s.x, y: s.y || 0, z: s.z, yaw: s.yaw || 0, team: s.team | 0 })),
+    spawns: (mapData.spawns || []).map((s) => ({ x: s.x, y: s.y || 0, z: s.z, yaw: s.yaw === 'auto' ? 'auto' : s.yaw || 0, team: s.team | 0 })),
     lights: (mapData.lights || []).map((l) => ({ ...l })),
     cams: (mapData.cams || []).map((c) => ({ name: c.name, pos: c.pos.slice(), look: c.look.slice() })),
     decor: (mapData.decor || []).map((x) => ({ ...x })),
   };
   world.grid = createSpatialGrid(bounds, solids, ramps);
+  const autoYawProblems = [];
+  for (let i = 0; i < world.spawns.length; i++) {
+    const sp = world.spawns[i];
+    if (sp.yaw !== 'auto') continue;
+    const dist = autoSpawnYaw(world, sp);
+    if (dist < MIN_SPAWN_VIEW) autoYawProblems.push(`spawn #${i} (${sp.x}, ${sp.z}): najdłuższa linia wzroku ${dist.toFixed(1)} m < ${MIN_SPAWN_VIEW} m`);
+  }
 
-  validate(world, strict);
+  validate(world, strict, autoYawProblems);
   return world;
 }
 
@@ -349,6 +362,56 @@ export function queryRamps(g, minX, minZ, maxX, maxZ) {
 }
 
 // ---------------------------------------------------------------------------------------------
+// yaw spawnów 'auto' (build — alokacje dozwolone)
+
+/** Długość wolnej linii (poziomej, na wysokości y) z (x,z) w kierunku (dx,dz) — bryły (OBB×[y0,y1]), rampy, bounds. */
+function freeLine(world, x, y, z, dx, dz) {
+  let best = AUTO_YAW_MAX;
+  const b = world.bounds;
+  if (dx > 1e-9) best = Math.min(best, (b.maxX - x) / dx); else if (dx < -1e-9) best = Math.min(best, (b.minX - x) / dx);
+  if (dz > 1e-9) best = Math.min(best, (b.maxZ - z) / dz); else if (dz < -1e-9) best = Math.min(best, (b.minZ - z) / dz);
+  const test = (o, y0, y1) => {
+    if (y < y0 || y > y1) return;
+    const rx = x - o.cx; const rz = z - o.cz;
+    const lox = rx * o.cos - rz * o.sin; const loz = rx * o.sin + rz * o.cos;
+    const ldx = dx * o.cos - dz * o.sin; const ldz = dx * o.sin + dz * o.cos;
+    let t0 = -Infinity; let t1 = Infinity;
+    for (const [p, d, h] of [[lox, ldx, o.hx], [loz, ldz, o.hz]]) {
+      if (Math.abs(d) < 1e-12) { if (p < -h || p > h) return; continue; }
+      let u = (-h - p) / d; let v = (h - p) / d;
+      if (u > v) { const w = u; u = v; v = w; }
+      if (u > t0) t0 = u; if (v < t1) t1 = v;
+    }
+    if (t0 <= t1 && t0 >= 0 && t0 < best) best = t0;
+  };
+  for (const s of world.solids) test(s, s.y0, s.y1);
+  for (const r of world.ramps) test(r, 0, Math.max(r.y0, r.y1)); // rampa zachowawczo jako prostopadłościan
+  return best;
+}
+
+/** Ustawia sp.yaw: najdłuższa linia wzroku (oko) w półprzestrzeni ku środkowi; remis ±20% → najbliżej środka. Zwraca długość. */
+function autoSpawnYaw(world, sp) {
+  const eyeY = sp.y + CONFIG.player.eyeHeight;
+  let cx = -sp.x; let cz = -sp.z;
+  const cl = Math.hypot(cx, cz);
+  if (cl > 1e-9) { cx /= cl; cz /= cl; } else { cx = 0; cz = -1; }
+  const cand = [];
+  for (let k = 0; k < AUTO_YAW_DIRS; k++) {
+    const yaw = -Math.PI + (k / AUTO_YAW_DIRS) * 2 * Math.PI;
+    const fx = -Math.sin(yaw); const fz = -Math.cos(yaw);
+    const dot = fx * cx + fz * cz;
+    if (cl > 1e-9 && dot < AUTO_YAW_MIN_DOT) continue;
+    cand.push({ yaw, dot, d: freeLine(world, sp.x, eyeY, sp.z, fx, fz) });
+  }
+  let maxD = 0;
+  for (const c of cand) if (c.d > maxD) maxD = c.d;
+  let pick = null;
+  for (const c of cand) if (c.d >= maxD * AUTO_YAW_TIE && (!pick || c.dot > pick.dot)) pick = c;
+  sp.yaw = pick ? pick.yaw : Math.atan2(sp.x, sp.z);
+  return pick ? pick.d : 0;
+}
+
+// ---------------------------------------------------------------------------------------------
 // Walidacja
 
 function circleHitsObb(s, x, z, r) {
@@ -361,9 +424,9 @@ function circleHitsObb(s, x, z, r) {
   return ex * ex + ez * ez < r * r;
 }
 
-function validate(world, strict) {
+function validate(world, strict, extra) {
   const P = CONFIG.player;
-  const problems = [];
+  const problems = extra ? extra.slice() : [];
   world.spawns.forEach((sp, i) => {
     const b = world.bounds;
     if (sp.x < b.minX + P.radius || sp.x > b.maxX - P.radius || sp.z < b.minZ + P.radius || sp.z > b.maxZ - P.radius) {

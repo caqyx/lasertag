@@ -107,12 +107,9 @@ function buildWalls() {
   return walls;
 }
 
-function faceCenter(x, z) {
-  return Math.atan2(x, z);
-}
-
+/** yaw 'auto': mapgen wybiera kierunek z najdłuższą linią wzroku (ku środkowi przy remisie). */
 function spawn(x, z, team) {
-  return { x, z, y: 0, yaw: faceCenter(x, z), team };
+  return { x, z, y: 0, yaw: 'auto', team };
 }
 
 export default {

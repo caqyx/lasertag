@@ -33,13 +33,9 @@ const ROWS = [
 
 const CEILING = 4.5;
 
-/** yaw patrzący z (x,z) na środek areny; konwencja: yaw=0 → −Z, przód = (-sin yaw, -cos yaw). */
-function faceCenter(x, z) {
-  return Math.atan2(x, z);
-}
-
+/** yaw 'auto': mapgen wybiera kierunek z najdłuższą linią wzroku (ku środkowi przy remisie). */
 function spawn(x, z, team) {
-  return { x, z, y: 0, yaw: faceCenter(x, z), team };
+  return { x, z, y: 0, yaw: 'auto', team };
 }
 
 export default {
