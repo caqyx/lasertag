@@ -81,6 +81,15 @@ export const CONFIG = Object.freeze({
     tdm4: { teams: 4, perTeam: 2, timeLimit: 300, elimLimit: 30 },
   },
 
+  // Mecz (game/match.js) i UI meczu (ui/matchBar.js, ui/scoreboard.js).
+  match: {
+    countdown: 3.0,         // s odliczania przed startem (uczestnicy zamrożeni)
+    goTime: 0.8,            // s wyświetlania „START!" po odliczaniu
+    timerWarn: 30,          // s do końca → timer ostrzegawczy
+    scoreboardRefresh: 0.25, // s między odświeżeniami tablicy (Tab)
+    playerColorFfa: 5,      // indeks CONFIG.colors.ffa dla gracza w FFA (cyjan, spójnie z HUD)
+  },
+
   colors: {
     teams: ['#ff3355', '#2f8bff', '#3dff7a', '#ffd600'],
     ffa: ['#ff3355', '#2f8bff', '#3dff7a', '#ffd600', '#ff4dff', '#00f0ff', '#ff8a00', '#b0ff00'],
@@ -175,6 +184,7 @@ export const CONFIG = Object.freeze({
       trimGap: 0.006,               // odsunięcie listwy od ściany (bez z-fightingu)
       trimBottomLift: 0.05,
       trimIntensity: 1.25,          // vertexColors HDR (> 1 → bloom); rdzeń nasycony, nie biały
+      trimLumRef: 0.35,             // listwy: intensywność × sqrt(ref / luminancja koloru), zakres 0.55–1.7
       trimSaturation: 1.35,         // podbicie nasycenia listew/lamp (ACES wybiela jasne kolory)
       lampClearance: 0.7,           // oprawa lampy min. tyle od bryły sięgającej sufitu (filar)
       pillarTrimTop: 2.4,           // filar: ramka neonowa do wysokości ścian, wyżej czysty słup

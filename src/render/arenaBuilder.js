@@ -490,7 +490,13 @@ export function buildArena(world, preset, textures, opts = {}) {
     return c;
   };
   const trimCol = {};
-  for (const k of MAIN_KEYS) trimCol[k] = saturate(lin(pal[k], A.trimIntensity * boost(k)), A.trimSaturation);
+  // wyrównanie jasności percepcyjnej: jasny cyjan nie wybiela się, ciemny fiolet nie ginie
+  const lumNorm = (hex) => {
+    const c = lin(hex);
+    const l = 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
+    return Math.min(1.7, Math.max(0.55, Math.sqrt(A.trimLumRef / Math.max(l, 1e-3))));
+  };
+  for (const k of MAIN_KEYS) trimCol[k] = saturate(lin(pal[k], A.trimIntensity * lumNorm(pal[k])), A.trimSaturation);
   const accentLin = lin(pal.accent, A.paintIntensity * A.accentPaintScale);
   // akcent z danych → kolor główny (deterministycznie per bryła)
   const mainKey = (key, i) => (MAIN_KEYS.includes(key) ? key : (key === 'accent' ? (i % 2 ? 'secondary' : 'primary') : null));
