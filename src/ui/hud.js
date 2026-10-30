@@ -6,23 +6,11 @@
 // wskaźnik ochrony, feed eliminacji (ostatnie N, znikają), wynik gracza.
 import { CONFIG } from '../config.js';
 import { EV } from '../core/events.js';
+import { findParticipant } from '../game/sim.js';
+import { el } from './dom.js';
 
 const H = CONFIG.hud;
 const MAX_HP = CONFIG.combat.maxHp;
-
-function el(parent, cls, text) {
-  const e = document.createElement('div');
-  e.className = cls;
-  if (text) e.textContent = text;
-  parent.appendChild(e);
-  return e;
-}
-
-function findById(sim, id) {
-  const ps = sim.participants;
-  for (let i = 0; i < ps.length; i++) if (ps[i].id === id) return ps[i];
-  return null;
-}
 
 // kwantyzacja do kroku — mniej zapisów do DOM przy płynnych wartościach
 function q(v, step) { return Math.round(v / step) * step; }
@@ -112,7 +100,7 @@ export function createHud(rootEl) {
         if (e.a === id && e.b !== id) { hitT = H.hitmarkerTime; }
       } else if (e.type === EV.ELIM) {
         if (e.a === id && e.b !== id) { hitT = H.hitmarkerTime * 1.6; hitKill = 1; }
-        pushFeed(findById(sim, e.a), findById(sim, e.b), e.a === id || e.b === id ? 1 : 0);
+        pushFeed(findParticipant(sim, e.a), findParticipant(sim, e.b), e.a === id || e.b === id ? 1 : 0);
       }
     }
   }
@@ -196,7 +184,7 @@ export function createHud(rootEl) {
     const by = player.lastHitBy;
     if (by !== cElimBy) {
       cElimBy = by;
-      const k = by >= 0 && by !== player.id ? findById(sim, by) : null;
+      const k = by >= 0 && by !== player.id ? findParticipant(sim, by) : null;
       if (k) {
         elimBy.textContent = 'przez ' + k.name;
         elimBy.style.color = k.color;

@@ -7,16 +7,16 @@
 //    w kolorze uczestnika (instanceColor), + tani fresnel/rim w kolorze uczestnika (czytelna sylwetka w ciemności).
 //    aFx (na instancję) = mnożnik emisji: eliminacja → miganie, ochrona → pulsowanie.
 //  • sensory kamizelki — 4 instancje na uczestnika (front/back na klatce, lewe/prawe na ramionach,
-//    pozycje z CONFIG.combat.sensors), MeshBasicMaterial × instanceColor HDR: zapalony = kolor × sensorLit,
+//    pozycje z SENSOR_OFFSETS/CONFIG.combat.sensors), MeshBasicMaterial × instanceColor HDR: zapalony = kolor × sensorLit,
 //    zgaszony = ciemny, błysk = biały, eliminacja = miganie, ochrona = pulsowanie.
 // Model zwrócony w −Z (yaw = 0 patrzy w −Z, PLAN §0). sync bez alokacji (scratch na poziomie modułu).
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { CONFIG } from '../config.js';
-import { hexNumber } from './beams.js';
+import { hexNumber } from './color.js';
+import { SENSOR, SENSOR_OFFSETS, isSensorLit } from '../game/participant.js';
 
 const AV = CONFIG.avatar;
-const SENSOR_KEYS = ['front', 'back', 'left', 'right']; // = SENSOR {FRONT:0, BACK:1, LEFT:2, RIGHT:3}
 
 // scratch
 const _m = new THREE.Matrix4();
@@ -50,7 +50,7 @@ function limb(ax, ay, az, bx, by, bz, r, emit = 0) {
   const a = new THREE.Vector3(ax, ay, az), b = new THREE.Vector3(bx, by, bz);
   const d = b.clone().sub(a);
   const len = d.length();
-  const g = new THREE.CapsuleGeometry(r, Math.max(0.01, len), 3, 8);
+  const g = new THREE.CapsuleGeometry(r, Math.max(0.01, len), 2, 5);
   const m = new THREE.Matrix4().compose(
     a.clone().add(b).multiplyScalar(0.5),
     new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize()),
@@ -64,12 +64,12 @@ function buildBodyGeometry() {
     // nogi + biodra
     limb(-0.11, 0.1, 0.0, -0.1, 0.78, 0.0, 0.085),
     limb(0.11, 0.1, 0.0, 0.1, 0.78, 0.0, 0.085),
-    part(new THREE.SphereGeometry(0.16, 12, 8), 0, trs(0, 0.86, 0, 0, 0, 0, 1.25, 0.7, 0.95)),
+    part(new THREE.SphereGeometry(0.16, 8, 5), 0, trs(0, 0.86, 0, 0, 0, 0, 1.25, 0.7, 0.95)),
     // tors (kamizelka): kapsuła spłaszczona
-    part(new THREE.CapsuleGeometry(0.2, 0.38, 4, 14), 0, trs(0, 1.27, 0, 0, 0, 0, 1.18, 1, 1.0)),
+    part(new THREE.CapsuleGeometry(0.2, 0.38, 3, 10), 0, trs(0, 1.27, 0, 0, 0, 0, 1.18, 1, 1.0)),
     // naramienniki
-    part(new THREE.SphereGeometry(0.095, 10, 8), 0, trs(-0.235, 1.5, 0, 0, 0, 0, 1, 0.85, 1)),
-    part(new THREE.SphereGeometry(0.095, 10, 8), 0, trs(0.235, 1.5, 0, 0, 0, 0, 1, 0.85, 1)),
+    part(new THREE.SphereGeometry(0.095, 7, 5), 0, trs(-0.235, 1.5, 0, 0, 0, 0, 1, 0.85, 1)),
+    part(new THREE.SphereGeometry(0.095, 7, 5), 0, trs(0.235, 1.5, 0, 0, 0, 0, 1, 0.85, 1)),
     // ramiona: fazer na wysokości barku (wylot = CONFIG.weapon.muzzleOffset względem oka — stąd startują wiązki botów)
     limb(0.25, 1.45, 0.0, 0.28, 1.22, -0.08, 0.06),
     limb(0.28, 1.22, -0.08, 0.2, 1.36, -0.15, 0.055),
@@ -77,16 +77,16 @@ function buildBodyGeometry() {
     limb(-0.25, 1.45, 0.0, -0.17, 1.08, -0.2, 0.06),
     limb(-0.17, 1.08, -0.2, 0.15, 1.37, -0.38, 0.055),
     // szyja + hełm + wizjer (emisyjny, łuk z przodu)
-    part(new THREE.CylinderGeometry(0.06, 0.07, 0.1, 8), 0, trs(0, 1.64, 0)),
-    part(new THREE.SphereGeometry(0.145, 14, 10), 0, trs(0, 1.75, 0.01, 0, 0, 0, 1, 1.02, 1.08)),
-    part(new THREE.CylinderGeometry(0.152, 0.148, 0.055, 14, 1, true, Math.PI - 0.95, 1.9), AV.visorIntensity, trs(0, 1.75, 0.005)),
+    part(new THREE.CylinderGeometry(0.06, 0.07, 0.1, 6, 1, true), 0, trs(0, 1.64, 0)),
+    part(new THREE.SphereGeometry(0.145, 10, 7), 0, trs(0, 1.75, 0.01, 0, 0, 0, 1, 1.02, 1.08)),
+    part(new THREE.CylinderGeometry(0.152, 0.148, 0.055, 10, 1, true, Math.PI - 0.95, 1.9), AV.visorIntensity, trs(0, 1.75, 0.005)),
     // pas (emisyjny, słaby) — linia talii czytelna z daleka
-    part(new THREE.TorusGeometry(0.205, 0.016, 6, 24), AV.trimIntensity * 0.6, trs(0, 0.95, 0, Math.PI / 2, 0, 0, 1.12, 0.92, 1)),
+    part(new THREE.TorusGeometry(0.205, 0.016, 3, 14), AV.trimIntensity * 0.6, trs(0, 0.95, 0, Math.PI / 2, 0, 0, 1.12, 0.92, 1)),
     // fazer w dłoniach (wylot ≈ (0.22, 1.47, −0.45))
     part(new THREE.BoxGeometry(0.07, 0.09, 0.36), 0, trs(0.2, 1.44, -0.25)),
     part(new THREE.BoxGeometry(0.045, 0.11, 0.055), 0, trs(0.2, 1.36, -0.14, 0.3, 0, 0)),
     part(new THREE.BoxGeometry(0.075, 0.016, 0.26), AV.trimIntensity, trs(0.2, 1.492, -0.27)),
-    part(new THREE.CylinderGeometry(0.024, 0.024, 0.05, 8), AV.visorIntensity, trs(0.21, 1.46, -0.445, Math.PI / 2, 0, 0)),
+    part(new THREE.CylinderGeometry(0.024, 0.024, 0.05, 6), AV.visorIntensity, trs(0.21, 1.46, -0.445, Math.PI / 2, 0, 0)),
   ];
   const g = mergeGeometries(parts, false);
   for (const p of parts) p.dispose();
@@ -95,7 +95,7 @@ function buildBodyGeometry() {
 
 // pad sensora: spłaszczona półkula, normalna wzdłuż +Z
 function buildSensorGeometry() {
-  const g = new THREE.SphereGeometry(1, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2);
+  const g = new THREE.SphereGeometry(1, 8, 4, 0, Math.PI * 2, 0, Math.PI / 2);
   g.rotateX(Math.PI / 2); // biegun (+Y) → +Z
   g.scale(0.075, 0.06, 0.035);
   g.deleteAttribute('uv');
@@ -104,16 +104,15 @@ function buildSensorGeometry() {
 
 // lokalne macierze sensorów (model w −Z: przód = −Z, prawo = +X)
 function buildSensorLocals() {
-  const S = CONFIG.combat.sensors;
   const out = [];
   for (let i = 0; i < 4; i++) {
-    const o = S[SENSOR_KEYS[i]];
-    const x = o[0], y = o[1], z = -o[2];
+    // SENSOR_OFFSETS: x prawo, y od stóp, z przód → model: z = −przód
+    const x = SENSOR_OFFSETS[i * 3], y = SENSOR_OFFSETS[i * 3 + 1], z = -SENSOR_OFFSETS[i * 3 + 2];
     let rx = 0, ry = 0;
-    if (i === 0) ry = Math.PI;                 // przód: pad patrzy w −Z
-    else if (i === 1) ry = 0;                  // tył: +Z
-    else if (i === 2) { ry = -Math.PI / 2; rx = -0.75; } // lewe ramię: −X, uniesione ku górze
-    else { ry = Math.PI / 2; rx = -0.75; }     // prawe ramię: +X
+    if (i === SENSOR.FRONT) ry = Math.PI;      // przód: pad patrzy w −Z
+    else if (i === SENSOR.BACK) ry = 0;        // tył: +Z
+    else if (i === SENSOR.LEFT) { ry = -Math.PI / 2; rx = -AV.shoulderTilt; } // lewe ramię: −X, uniesione ku górze
+    else { ry = Math.PI / 2; rx = -AV.shoulderTilt; }                        // prawe ramię: +X
     const m = new THREE.Matrix4();
     const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(rx, ry, 0, 'YXZ'));
     m.compose(new THREE.Vector3(x, y, z), q, new THREE.Vector3(1, 1, 1));
@@ -180,10 +179,9 @@ export function createAvatars(scene, maxCount) {
   sensors.count = 0;
 
   const locals = buildSensorLocals();
-  // ranga sensora w kolejności gaśnięcia: zgaszony, gdy rank < 4 − sensorsLit
-  const rank = new Int8Array(4);
-  const lose = CONFIG.combat.loseOrder;
-  for (let i = 0; i < 4; i++) rank[i] = lose.indexOf(SENSOR_KEYS[i]);
+  // cache koloru per slot instancji: hex liczony tylko przy zmianie stringu koloru (porównanie referencji)
+  const colStr = new Array(maxCount).fill(null);
+  const colRGB = new Float32Array(maxCount * 3);
 
   scene.add(body);
   scene.add(sensors);
@@ -213,18 +211,21 @@ export function createAvatars(scene, maxCount) {
       else if (P.protectTimer > 0) fx = 1 + AV.protectBoost * (0.5 + 0.5 * Math.sin(time * TAU * AV.protectPulseHz));
       fxAttr.array[j] = fx;
 
-      _c.setHex(hexNumber(P.color));
-      body.setColorAt(j, _c);
-      const cr = _c.r, cg = _c.g, cb = _c.b;
-
-      const lit = P.sensorsLit;
+      if (P.color !== colStr[j]) {
+        colStr[j] = P.color;
+        _c.setHex(hexNumber(P.color));
+        colRGB[j * 3] = _c.r; colRGB[j * 3 + 1] = _c.g; colRGB[j * 3 + 2] = _c.b;
+        body.setColorAt(j, _c);
+        body.instanceColor.needsUpdate = true;
+      }
+      const cr = colRGB[j * 3], cg = colRGB[j * 3 + 1], cb = colRGB[j * 3 + 2];
       for (let s = 0; s < 4; s++) {
         const k = j * 4 + s;
         _ms.multiplyMatrices(_m, locals[s]);
         sensors.setMatrixAt(k, _ms);
         let I;
         if (elim) I = AV.sensorLit * fx;
-        else if (rank[s] < 4 - lit) I = AV.sensorOff;
+        else if (!isSensorLit(P, s)) I = AV.sensorOff;
         else I = AV.sensorLit * (P.protectTimer > 0 ? fx : 1);
         _c.setRGB(cr * I, cg * I, cb * I);
         const fl = P.sensorFlash[s];
@@ -240,7 +241,6 @@ export function createAvatars(scene, maxCount) {
     body.count = j;
     sensors.count = j * 4;
     body.instanceMatrix.needsUpdate = true;
-    body.instanceColor.needsUpdate = true;
     sensors.instanceMatrix.needsUpdate = true;
     sensors.instanceColor.needsUpdate = true;
     fxAttr.needsUpdate = true;

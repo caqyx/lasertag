@@ -193,7 +193,7 @@ export const CONFIG = Object.freeze({
       rubber: { color: '#0b0a12', baseHeight: 0.1, baseDepth: 0.022, cornerSize: 0.06, cornerInset: 0.012, lineSize: 0.014, lineIntensity: 0.3 },
       paintMargin: { edge: 0.09, bottom: 0.17, strip: 0.09 },   // farba nie dochodzi do krawędzi/listew (m)
       neon: { nearMin: 0.6, near: [0.6, 3.5], fog: 0.65 },      // przygaszenie bliskich listew; udział mgły na listwach
-      ceilingPool: { radius: 3.2, strength: 0.15, panelRef: 0.006 },            // plamy światła lamp na stropie
+      ceilingPool: { radius: 2.8, strength: 0.06, panelRef: 0.006 },            // plamy światła lamp na stropie
       spawnPanel: { width: 1.6, height: 0.9, depth: 0.04, y: 1.45, intensity: 0.9, marker: 0.16 },
       floorRoughness: 0.75,         // × roughnessMap (≈0.6) → ~0.45 (półpołysk)
       floorMetalness: 0.2,
@@ -204,7 +204,7 @@ export const CONFIG = Object.freeze({
       envBakeHeight: 1.6,
       envBlur: 0.02,
       ceilingTile: 4.8,
-      ceilingGlow: 2.4,             // emisja paneli sufitu (tekstura × palette.uv)
+      ceilingGlow: 1.8,             // emisja paneli sufitu (tekstura × palette.uv)
       trussColor: '#2a2638',
       trussGlow: 0.035,             // emisja kratownicy (palette.uv) — sylwetki belek czytelne w ciemności
       trussSpacing: 4,
@@ -323,6 +323,7 @@ export const CONFIG = Object.freeze({
     sensorLit: 1.8,
     sensorOff: 0.035,
     sensorFlash: 4.0,
+    shoulderTilt: 0.75,       // rad — pochylenie padów na ramionach ku górze
     elimBlinkHz: 6,
     elimDim: 0.12,            // jasność w fazie „zgaszonej” mrugania
     protectPulseHz: 3,

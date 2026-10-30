@@ -22,7 +22,7 @@ W repo **nie było `docs/SPEC.md` ani `reference/ref1–4.png`** (ani na Google 
 | **M3 Tryby** | `modes`, `match`, `menu`, `scoreboard`, `matchBar`, `endScreen`, `menu.css` | Pełny mecz od menu do ekranu końca w każdym trybie | Moduły i testy: ✅ (9)<br>**Integracja: ⏳** |
 | **M4 Mapy** | `maps/neonhive.js`, `maps/reactor.js` (2 poziomy, galeria 3.2 m, 4 rampy, rdzeń) | Pętla wizualna dla obu map; boty nawigują na obu poziomach | Dane i nawigacja: ✅ (100% osiągalności, 2000/2000 ścieżek, 623 międzypoziomowe)<br>**Render dekoracji i pętla wizualna: ⏳** |
 
-Testy: `npm test` daje **192 testy, 191 pass, 0 fail, 1 todo** (tunelowanie przy dt = 1 s — świadomie pominięte). `npm run smoke` daje **3 mapy × 4 presety: 0 błędów i ostrzeżeń konsoli, wszystko w budżecie, wycieki 0**.
+Testy: `npm test` daje **198 testów, 197 pass, 0 fail, 1 todo** (tunelowanie przy dt = 1 s — świadomie pominięte). `npm run smoke` daje **3 mapy × 4 presety: 0 błędów i ostrzeżeń konsoli, wszystko w budżecie, wycieki 0**.
 
 ## 2. Pętla wizualna (SPEC §6)
 
@@ -83,13 +83,9 @@ Broń FPP była przepalona — poprawione.
 1. **Jakość wizualna M0.** Dwie iteracje dały 4/12, a recenzenci są surowi i niezależni. Bez zdjęć referencyjnych kryterium „nastroju" (pkt 12) jest subiektywne. Plan: maksymalnie 2–3 kolejne iteracje, a jeśli punkt utknie, zapisuję to w raporcie.
 2. **Zrzuty w SwiftShader są wolne** (~30 s na kadr), co spowalnia pętlę wizualną.
 3. **Odbicie planarne a drugi poziom.** Lustro y = 0 nie działa z drugim poziomem (Reactor) — coder grafiki to obsługuje.
-4. **Ustalenia QA w toku:**
-   - obsługa `webglcontextlost` i braku WebGL;
-   - gubione krótkie kliknięcia (fire jako zbocze);
-   - sanityzacja wejścia pod M5;
-   - fazy kroku symulacji;
-   - duplikaty helperów;
-   - liczby poza CONFIG.
+4. **Ustalenia QA** (27 pozycji, 0 krytycznych):
+   - naprawione: serwer dev (crash na złym URL, ekspozycja `.git`), alokacje `pickSpawn` i botów, sanityzacja wejścia, 3 fazy kroku symulacji (pod M5);
+   - w toku: obsługa `webglcontextlost` i braku WebGL, fire jako zbocze, duplikaty helperów, liczby poza CONFIG.
 5. **Przy 16 uczestnikach** (pod M5) Neon Hive na Low zbliża się do limitu trójkątów — w toku redukcja siatki awatara.
 
 ## 6. Następne kroki
