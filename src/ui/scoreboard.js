@@ -1,19 +1,13 @@
 // Tablica wyników (Tab) + wspólny renderer tabeli (używany też przez endScreen). PLAN §9.2.
 // DOM budowany raz; update/render dotyka DOM tylko przy zmianie wartości (cache per komórka).
 import { CONFIG } from '../config.js';
+import { el } from './dom.js';
 import { createStandings, standings } from '../game/match.js';
 import { getMode, teamName, teamColor } from '../game/modes.js';
 
 const MAX_TEAMS = CONFIG.colors.teams.length;
 const COLS = 5; // #, nazwa, wynik, E, D
 
-export function el(parent, cls, text, tag = 'div') {
-  const e = document.createElement(tag);
-  if (cls) e.className = cls;
-  if (text !== undefined && text !== null && text !== '') e.textContent = text;
-  if (parent) parent.appendChild(e);
-  return e;
-}
 
 /** mm:ss z sekund (zaokrąglenie w górę — 0:00 dopiero na końcu). */
 export function formatTime(sec) {

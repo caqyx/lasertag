@@ -1,7 +1,8 @@
 // Pasek meczu u góry ekranu (PLAN §9.2): timer, w tdm wyniki drużyn, w ffa lider + pozycja gracza;
 // odliczanie startu na środku ekranu. update(M, sim) — DOM tylko przy zmianie.
 import { CONFIG } from '../config.js';
-import { el, formatTime } from './scoreboard.js';
+import { el } from './dom.js';
+import { formatTime } from './scoreboard.js';
 import { teamColor, teamName } from '../game/modes.js';
 
 const MAX_TEAMS = CONFIG.colors.teams.length;

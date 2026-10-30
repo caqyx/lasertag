@@ -4,7 +4,7 @@
 export function el(parent, cls, text, tag = 'div') {
   const e = document.createElement(tag);
   if (cls) e.className = cls;
-  if (text) e.textContent = text;
+  if (text !== undefined && text !== null && text !== '') e.textContent = text; // 0 też jest treścią
   if (parent) parent.appendChild(e);
   return e;
 }

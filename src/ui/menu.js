@@ -1,6 +1,6 @@
 // Menu startowe (PLAN §9.2): mapa (karty z paletą), tryb (z opisem), poziom botów, preset grafiki, „GRAJ".
 // Klawiatura: ↑/↓ (W/S) wiersz, ←/→ (A/D) wybór, Enter — start. Mysz: klik wybiera, klik „GRAJ" startuje.
-import { el } from './scoreboard.js';
+import { el } from './dom.js';
 import { teamColor } from '../game/modes.js';
 import { CONFIG } from '../config.js';
 

@@ -1,6 +1,7 @@
 // Ekran końca meczu (PLAN §9.2): wynik z perspektywy gracza, zwycięzca, tabela końcowa,
 // „Jeszcze raz" (Enter / R) i „Menu" (M / Backspace). Strzałki ←/→ przełączają przycisk.
-import { el, createStandingsTable, formatTime } from './scoreboard.js';
+import { el } from './dom.js';
+import { createStandingsTable, formatTime } from './scoreboard.js';
 import { getMode, teamName, teamColor } from '../game/modes.js';
 import { outcomeFor } from '../game/match.js';
 
