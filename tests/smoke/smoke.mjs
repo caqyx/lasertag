@@ -1,7 +1,11 @@
 // Smoke (SPEC §11): każda mapa × preset ładuje się bez błędów/ostrzeżeń konsoli, bez błędów HTTP, renderer.info w budżecie
 // (CONFIG.budget); scenariusz rozgrywki (gracz eliminuje manekina, respawn po eliminatedTime z pełnym HP); brak wycieków
 // geometrii/tekstur przy zmianie presetu (low → ultra → low ×2).
-// Użycie: npm run smoke [-- --map uvmaze --preset low,ultra --skip-game --skip-leak --leak-all --jobs 3]
+// Przepływ meczu (--flow, domyślnie włączony; --skip-flow wyłącza, --flow-only pomija sekcję mapa × preset): menu → start z menu
+// (klik mapy/trybu/poziomu/presetu + Enter) → mecz (8 uczestników, drużyny i spawny drużyn w tdm, odliczanie, boty strzelają)
+// → timeLeft = 1 → ekran końca → „Jeszcze raz" (Enter) → goMenu() → zmiana mapy; 3 tryby na uvmaze + neonhive/tdm2 +
+// reactor/tdm4; po powrocie na tę samą mapę renderer.info geometries/textures jak na początku. Zero błędów konsoli/HTTP.
+// Użycie: npm run smoke [-- --map uvmaze --preset low,ultra --skip-game --skip-leak --leak-all --jobs 3 --skip-flow --flow-only]
 // Mapy sprawdzane równolegle (--jobs, domyślnie 3 strony), presety mapy po kolei. Test wycieków domyślnie tylko na pierwszej
 // mapie (zmiana presetu nie zależy od mapy; ultra w SwiftShaderze jest wolne) — --leak-all na każdej.
 // Kod wyjścia ≠ 0 przy jakimkolwiek problemie. Bez zrzutów ekranu (renderowanie programowe jest wolne).
@@ -11,12 +15,13 @@ import { createServer } from 'node:net';
 import { fileURLToPath } from 'node:url';
 import { CONFIG } from '../../src/config.js';
 import { MAPS } from '../../src/world/maps/index.js';
+import { MODES } from '../../src/game/modes.js';
 
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright');
 const ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const T0 = Date.now();
-const TOTAL_LIMIT_MS = 6 * 60 * 1000;
+const TOTAL_LIMIT_MS = 8 * 60 * 1000;
 const SETTLE_MS = 2000;
 const VIEWPORT = { width: 640, height: 360 }; // liczby renderer.info nie zależą od rozdzielczości; mniejszy = szybciej w SwiftShaderze
 
@@ -214,6 +219,267 @@ async function leakTest(page, L) {
   else L.fail(`wyciek przy zmianie presetu: geometries ${base.geometries} → ${last.geometries}, textures ${base.textures} → ${last.textures}`);
 }
 
+
+// ------------------------------------------------------------------ przepływ meczu (menu → mecz → koniec → menu)
+
+const FLOW_PLAN = [
+  // [mapa, tryb, pełny przepływ?] — pełny: odliczanie, strzały botów, koniec, restart. Ostatni krok wraca na mapę startu
+  // (porównanie renderer.info). Uwaga: każda strona ma swój kontekst WebGL → strony mogą iść równolegle.
+  { name: 'flow-A', steps: [['uvmaze', 'ffa', true], ['uvmaze', 'tdm2', true], ['uvmaze', 'tdm4', true], ['neonhive', 'ffa', false], ['uvmaze', 'ffa', false]] },
+  { name: 'flow-B', steps: [['neonhive', 'tdm2', true], ['reactor', 'tdm4', true], ['neonhive', 'tdm2', false]] },
+];
+const flowRows = [];
+const FLOW_T = 180000; // ms — duże timeouty (SwiftShader na obciążonej maszynie: sim ~0.2–0.5× czasu rzeczywistego)
+const mapIds = Object.keys(MAPS);
+const modeIds = Object.keys(MODES);
+const diffIds = Object.keys(CONFIG.bots.levels);
+const presetIds = Object.keys(CONFIG.presets);
+
+const appState = (page) => page.evaluate(() => {
+  const lt = window.__lt;
+  const M = lt.match();
+  const vis = (sel) => {
+    const e = document.querySelector(sel);
+    if (!e) return false;
+    const cs = getComputedStyle(e); const r = e.getBoundingClientRect();
+    return cs.display !== 'none' && cs.visibility !== 'hidden' && Number(cs.opacity) > 0 && r.width > 0 && r.height > 0;
+  };
+  return {
+    app: lt.app, map: lt.world.id, mode: M ? M.modeId : null, state: M ? M.state : null, n: lt.sim ? lt.sim.participants.length : 0,
+    menu: vis('.lt-menu'), end: vis('.lt-end'), hud: !document.getElementById('hud').classList.contains('hidden'),
+    lock: !!document.pointerLockElement,
+  };
+});
+const waitApp = (page, app, ms = FLOW_T) => page.waitForFunction((a) => window.__lt.app === a, app, { timeout: ms, polling: 100 });
+
+/** Wybór w menu kliknięciami (karta mapy, karta trybu, poziom, preset) i start klawiszem Enter (gest → pointer lock). */
+async function menuStart(page, map, mode, diff, preset) {
+  await page.locator('.lt-mn-mapcard').nth(mapIds.indexOf(map)).click();
+  await page.locator('.lt-mn-modecard').nth(modeIds.indexOf(mode)).click();
+  const seg = page.locator('.lt-mn-row.lt-mn-seg');
+  await seg.nth(0).locator('.lt-mn-pill').nth(diffIds.indexOf(diff)).click();
+  await seg.nth(1).locator('.lt-mn-pill').nth(presetIds.indexOf(preset)).click();
+  const sel = await page.evaluate(() => [...document.querySelectorAll('.lt-menu .sel')].length);
+  if (sel !== 4) throw new Error(`menu: zaznaczonych opcji ${sel} ≠ 4`);
+  await page.keyboard.press('Enter');
+  await waitApp(page, 'match');
+}
+
+/** Sprawdzenia składu: liczba uczestników wg trybu, drużyny (team = id % teams, po perTeam), spawny drużyn (sp.team % teams). */
+async function checkRoster(page, mode, L, tag) {
+  const r = await page.evaluate(() => {
+    const sim = window.__lt.sim;
+    return {
+      teamCount: sim.teamCount,
+      ps: sim.participants.map((P) => ({ id: P.id, team: P.team, color: P.color, isPlayer: P.isPlayer, x: P.body.x, y: P.body.y, z: P.body.z, state: P.state })),
+      spawns: sim.world.spawns.map((s) => ({ x: s.x, y: s.y, z: s.z, team: s.team })),
+    };
+  });
+  const m = MODES[mode];
+  const errs = [];
+  if (r.ps.length !== m.participants) errs.push(`uczestników ${r.ps.length} ≠ ${m.participants}`);
+  if (r.ps.filter((p) => p.isPlayer).length !== 1 || !r.ps[0].isPlayer) errs.push('gracz ≠ id 0');
+  if (r.teamCount !== m.teams) errs.push(`sim.teamCount ${r.teamCount} ≠ ${m.teams}`);
+  // pozycje na starcie (odliczanie: uczestnicy zamrożeni) = spawny
+  const spawnOf = (p) => r.spawns.find((s) => Math.abs(s.x - p.x) < 1e-6 && Math.abs(s.z - p.z) < 1e-6 && Math.abs(s.y - p.y) < 0.05);
+  const used = new Set();
+  for (const p of r.ps) {
+    const sp = spawnOf(p);
+    if (!sp) { errs.push(`#${p.id} nie stoi na spawnie (${p.x.toFixed(2)}, ${p.z.toFixed(2)})`); continue; }
+    used.add(`${sp.x},${sp.z}`);
+    if (m.teams > 0 && sp.team % m.teams !== p.team) errs.push(`#${p.id} (team ${p.team}) na spawnie drużyny ${sp.team} (team%${m.teams} = ${sp.team % m.teams})`);
+  }
+  if (used.size !== r.ps.length && r.spawns.length >= r.ps.length) errs.push(`uczestnicy na ${used.size} różnych spawnach (${r.ps.length} uczestników)`);
+  if (m.teams > 0) {
+    for (let t = 0; t < m.teams; t++) {
+      const mem = r.ps.filter((p) => p.team === t);
+      if (mem.length !== m.perTeam) errs.push(`drużyna ${t}: ${mem.length} ≠ ${m.perTeam}`);
+      if (mem.some((p) => p.color !== CONFIG.colors.teams[t])) errs.push(`drużyna ${t}: kolor ≠ ${CONFIG.colors.teams[t]}`);
+    }
+    if (r.ps.some((p) => p.team !== p.id % m.teams)) errs.push('team ≠ id % teams');
+    if (m.teams === 2) {
+      // tdm2: strony drużyn = środki ciężkości spawnów team%2 po przeciwnych stronach środka areny
+      const cen = (t) => { const s = r.spawns.filter((sp) => sp.team % 2 === t); return [s.reduce((a, b) => a + b.x, 0) / s.length, s.reduce((a, b) => a + b.z, 0) / s.length]; };
+      const c0 = cen(0), c1 = cen(1);
+      const pc = (t) => { const s = r.ps.filter((p) => p.team === t); return [s.reduce((a, b) => a + b.x, 0) / s.length, s.reduce((a, b) => a + b.z, 0) / s.length]; };
+      const p0 = pc(0), p1 = pc(1);
+      if (!(c0[0] * c1[0] + c0[1] * c1[1] < 0)) errs.push(`spawny drużyn nie po przeciwnych stronach: ${c0} / ${c1}`);
+      if (!(p0[0] * c0[0] + p0[1] * c0[1] > 0 && p1[0] * c1[0] + p1[1] * c1[1] > 0)) errs.push(`drużyny nie po swoich stronach: team0 (${p0.map((v) => v.toFixed(1))}), team1 (${p1.map((v) => v.toFixed(1))})`);
+    }
+  } else {
+    if (r.ps.some((p) => p.team !== -1)) errs.push('ffa: team ≠ -1');
+    if (new Set(r.ps.map((p) => p.color)).size !== r.ps.length) errs.push('ffa: kolory nieunikalne');
+  }
+  if (errs.length) L.fail(`${tag}: skład/spawny: ${errs.join('; ')}`);
+  else L.ok(`${tag}: ${r.ps.length} uczestników${m.teams ? `, ${m.teams} drużyny × ${m.perTeam}, spawny drużyn OK` : ', ffa'}`);
+}
+
+async function flowStep(page, L, [map, mode, full], k) {
+  const tag = `${map}/${mode}`;
+  const t0 = Date.now();
+  let st = await appState(page);
+  if (st.app !== 'menu' || !st.menu) { L.fail(`${tag}: przed startem app=${st.app}, menu widoczne=${st.menu}`); return; }
+  await menuStart(page, map, mode, 'normal', 'low');
+  st = await appState(page);
+  const bad = [];
+  if (st.map !== map) bad.push(`mapa ${st.map}`);
+  if (st.mode !== mode) bad.push(`tryb ${st.mode}`);
+  if (st.menu) bad.push('menu nadal widoczne');
+  if (st.end) bad.push('ekran końca widoczny');
+  if (!st.hud) bad.push('HUD ukryty');
+  if (st.state !== 'countdown') bad.push(`stan meczu ${st.state} (oczekiwano countdown)`);
+  if (!st.lock) bad.push('brak pointer locka (mecz w pauzie)');
+  if (bad.length) L.fail(`${tag}: start: ${bad.join(', ')}`);
+  await checkRoster(page, mode, L, tag);
+  const row = { page: L.name, step: k + 1, map, mode, n: st.n, shots: '-', hits: '-', result: '-', restart: '-', ms: 0 };
+  flowRows.push(row);
+
+  // odliczanie: zamrożeni (sim.time stoi) → playing
+  await page.waitForFunction(() => window.__lt.match().state === 'playing', null, { timeout: FLOW_T, polling: 100 });
+  if (!full) {
+    const ok = await page.evaluate(() => window.__lt.sim.time);
+    L.ok(`${tag}: odliczanie → playing (sim.time ${ok.toFixed(2)})`);
+  } else {
+    // boty strzelają: statystyki shots botów rosną, timer biegnie
+    const r = await page.waitForFunction(() => {
+      const lt = window.__lt;
+      const bots = lt.sim.participants.filter((p) => !p.isPlayer);
+      const shots = bots.reduce((a, p) => a + p.stats.shots, 0);
+      return shots >= 3 ? { shots, hits: bots.reduce((a, p) => a + p.stats.hits, 0), t: lt.sim.time, left: lt.match().timeLeft } : false;
+    }, null, { timeout: FLOW_T, polling: 250 }).then((h) => h.jsonValue()).catch(() => null);
+    if (!r) L.fail(`${tag}: boty nie strzelają (shots < 3 w ${FLOW_T / 1000} s)`);
+    else {
+      row.shots = r.shots; row.hits = r.hits;
+      const M = MODES[mode];
+      if (!(r.left < M.timeLimit && r.left > M.timeLimit - r.t - 1)) L.fail(`${tag}: timer ${r.left} przy sim.time ${r.t}`);
+      L.ok(`${tag}: boty strzelają (strzałów ${r.shots}, trafień ${r.hits}, sim.time ${r.t.toFixed(1)} s, timer ${r.left.toFixed(1)} s)`);
+    }
+    // koniec czasu → ekran końca
+    await page.evaluate(() => { window.__lt.match().timeLeft = 1; });
+    await waitApp(page, 'end');
+    await page.waitForSelector('.lt-end.show', { state: 'visible', timeout: 30000 });
+    const end = await page.evaluate(() => {
+      const M = window.__lt.match();
+      const root = document.querySelector('.lt-end');
+      const lines = [...root.querySelectorAll('.lt-st-line:not(.lt-st-head)')].filter((e) => e.style.display !== 'none');
+      return {
+        state: M.state, reason: M.endReason, winnerKind: M.winnerKind, title: root.querySelector('.lt-end-title').textContent,
+        sub: root.querySelector('.lt-end-sub').textContent, meta: root.querySelector('.lt-end-meta').textContent,
+        rows: lines.filter((e) => !e.classList.contains('lt-st-team')).length, teams: lines.filter((e) => e.classList.contains('lt-st-team')).length,
+        mine: lines.filter((e) => e.classList.contains('mine')).length, result: root.dataset.result, lock: !!document.pointerLockElement,
+      };
+    });
+    st = await appState(page);
+    const e2 = [];
+    if (end.state !== 'ended' || end.reason !== 'time') e2.push(`match ${end.state}/${end.reason}`);
+    if (!['ZWYCIĘSTWO', 'PORAŻKA', 'REMIS'].includes(end.title)) e2.push(`tytuł "${end.title}"`);
+    if (end.rows !== MODES[mode].participants) e2.push(`wierszy tabeli ${end.rows}`);
+    if (end.teams !== MODES[mode].teams) e2.push(`wierszy drużyn ${end.teams}`);
+    if (end.mine !== 1) e2.push(`wiersz gracza ×${end.mine}`);
+    if (!/Koniec czasu/.test(end.meta)) e2.push(`meta "${end.meta}"`);
+    if (end.lock) e2.push('pointer lock nie zwolniony');
+    if (st.hud) e2.push('HUD widoczny na ekranie końca');
+    if (e2.length) L.fail(`${tag}: ekran końca: ${e2.join(', ')}`);
+    else L.ok(`${tag}: ekran końca: ${end.title} — ${end.sub} (${end.winnerKind}), ${end.rows} wierszy${end.teams ? ` + ${end.teams} drużyn` : ''}`);
+    row.result = end.title;
+
+    // „Jeszcze raz" (Enter) → nowy mecz w tym samym trybie i mapie
+    const simBefore = await page.evaluate(() => { window.__oldSim = window.__lt.sim; return true; });
+    void simBefore;
+    await page.keyboard.press('Enter');
+    await waitApp(page, 'match');
+    const rs = await page.evaluate(() => {
+      const lt = window.__lt; const M = lt.match();
+      const ps = lt.sim.participants;
+      return {
+        fresh: lt.sim !== window.__oldSim, state: M.state, timeLeft: M.timeLeft, map: lt.world.id, mode: M.modeId,
+        score: ps.reduce((a, p) => a + p.stats.score + p.stats.shots, 0), n: ps.length, lock: !!document.pointerLockElement,
+      };
+    });
+    st = await appState(page);
+    const e3 = [];
+    if (!rs.fresh) e3.push('ten sam sim');
+    if (rs.map !== map || rs.mode !== mode) e3.push(`${rs.map}/${rs.mode}`);
+    if (rs.state !== 'countdown' || rs.timeLeft !== MODES[mode].timeLimit) e3.push(`stan ${rs.state}, timer ${rs.timeLeft}`);
+    if (rs.score !== 0) e3.push('statystyki nie wyzerowane');
+    if (rs.n !== MODES[mode].participants) e3.push(`uczestników ${rs.n}`);
+    if (st.end || st.menu) e3.push(`widoczne: ${st.end ? 'koniec ' : ''}${st.menu ? 'menu' : ''}`);
+    if (!rs.lock) e3.push('brak pointer locka');
+    if (e3.length) L.fail(`${tag}: restart: ${e3.join(', ')}`);
+    else L.ok(`${tag}: „Jeszcze raz" → nowy mecz (countdown, statystyki 0)`);
+    row.restart = e3.length ? '✗' : '✓';
+  }
+  // → menu
+  await page.evaluate(() => window.__lt.goMenu());
+  await waitApp(page, 'menu');
+  await frames(page, 2);
+  st = await appState(page);
+  const e4 = [];
+  if (!st.menu) e4.push('menu niewidoczne');
+  if (st.end) e4.push('ekran końca widoczny');
+  if (st.hud) e4.push('HUD widoczny');
+  if (st.lock) e4.push('pointer lock nie zwolniony');
+  if (st.n !== 0) e4.push('sim nie zwolniony');
+  if (e4.length) L.fail(`${tag}: goMenu: ${e4.join(', ')}`);
+  else L.ok(`${tag}: goMenu → menu`);
+  row.ms = Date.now() - t0;
+}
+
+/** Wszystkie kamery debug mapy po kolei (każda geometria areny przynajmniej raz w kadrze) → info. */
+async function infoAllCams(page) {
+  const n = await page.evaluate(() => window.__lt.cams().length);
+  for (let i = 0; i < n; i++) {
+    await page.evaluate((k) => window.__lt.setCam(k), i);
+    await frames(page, 2);
+  }
+  await page.evaluate(() => window.__lt.setCam(null));
+  await frames(page, 2);
+  return info(page);
+}
+
+async function runFlow(browser, base, plan) {
+  const L = createLog(plan.name);
+  L.name = plan.name;
+  L.say(`\n[${plan.name}] ${plan.steps.map((s) => `${s[0]}/${s[1]}${s[2] ? '' : '*'}`).join(' → ')}  start ${elapsed()}`);
+  let page = null;
+  let problems = [];
+  try {
+    const o = await openPage(browser, `${base}/`);
+    page = o.page; problems = o.problems;
+    const st = await appState(page);
+    if (st.app !== 'menu' || !st.menu || st.hud || st.n !== 0) L.fail(`start: app=${st.app}, menu=${st.menu}, hud=${st.hud}, sim=${st.n}`);
+    else L.ok(`/ → menu (${o.loadMs} ms do ready)`);
+    const first = plan.steps[0][0];
+    let baseInfo = null;
+    for (let k = 0; k < plan.steps.length; k++) {
+      await flowStep(page, L, plan.steps[k], k);
+      // punkt odniesienia renderer.info: menu po pierwszym meczu na mapie startowej (wszystkie zasoby leniwe już utworzone)
+      if (k === 0) {
+        baseInfo = await infoAllCams(page);
+        L.say(`    info (menu, ${first}): g${baseInfo.geometries}/t${baseInfo.textures}`);
+      }
+    }
+    const last = plan.steps[plan.steps.length - 1][0];
+    if (last === first && baseInfo) {
+      const fin = await infoAllCams(page);
+      if (fin.geometries === baseInfo.geometries && fin.textures === baseInfo.textures) {
+        L.ok(`powrót na ${first}: geometries/textures ${fin.geometries}/${fin.textures} = jak na początku`);
+      } else {
+        L.fail(`wyciek po zmianie mapy (${first} → … → ${first}): geometries ${baseInfo.geometries} → ${fin.geometries}, textures ${baseInfo.textures} → ${fin.textures}`);
+      }
+      flowRows.push({ page: plan.name, step: '—', map: first, mode: 'info', n: '', shots: `g${baseInfo.geometries}→${fin.geometries}`, hits: `t${baseInfo.textures}→${fin.textures}`, result: '', restart: '', ms: 0 });
+    }
+  } catch (e) {
+    L.fail(`wyjątek: ${e && e.stack ? e.stack.split('\n').slice(0, 3).join(' | ') : e}`);
+  } finally {
+    if (problems.length) L.fail(`konsola/HTTP (${problems.length}):\n      ${problems.join('\n      ')}`);
+    else L.ok('konsola/HTTP: 0 problemów przez cały przepływ');
+    if (page) await page.close().catch(() => {});
+    L.say(`  koniec ${elapsed()}`);
+    L.flush();
+  }
+}
+
 // ------------------------------------------------------------------ main
 
 const rows = [];
@@ -262,10 +528,16 @@ let browser = null;
 try {
   await waitForServer(`${base}/`);
   browser = await chromium.launch({ args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
-  console.log(`SMOKE: ${maps.join(',')} × ${presets.join(',')} (port ${port}, równolegle ${jobs})`);
-  const queue = maps.map((m, i) => [m, !flag('skip-leak') && (i === 0 || flag('leak-all'))]);
-  const worker = async () => { while (queue.length) { const [m, leak] = queue.shift(); await runMap(browser, base, m, leak); } };
-  await Promise.all(Array.from({ length: Math.min(jobs, maps.length) }, worker));
+  const withFlow = !flag('skip-flow');
+  const withMaps = !flag('flow-only');
+  console.log(`SMOKE: ${withMaps ? `${maps.join(',')} × ${presets.join(',')}` : '(bez map × presetów)'}${withFlow ? ' + przepływ meczu' : ''} (port ${port}, równolegle ${jobs})`);
+  // jedna kolejka zadań: przepływy (dłuższe) najpierw, potem mapy
+  const queue = [
+    ...(withFlow ? FLOW_PLAN.map((p) => () => runFlow(browser, base, p)) : []),
+    ...(withMaps ? maps.map((m, i) => () => runMap(browser, base, m, !flag('skip-leak') && (i === 0 || flag('leak-all')))) : []),
+  ];
+  const worker = async () => { while (queue.length) await queue.shift()(); };
+  await Promise.all(Array.from({ length: Math.min(jobs, queue.length) }, worker));
 } catch (e) {
   failures.push(`wyjątek: ${e && e.stack ? e.stack : e}`);
   console.log(`  ✗ wyjątek: ${e && e.stack ? e.stack : e}`);
@@ -277,11 +549,18 @@ try {
 // tabela
 const cell = (v, b) => `${v}/${b}${v <= b ? '' : ' !'}`;
 rows.sort((a, b) => maps.indexOf(a.map) - maps.indexOf(b.map) || presets.indexOf(a.preset) - presets.indexOf(b.preset));
-console.log('\n| mapa | preset | uczestn. | calls | triangles | textures | geometries | programs | konsola/HTTP |');
-console.log('|---|---|---|---|---|---|---|---|---|');
+if (rows.length) console.log('\n| mapa | preset | uczestn. | calls | triangles | textures | geometries | programs | konsola/HTTP |');
+if (rows.length) console.log('|---|---|---|---|---|---|---|---|---|');
 for (const r of rows) {
   console.log(`| ${r.map} | ${r.preset} | ${r.n} | ${cell(r.inf.calls, r.B.calls)} | ${cell(r.inf.triangles, r.B.triangles)} | ` +
     `${cell(r.inf.textures, r.B.textures)} | ${cell(r.inf.geometries, r.B.geometries)} | ${r.inf.programs} | ${r.console ?? '?'} |`);
+}
+if (flowRows.length) {
+  console.log('\n| przepływ | krok | mapa | tryb | uczestn. | strzały botów | trafienia | koniec | restart | czas |');
+  console.log('|---|---|---|---|---|---|---|---|---|---|');
+  for (const r of flowRows) {
+    console.log(`| ${r.page} | ${r.step} | ${r.map} | ${r.mode} | ${r.n} | ${r.shots} | ${r.hits} | ${r.result} | ${r.restart} | ${r.ms ? (r.ms / 1000).toFixed(1) + ' s' : ''} |`);
+  }
 }
 if (failures.length) console.log(`\nPROBLEMY:\n  - ${failures.join('\n  - ')}`);
 console.log(`\nSMOKE: ${failures.length ? `${failures.length} problem(ów)` : 'OK'} — ${elapsed()}`);
