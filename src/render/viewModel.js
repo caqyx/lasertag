@@ -6,12 +6,12 @@
 // Wylot lufy: CONFIG.weapon.muzzleOffset + CONFIG.viewModel.offset (układ kamery); muzzleWorld(out) zwraca go w świecie
 // (np. jako start wiązki gracza, żeby wiązka wychodziła z widocznej lufy).
 // 1 draw call: scalona geometria z atrybutem aPart (0 korpus, 1 listwy w kolorze gracza, 2 pasek ciepła, 3 wylot).
-// Bez drugiego passu: w vertex shaderze głębia jest ściskana do przedniego 5% zakresu (NDC z ∈ [−1, −0.9]),
+// Bez drugiego passu: w vertex shaderze głębia jest ściskana do przedniego ułamka zakresu (CONFIG.viewModel.depthRange),
 // więc broń nie wbija się w ściany, a jej własne ściany nadal poprawnie się zasłaniają.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { CONFIG } from '../config.js';
-import { hexNumber } from './beams.js';
+import { hexNumber } from './color.js';
 
 const VM = CONFIG.viewModel;
 const M0 = CONFIG.weapon.muzzleOffset;
@@ -67,27 +67,29 @@ function buildMaterial(uniforms) {
   mat.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, uniforms);
     shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nattribute float aPart;\nattribute float aBar;\nvarying float vPart;\nvarying float vBar;')
+      .replace('#include <common>', '#include <common>\nuniform float uDepthK;\nattribute float aPart;\nattribute float aBar;\nvarying float vPart;\nvarying float vBar;')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvPart = aPart;\nvBar = aBar;')
-      .replace('#include <project_vertex>', '#include <project_vertex>\ngl_Position.z = gl_Position.z * 0.05 - 0.95 * gl_Position.w;');
+      .replace('#include <project_vertex>', '#include <project_vertex>\ngl_Position.z = gl_Position.z * uDepthK - (1.0 - uDepthK) * gl_Position.w;');
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', [
         '#include <common>',
         'uniform vec3 uColor; uniform vec3 uHot; uniform float uHeat; uniform float uBlink; uniform float uFlash;',
         'uniform float uTrimI; uniform float uHeatI; uniform float uFlashI; uniform float uRimI; uniform vec3 uFill;',
+        'uniform float uRimPow; uniform float uFillBase; uniform float uTrimFlash; uniform vec2 uHeatRamp;',
+        'uniform float uBarOff; uniform float uFlashWhite; uniform float uFlashIdle;',
         'varying float vPart; varying float vBar;',
       ].join('\n'))
       .replace('#include <emissivemap_fragment>', [
         '#include <emissivemap_fragment>',
         // sztuczne światło od góry (układ widoku = układ kamery) + fresnel w kolorze gracza: bryła czytelna w ciemności
-        'float vmRim = pow(1.0 - clamp(dot(normal, normalize(vViewPosition)), 0.0, 1.0), 2.0);',
-        'totalEmissiveRadiance += uFill * (0.35 + 0.65 * clamp(normal.y, 0.0, 1.0)) + uColor * vmRim * uRimI;',
-        'if (vPart > 0.5 && vPart < 1.5) totalEmissiveRadiance += uColor * uTrimI * (1.0 + 0.4 * uFlash);',
+        'float vmRim = pow(1.0 - clamp(dot(normal, normalize(vViewPosition)), 0.0, 1.0), uRimPow);',
+        'totalEmissiveRadiance += uFill * (uFillBase + (1.0 - uFillBase) * clamp(normal.y, 0.0, 1.0)) + uColor * vmRim * uRimI;',
+        'if (vPart > 0.5 && vPart < 1.5) totalEmissiveRadiance += uColor * uTrimI * (1.0 + uTrimFlash * uFlash);',
         'else if (vPart > 1.5 && vPart < 2.5) {',
         '  float on = step(vBar, uHeat);',
-        '  vec3 hc = mix(uColor, uHot, smoothstep(0.45, 0.95, uHeat));',
-        '  totalEmissiveRadiance += mix(uColor * 0.03, hc * uHeatI * uBlink, on);',
-        '} else if (vPart > 2.5) totalEmissiveRadiance += (uColor + vec3(0.35 * uFlash)) * uFlashI * (0.12 + uFlash);',
+        '  vec3 hc = mix(uColor, uHot, smoothstep(uHeatRamp.x, uHeatRamp.y, uHeat));',
+        '  totalEmissiveRadiance += mix(uColor * uBarOff, hc * uHeatI * uBlink, on);',
+        '} else if (vPart > 2.5) totalEmissiveRadiance += (uColor + vec3(uFlashWhite * uFlash)) * uFlashI * (uFlashIdle + uFlash);',
       ].join('\n'));
   };
   mat.customProgramCacheKey = () => 'lt-viewmodel';
@@ -95,7 +97,9 @@ function buildMaterial(uniforms) {
 }
 
 export function createViewModel(camera, scene) {
-  if (!camera.parent && scene) scene.add(camera);
+  // kamera musi być w scenie, żeby jej dzieci się renderowały; zapamiętujemy, czy to my ją dodaliśmy
+  const addedCamera = !camera.parent && !!scene;
+  if (addedCamera) scene.add(camera);
 
   const uniforms = {
     uColor: { value: new THREE.Color(1, 1, 1) },
@@ -108,6 +112,14 @@ export function createViewModel(camera, scene) {
     uFlashI: { value: VM.flashIntensity },
     uRimI: { value: VM.rimIntensity },
     uFill: { value: new THREE.Color(VM.fillColor) },
+    uRimPow: { value: VM.rimPower },
+    uFillBase: { value: VM.fillBase },
+    uTrimFlash: { value: VM.trimFlashBoost },
+    uHeatRamp: { value: new THREE.Vector2(VM.heatRamp[0], VM.heatRamp[1]) },
+    uBarOff: { value: VM.barOff },
+    uFlashWhite: { value: VM.flashWhite },
+    uFlashIdle: { value: VM.flashIdle },
+    uDepthK: { value: VM.depthRange },
   };
   const geo = buildGeometry();
   const mat = buildMaterial(uniforms);
@@ -143,14 +155,14 @@ export function createViewModel(camera, scene) {
     const heat = weapon ? weapon.heat : 0;
     const over = weapon ? weapon.overheated : false;
     uniforms.uHeat.value = heat;
-    uniforms.uBlink.value = over ? (Math.sin(time * TAU * VM.overheatBlinkHz) > 0 ? 1.4 : 0.25) : 1;
+    uniforms.uBlink.value = over ? (Math.sin(time * TAU * VM.overheatBlinkHz) > 0 ? VM.overheatBlink[0] : VM.overheatBlink[1]) : 1;
     uniforms.uFlash.value = flash;
 
     // bob proporcjonalny do prędkości (opcjonalny argument)
     const k = Math.min(1, speed / CONFIG.player.walkSpeed);
-    bobAmt += (k - bobAmt) * Math.min(1, dt * 8);
-    bobPhase += dt * TAU * VM.bobFreq * Math.max(0.2, k);
-    const bx = Math.sin(bobPhase) * VM.bobAmp * 0.6 * bobAmt;
+    bobAmt += (k - bobAmt) * Math.min(1, dt * VM.bobSmooth);
+    bobPhase += dt * TAU * VM.bobFreq * Math.max(VM.bobMinRate, k);
+    const bx = Math.sin(bobPhase) * VM.bobAmp * VM.bobSide * bobAmt;
     const by = -Math.abs(Math.cos(bobPhase)) * VM.bobAmp * bobAmt;
 
     group.position.set(MUZZLE[0] + bx, MUZZLE[1] + by, MUZZLE[2] + VM.recoilKick * recoil);
@@ -165,6 +177,7 @@ export function createViewModel(camera, scene) {
 
   function dispose() {
     camera.remove(group);
+    if (addedCamera && camera.parent) camera.parent.remove(camera);
     geo.dispose();
     mat.dispose();
   }

@@ -46,13 +46,51 @@ export function findParticipant(sim, id) {
   return null;
 }
 
-function stepOne(sim, P, dt) {
+const TWO_PI = Math.PI * 2;
+
+/**
+ * Sanityzacja wejścia (fundament pod M5 — wejście z sieci jest niezaufane). W miejscu, bez alokacji:
+ * moveX/moveZ: nie-skończone → 0, clamp [-1, 1]; pitch: nie-skończone → poprzedni body.pitch, clamp ±pitchLimit;
+ * yaw: nie-skończone → poprzedni body.yaw, poza [-π, π] zawijany do [-π, π); flagi → boolean.
+ */
+export function sanitizeInput(P) {
+  const inp = P.input;
+  const b = P.body;
+  let v = inp.moveX;
+  inp.moveX = !(v === v && v !== Infinity && v !== -Infinity) ? 0 : v > 1 ? 1 : v < -1 ? -1 : v;
+  v = inp.moveZ;
+  inp.moveZ = !(v === v && v !== Infinity && v !== -Infinity) ? 0 : v > 1 ? 1 : v < -1 ? -1 : v;
+  const lim = CONFIG.player.pitchLimit;
+  v = inp.pitch;
+  if (!(v === v && v !== Infinity && v !== -Infinity)) v = b.pitch;
+  inp.pitch = v > lim ? lim : v < -lim ? -lim : v;
+  v = inp.yaw;
+  if (!(v === v && v !== Infinity && v !== -Infinity)) v = b.yaw;
+  if (v > Math.PI || v < -Math.PI) v -= TWO_PI * Math.floor((v + Math.PI) / TWO_PI);
+  inp.yaw = v;
+  inp.fire = inp.fire === true;
+  inp.jump = inp.jump === true;
+  inp.sprint = inp.sprint === true;
+}
+
+/** Faza 1: zapamiętaj pozycję sprzed kroku, pobierz i zsanityzuj wejście. */
+function sampleOne(sim, P) {
   const b = P.body;
   P.prevX = b.x; P.prevY = b.y; P.prevZ = b.z;
   if (P.inputSource !== null) P.inputSource.sample(P, sim, P.input);
+  sanitizeInput(P);
+}
+
+/** Faza 2: stan/timery (eliminacja, respawn, ochrona) i ruch. */
+function moveOne(sim, P, dt) {
   stepParticipantState(sim, P, dt);
   if (P.state !== 'alive') return;
-  stepMovement(b, P.input, dt, sim.world);
+  stepMovement(P.body, P.input, dt, sim.world);
+}
+
+/** Faza 3: broń i strzał (hitscan po ruchu wszystkich). */
+function fireOne(sim, P, dt) {
+  if (P.state !== 'alive') return;
   const W = P.weapon;
   const wasOver = W.overheated;
   if (stepWeapon(W, P.input.fire, dt)) resolveShot(sim, P);
@@ -65,9 +103,15 @@ function stepOne(sim, P, dt) {
   }
 }
 
-/** Jeden stały krok: dla każdego uczestnika input → stan/timery → ruch → broń → strzał. */
+/**
+ * Jeden stały krok w trzech fazach (bez przewagi kolejności uczestników w ruchu/celowaniu):
+ *   1) wejście wszystkich (na stanie z poprzedniego kroku), 2) stan + ruch wszystkich, 3) broń/strzały wszystkich.
+ * W fazie 3 uczestnik wyeliminowany strzałem wcześniejszego w tablicy nie strzela już w tym kroku.
+ */
 export function stepSim(sim, dt) {
   sim.time += dt;
   const ps = sim.participants;
-  for (let i = 0; i < ps.length; i++) stepOne(sim, ps[i], dt);
+  for (let i = 0; i < ps.length; i++) sampleOne(sim, ps[i]);
+  for (let i = 0; i < ps.length; i++) moveOne(sim, ps[i], dt);
+  for (let i = 0; i < ps.length; i++) fireOne(sim, ps[i], dt);
 }

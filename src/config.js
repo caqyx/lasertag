@@ -193,7 +193,7 @@ export const CONFIG = Object.freeze({
       rubber: { color: '#0b0a12', baseHeight: 0.1, baseDepth: 0.022, cornerSize: 0.06, cornerInset: 0.012, lineSize: 0.014, lineIntensity: 0.3 },
       paintMargin: { edge: 0.09, bottom: 0.17, strip: 0.09 },   // farba nie dochodzi do krawędzi/listew (m)
       neon: { nearMin: 0.6, near: [0.6, 3.5], fog: 0.65 },      // przygaszenie bliskich listew; udział mgły na listwach
-      ceilingPool: { radius: 2.8, strength: 0.06, panelRef: 0.006 },            // plamy światła lamp na stropie
+      ceilingPool: { radius: 3.2, strength: 0.15, panelRef: 0.006 },            // plamy światła lamp na stropie
       spawnPanel: { width: 1.6, height: 0.9, depth: 0.04, y: 1.45, intensity: 0.9, marker: 0.16 },
       floorRoughness: 0.75,         // × roughnessMap (≈0.6) → ~0.45 (półpołysk)
       floorMetalness: 0.2,
@@ -204,7 +204,7 @@ export const CONFIG = Object.freeze({
       envBakeHeight: 1.6,
       envBlur: 0.02,
       ceilingTile: 4.8,
-      ceilingGlow: 0.9,             // emisja paneli sufitu (tekstura × palette.uv)
+      ceilingGlow: 2.4,             // emisja paneli sufitu (tekstura × palette.uv)
       trussColor: '#2a2638',
       trussGlow: 0.035,             // emisja kratownicy (palette.uv) — sylwetki belek czytelne w ciemności
       trussSpacing: 4,
@@ -286,10 +286,15 @@ export const CONFIG = Object.freeze({
     beamGlowIntensity: 1.5,       // poświata nasycona (Neutral TM wybiela wartości ≫ 1)
     beamTaper: 1.6,           // m od lufy, na których wstęga rośnie od beamTaperMin do pełnej szerokości
     beamTaperMin: 0.15,
+    beamRows: [0.3, 0.7],     // m od lufy: dodatkowe wiersze geometrii wstęgi w strefie zwężenia (< beamTaper)
     beamNearFade: [0.4, 2.5], // m od kamery: wstęga przygaszona przy samej kamerze (własne strzały nie oślepiają)
+    beamNearMin: 0.3,         // jasność wstęgi przy samej kamerze (× pełnej)
     muzzleFlashSize: 0.16,    // m
     muzzleFlashTime: 0.06,    // s
-    flashNearDist: 2.5,       // m — bliżej kamery błyski maleją (do 30% przy samej lufie FPP)
+    flashNearDist: 2.5,       // m — bliżej kamery błyski maleją (do flashNearMin przy samej lufie FPP)
+    flashNearMin: 0.3,
+    muzzleFlashGrow: [0.7, 0.6], // rozmiar błysku lufy w czasie życia k: size × (a + b·k)
+    endFlashGrow: [0.8, 0.6],    // jw. dla poświaty końca wiązki
     muzzleFlashIntensity: 2.2,
     endFlashSize: 0.22,       // poświata w punkcie końca wiązki (ściana)
     endFlashIntensity: 1.4,
@@ -344,6 +349,18 @@ export const CONFIG = Object.freeze({
     bobAmp: 0.012,
     bobFreq: 1.6,             // Hz przy prędkości chodu
     overheatBlinkHz: 5,
+    overheatBlink: [1.4, 0.25],   // jasność paska ciepła w fazie on/off mrugania
+    rimPower: 2.0,
+    fillBase: 0.35,           // światło wypełniające: część bezkierunkowa (reszta zależna od normal.y)
+    trimFlashBoost: 0.4,      // akcenty × (1 + to × błysk strzału)
+    heatRamp: [0.45, 0.95],   // ciepło, przy którym pasek przechodzi z koloru gracza w hotColor
+    barOff: 0.03,             // jasność zgaszonej części paska ciepła (× kolor gracza)
+    flashWhite: 0.35,         // domieszka bieli w błysku wylotu
+    flashIdle: 0.12,          // jasność pierścienia wylotu bez strzału (× flashIntensity)
+    bobSmooth: 8,             // 1/s — wygładzanie amplitudy kołysania
+    bobMinRate: 0.2,          // min. tempo fazy kołysania (× bobFreq)
+    bobSide: 0.6,             // amplituda boczna kołysania (× bobAmp)
+    depthRange: 0.05,         // broń zajmuje przednie depthRange zakresu głębi NDC (nie wbija się w ściany)
   },
 
   // HUD (ui/hud.js).

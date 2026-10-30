@@ -9,21 +9,9 @@
 // Pule pierścieniowe: najstarszy slot nadpisywany. spawn/update bez alokacji. Mieszanie addytywne + mgła exp2.
 import * as THREE from 'three';
 import { CONFIG } from '../config.js';
+import { hexNumber } from './color.js';
 
 const FX = CONFIG.fx;
-
-// '#rrggbb' | 0xrrggbb → liczba, bez alokacji (bez regexów/substringów).
-export function hexNumber(c) {
-  if (typeof c === 'number') return c;
-  let n = 0;
-  const start = c.charCodeAt(0) === 35 ? 1 : 0; // '#'
-  for (let i = start; i < start + 6; i++) {
-    const ch = c.charCodeAt(i);
-    const v = ch <= 57 ? ch - 48 : (ch | 32) - 87; // 0-9, a-f/A-F
-    n = (n << 4) | (v & 15);
-  }
-  return n >>> 0;
-}
 
 const _c = new THREE.Color();
 
@@ -50,6 +38,9 @@ uniform float uMuzzleSize;
 uniform float uMuzzleTime;
 uniform float uEndSize;
 uniform float uNearSize;
+uniform float uFlashNearMin;
+uniform vec2 uMuzzleGrow;
+uniform vec2 uEndGrow;
 varying vec2 vQ;
 varying float vKind;
 varying float vK;
@@ -79,10 +70,10 @@ void main() {
     vQ = vec2(s / len, position.y);
   } else {
     vec3 C = kind < 1.5 ? A : B;
-    float size = kind < 1.5 ? uMuzzleSize * (0.7 + 0.6 * k) : uEndSize * (0.8 + 0.6 * k);
+    float size = kind < 1.5 ? uMuzzleSize * (uMuzzleGrow.x + uMuzzleGrow.y * k) : uEndSize * (uEndGrow.x + uEndGrow.y * k);
     mv = viewMatrix * vec4(C, 1.0);
     // przy samej kamerze (własna lufa) błysk mniejszy — nie zasłania pół ekranu
-    size *= clamp(-mv.z / uNearSize, 0.3, 1.0);
+    size *= clamp(-mv.z / uNearSize, uFlashNearMin, 1.0);
     mv.xy += position.xy * size;
     vQ = position.xy;
   }
@@ -101,6 +92,7 @@ uniform float uGlowI;
 uniform float uMuzzleI;
 uniform float uEndI;
 uniform vec2 uNearFade;
+uniform float uNearMin;
 varying vec2 vQ;
 varying float vKind;
 varying float vK;
@@ -115,7 +107,7 @@ void main() {
     float fade = (1.0 - vK) * (1.0 - vK);
     // rdzeń gaśnie szybciej niż poświata; delikatny zanik na samym końcu wiązki
     float tail = smoothstep(1.0, 0.985, vQ.x);
-    float near = mix(0.3, 1.0, smoothstep(uNearFade.x, uNearFade.y, vDepth));
+    float near = mix(uNearMin, 1.0, smoothstep(uNearFade.x, uNearFade.y, vDepth));
     col = (vec3(uCoreI) * core * (1.0 - vK) + vCol * glow * uGlowI) * fade * tail * near;
   } else {
     float r = length(vQ);
@@ -229,7 +221,7 @@ function buildBeamGeometry(capacity) {
   const frac = [];
   const idx = [];
   // wstęga: wiersze w metrach od lufy (zwężenie) + koniec (ułamek 1)
-  const rows = [[0, 0], [0.3, 0], [0.7, 0], [FX.beamTaper, 0], [0, 1]];
+  const rows = [[0, 0], [FX.beamRows[0], 0], [FX.beamRows[1], 0], [FX.beamTaper, 0], [0, 1]];
   for (let r = 0; r < rows.length; r++) {
     pos.push(rows[r][0], -1, 0, rows[r][0], 1, 0);
     frac.push(rows[r][1], rows[r][1]);
@@ -326,6 +318,10 @@ export function createBeams(scene, capacity = CONFIG.pools.beams, sparkCapacity 
     uMuzzleTime: { value: FX.muzzleFlashTime },
     uEndSize: { value: FX.endFlashSize },
     uNearSize: { value: FX.flashNearDist },
+    uFlashNearMin: { value: FX.flashNearMin },
+    uMuzzleGrow: { value: new THREE.Vector2(FX.muzzleFlashGrow[0], FX.muzzleFlashGrow[1]) },
+    uEndGrow: { value: new THREE.Vector2(FX.endFlashGrow[0], FX.endFlashGrow[1]) },
+    uNearMin: { value: FX.beamNearMin },
     uCore: { value: FX.beamCore },
     uCoreI: { value: FX.beamCoreIntensity },
     uGlowI: { value: FX.beamGlowIntensity },

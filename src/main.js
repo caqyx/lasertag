@@ -349,9 +349,10 @@ window.__lt = {
   get world() { return { id: world.id, solids: world.solids.length }; },
 };
 
-// Start: ?autostart=1 lub ?cam= → mecz od razu z parametrów URL; inaczej menu.
-if (params.autostart || debugCam) startMatch(params);
-else menu.show();
+// Start: ?autostart=1 → mecz od razu z parametrów URL. ?cam= (bez autostart) → sama arena z kamery debug
+// (bez menu, HUD, broni i postaci — czyste kadry dla tests/tools/screens.mjs). Inaczej menu.
+if (params.autostart) startMatch(params);
+else if (!debugCam) menu.show();
 refreshVisibility();
 
 const loop = createLoop({ hz: CONFIG.sim.hz, maxSubSteps: CONFIG.sim.maxSubSteps, step, frame });

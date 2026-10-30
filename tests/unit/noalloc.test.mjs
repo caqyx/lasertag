@@ -21,6 +21,10 @@ import { createParticipant } from '../../src/game/participant.js';
 import { createDummyInput } from '../../src/game/input/dummyInput.js';
 import { EV } from '../../src/core/events.js';
 import { pickSpawn } from '../../src/game/combat.js';
+import { buildNav } from '../../src/world/nav.js';
+import { createBotBrain } from '../../src/game/bots/ai.js';
+import neonhive from '../../src/world/maps/neonhive.js';
+import reactor from '../../src/world/maps/reactor.js';
 
 const N = 100_000;
 const LIMIT = 64 * 1024;
@@ -159,6 +163,17 @@ const SCENARIOS = {
   'stepSim (friendlyFire, 2v2)': (i) => simStep(ffSim, i),
   'stepSim (uvmaze, 4 strzelców + 3 manekiny)': (i) => simStep(uvSim, i),
 };
+// stepSim z 8 botami (createBotBrain: patrol/engage/cover/chase, nav, widzenie) na każdej mapie
+const LEVELS = ['easy', 'normal', 'hard'];
+for (const [mapName, data] of [['uvmaze', uvmaze], ['neonhive', neonhive], ['reactor', reactor]]) {
+  const w = mapName === 'uvmaze' ? world : buildWorld(data);
+  const nav = buildNav(w);
+  const sim = createSim({ world: w, seed: 21 });
+  for (let id = 0; id < 8; id++) {
+    addParticipant(sim, createParticipant({ id, inputSource: createBotBrain({ level: LEVELS[id % 3], nav, adapt: null }) }));
+  }
+  SCENARIOS[`stepSim (${mapName}, 8 botów)`] = (i) => simStep(sim, i);
+}
 for (const k of Object.keys(SCENARIOS)) if (k.startsWith('stepSim')) WARMUP[k] = 200_000;
 
 // pickSpawn z „żywymi" (zmiennymi) pozycjami uczestników — jak przy respawnie w meczu. Uczestnicy przesuwani po okręgu.
