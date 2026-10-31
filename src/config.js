@@ -252,7 +252,7 @@ export const CONFIG = Object.freeze({
       boundaryPaintIntensity: 0.6,  // farba na ścianach obwodowych przygaszona (nie dominuje kadru)
       wallUScale: [0.85, 1.2],      // losowa skala farby wzdłuż ściany per bryła (mniej powtórzeń)
       boundaryCycle: ['reactor'],   // mapy, w których ściany obwodowe dostają różne style farby per strona
-      topLine: { maps: ['neonhive'], width: 0.06, height: 0.012, k: 0.8, post: 0.06, postK: 1.6, postKey: 'uv' },   // neon na wierzchu ścian (plaster czytelny z góry)
+      topLine: { maps: ['neonhive'], width: 0.06, height: 0.012, k: 0.8, post: 0.045, postK: 1.2, postKey: 'uv' },   // neon na wierzchu ścian (plaster czytelny z góry)
       boundaryPanel: 9,             // szerokość panelu farby na ścianie obwodowej (m) przy boundaryCycle
       accentWash: 0.12,             // poświata lica bryły z listwą akcentu (czerwień) — czarna bryła z czerwoną krawędzią
       // kolory lamp (klucz palety → klucz palety): bez czerwonych/różowych stożków, plam i nalotu na podłodze
@@ -293,7 +293,7 @@ export const CONFIG = Object.freeze({
       // zanik z odległością od podłogi (głębia RT), farba przygaszona w odbiciu (odbijają się głównie listwy)
       // odbicie podłogi: smuga rośnie z drogą za lustrem (blurGrow/m, mipGrow/m ≤ mipMax), zanik fadeLen (m) per próbka
       reflect: { scale: 0.5, mipBias: 2.4, streak: 7, taps: 9, strength: 0.24, f0: 0.25, maskSoft: 0.9,
-        strengthMap: { reactor: 0.4 },
+        strengthMap: { reactor: 0.4, neonhive: 0.17 },
         fadeLen: 2.2, blurGrow: 0.7, mipGrow: 0.6, mipMax: 2.5, sideSpread: 0.7, paintInReflection: 0.25, maxValue: 16 },
       accentPolicy: { default: 'full', uvmaze: 'paint' },   // 'paint' = akcent tylko w farbie; 'full' = też listwy/światła
       darkNormRef: 0.15,            // emisja tła w kolorze uv × min(1, ref / luminancja uv) (jasny uv → ciemniej)
@@ -331,7 +331,7 @@ export const CONFIG = Object.freeze({
       // świetlówki UV pod osią dźwigara: oprawa na 2 wspornikach, regularny rytm
       uvTube: { length: 1.2, thickness: 0.035, spacing: 4, housing: 0.06, housingWidth: 0.1, housingPad: 0.05,
         drop: 0.12, bracket: 0.03, bracketInset: 0.15, intensity: 1.5, lampClear: [1.5, 2.5] },
-      uvTubeMap: { reactor: { spacing: 8, length: 0.7, intensity: 0.8 } },   // Reactor: mniej „deszczu kresek” w mgle
+      uvTubeMap: { reactor: { spacing: 8, length: 0.7, intensity: 0.8, skipTall: true } },   // Reactor: mniej „deszczu kresek” w mgle
       conesMinSmoke: 48,            // stożki światła tylko gdy preset.smoke ≥ (High/Ultra)
       coneSegments: 24,
       coneTopRadius: 0.22,
@@ -385,7 +385,8 @@ export const CONFIG = Object.freeze({
     driftRadius: 1.4,       // promień wolnej orbity kłębu (m); prędkość = drift
     spin: 0.05,             // maks. prędkość obrotu tekstury (rad/s)
     baseGlow: 2.2,          // jasność bazowa (× darkNorm mapy)
-    lightGain: 1.8,         // ile koloru lampy łapie dym
+    lightGain: 1.8,
+    lightGainMap: { neonhive: 0.35 },   // Hive: dym przy podłodze nie tworzy owalnych plam w kolorze lamp         // ile koloru lampy łapie dym
     lightRangeScale: 0.9,
     lightDrop: 1.0,
     nearFade: [1.2, 3.5],   // zanik przy kamerze (m, głębia środka kłębu)

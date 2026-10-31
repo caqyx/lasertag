@@ -112,7 +112,7 @@ export function createSmoke(world, count, rng, opts = {}) {
     const L = lights[i];
     const lp = L ? lampPosition(world, L) : null;
     lightPos.push(L ? new THREE.Vector3(lp.x, L.y - SM.lightDrop, lp.z) : new THREE.Vector3());
-    lightCol.push(L ? new THREE.Color(lightColorHex(world, L.color)).multiplyScalar(SM.lightGain) : new THREE.Color(0, 0, 0));
+    lightCol.push(L ? new THREE.Color(lightColorHex(world, L.color)).multiplyScalar(SM.lightGain * (SM.lightGainMap[world.id] ?? 1)) : new THREE.Color(0, 0, 0));
     lightRange.push(L ? (L.range || CONFIG.render.lights.defaultRange) * SM.lightRangeScale : 1);
   }
 

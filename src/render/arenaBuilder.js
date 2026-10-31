@@ -1075,7 +1075,7 @@ export function buildArena(world, preset, textures, opts = {}) {
         if (nearLamp) continue;
         // nad wysoką bryłą (rdzeń do stropu) tuba wyglądałaby na zawieszoną w powietrzu → pomiń
         let overTall = false;
-        for (const sd of world.solids) {
+        if (U.skipTall) for (const sd of world.solids) {
           if (sd.y1 < yBot - 1.0) continue;
           const dx = x - sd.cx, dz = z - sd.cz;
           if (Math.abs(dx * sd.cos - dz * sd.sin) < sd.hx + 1.5 && Math.abs(dx * sd.sin + dz * sd.cos) < sd.hz + 1.5) overTall = true;
