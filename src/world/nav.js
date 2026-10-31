@@ -261,11 +261,13 @@ function finishNav(world, pr, cellOfRaw, cols, rows, cell) {
   const cover = new Uint8Array(count);
   for (let i = 0; i < count; i++) {
     const g = world.grid;
-    const n = querySolids(g, xs[i] - COVER_DIST, zs[i] - COVER_DIST, xs[i] + COVER_DIST, zs[i] + COVER_DIST);
+    const qd = COVER_DIST + CONFIG.elements.propCoverExtra;
+    const n = querySolids(g, xs[i] - qd, zs[i] - qd, xs[i] + qd, zs[i] + qd);
     for (let k = 0; k < n; k++) {
       const s = world.solids[g.outSolids[k]];
-      if (s.boundary || s.y1 < ys[i] + COVER_HEIGHT || s.y0 > ys[i] + P.stepHeight) continue;
-      if (circleDist2(s, xs[i], zs[i]) <= COVER_DIST * COVER_DIST) { cover[i] = 1; break; }
+      if (s.boundary || s.seeThrough || s.y1 < ys[i] + COVER_HEIGHT || s.y0 > ys[i] + P.stepHeight) continue;   // siatka nie osłania
+      const cd = COVER_DIST + (s.prop ? CONFIG.elements.propCoverExtra : 0);   // beczki/opony: mały obrys
+      if (circleDist2(s, xs[i], zs[i]) <= cd * cd) { cover[i] = 1; break; }
     }
   }
 

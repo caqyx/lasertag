@@ -357,6 +357,7 @@ function bruteRay(w, ox, oy, oz, dx, dy, dz, max) {
   if (dy < 0 && oy >= 0) { const t = -oy / dy; if (t < best) { best = t; idx = -1; } }
   if (dy > 0 && oy <= w.ceiling) { const t = (w.ceiling - oy) / dy; if (t < best) { best = t; idx = -1; } }
   w.solids.forEach((s, i) => {
+    if (s.seeThrough) return;   // siatka maskująca: przepuszcza promień (CONFIG.elements.net)
     const [lox, loz] = local(s, ox, oz);
     const ldx = dx * s.cos - dz * s.sin; const ldz = dx * s.sin + dz * s.cos;
     const o = [lox, oy, loz]; const d = [ldx, dy, ldz];

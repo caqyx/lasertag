@@ -42,6 +42,7 @@ export function createTextures({ size, anisotropy, palette, seed, bandSplit = fa
     if (name.startsWith('paint:')) tex = finish(drawPaint(name.slice(6), S, palette, rng, bandSplit), { srgb: false });
     else if (name === 'wall:color') tex = finish(drawWallColor(S, rng));
     else if (name === 'steel:grate') tex = finish(drawGrate(Math.min(S, 512), rng));
+    else if (name === 'net') tex = finish(drawNet(Math.min(S, T.netSize), rng), { srgb: false });
     else if (name === 'signs') tex = finish(drawSigns(Math.min(S, CONFIG.render.arena.signs.texSize), palette, rng), { repeat: false });
     else if (name === 'floor:color') tex = finish(drawFloorColor(S, rng));
     else if (name === 'floor:rough') tex = finish(drawFloorRough(S, rng), { srgb: false });
@@ -468,6 +469,40 @@ function drawGrate(S, rng) {
     grd.addColorStop(1, 'rgba(0,0,0,0)');
     g.fillStyle = grd;
     g.fillRect(x - r, y - r, r * 2, r * 2);
+  }
+  return c;
+}
+
+// siatka maskująca: ukośne oczka z linek + węzły + nieregularne pasy maskujące; luminancja = krycie (alphaMap, kanał G)
+function drawNet(S, rng) {
+  const N = T.net;
+  const c = makeCanvas(S, S);
+  const g = c.getContext('2d');
+  g.fillStyle = 'rgb(0,0,0)';
+  g.fillRect(0, 0, S, S);
+  const n = N.cells, lw = Math.max(1, (S / n) * N.rope);
+  g.strokeStyle = 'rgb(200,200,200)';
+  g.lineWidth = lw;
+  // oczka romb: dwie rodziny przekątnych, kafel bezszwowy (linie wychodzą poza brzeg i wracają z drugiej strony)
+  for (let k = -n; k <= 2 * n; k++) {
+    const o = (k * S) / n;
+    g.beginPath(); g.moveTo(o, 0); g.lineTo(o + S, S); g.stroke();
+    g.beginPath(); g.moveTo(o, S); g.lineTo(o + S, 0); g.stroke();
+  }
+  // węzły na skrzyżowaniach
+  g.fillStyle = 'rgb(230,230,230)';
+  for (let i = 0; i <= n; i++) for (let j = 0; j <= 2 * n; j++) {
+    const x = ((i + (j % 2) * 0.5) * S) / n, y = (j * S) / (2 * n);
+    g.beginPath(); g.arc(x, y, lw * 0.9, 0, Math.PI * 2); g.fill();
+  }
+  // pasy maskujące (wplecione „liście”): krótkie, półprzezroczyste prostokąty pod losowym kątem
+  for (let k = 0; k < N.strips; k++) {
+    const x = rng() * S, y = rng() * S, w = rr(rng, 0.04, 0.09) * S, h = rr(rng, 0.012, 0.025) * S;
+    const v = 90 + Math.floor(rng() * 70);
+    g.save(); g.translate(x, y); g.rotate(rng() * Math.PI);
+    g.fillStyle = `rgb(${v},${v},${v})`;
+    g.fillRect(-w / 2, -h / 2, w, h);
+    g.restore();
   }
   return c;
 }

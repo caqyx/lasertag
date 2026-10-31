@@ -3,7 +3,7 @@
 // Ośmiokąty foremne „flat” (boki N/E/S/W + 4 przekątne), środek w (0,0). Bok i ma normalną pod kątem 45°·i w płaszczyźnie
 // (x, z): i = 0 E (+x), 2 S (+z), 4 W, 6 N; nieparzyste = przekątne (1 SE, 3 SW, 5 NW, 7 NE).
 //   • pierścień zewnętrzny (apotema 15 m): pełne boki N/E/S/W, przejścia 3.0 m na przekątnych → narożniki hali,
-//   • pierścień środkowy (apotema 9.5 m): przejścia 3.0 m na bokach N/E/S/W, przekątne pełne,
+//   • pierścień środkowy (apotema 9.5 m): przejścia 3.0 m na bokach N/E/S/W, na przekątnych okna strzeleckie 1.6 m,
 //   • rdzeń (apotema 4.5 m): osłony połówkowe na bokach N/E/S/W, przekątne otwarte, filar-romb w środku.
 // Przejścia kolejnych pierścieni są obrócone o 45° — do środka idzie się spiralą, bez linii wzroku na wylot.
 // Pas spawnów między pierścieniem zewnętrznym a obwodem (4.8 m) przecina pośrodku osłona połówkowa każdej strony.
@@ -21,6 +21,7 @@ const R_OUT = 15;
 const R_MID = 9.5;
 const R_CORE = 4.5;
 const GAP = 3.0;               // szerokość przejść w pierścieniach
+const WIN = 1.6;               // szerokość okien strzeleckich (przekątne pierścienia środkowego)
 
 /** Prostopadłościan; rot w radianach jak Object3D.rotation.y (lokalne X = świat (cos rot, −sin rot)). */
 function box(x, z, w, d, h, kind, rot = 0, extra) {
@@ -37,13 +38,17 @@ function sidePiece(a, i, s0, s1, h, kind, extra) {
   return box(a * nx + tx * mid, a * nz + tz * mid, s1 - s0, T, h, kind, rot, extra);
 }
 
-/** Pierścień: boki z listy open (indeksy) mają przejście GAP pośrodku; boki z listy skip pominięte. */
-function ring(a, open, skip, h, kind, extra) {
+/** Pierścień: boki z listy open mają przejście GAP pośrodku, z listy win — okno strzeleckie WIN pośrodku; skip pominięte. */
+function ring(a, open, skip, h, kind, extra, win = []) {
   const half = a * TAN;
   const out = [];
   for (let i = 0; i < 8; i++) {
     if (skip.includes(i)) continue;
-    if (open.includes(i)) {
+    if (win.includes(i)) {
+      out.push(sidePiece(a, i, -half - EXT, -WIN / 2, h, kind, extra));
+      out.push({ ...sidePiece(a, i, -WIN / 2, WIN / 2, h, 'window', extra), h: undefined });
+      out.push(sidePiece(a, i, WIN / 2, half + EXT, h, kind, extra));
+    } else if (open.includes(i)) {
       out.push(sidePiece(a, i, -half - EXT, -GAP / 2, h, kind, extra));
       out.push(sidePiece(a, i, GAP / 2, half + EXT, h, kind, extra));
     } else {
@@ -67,7 +72,7 @@ function sym(list, items) {
 function buildWalls() {
   const w = [];
   w.push(...ring(R_OUT, [1, 3, 5, 7], [], WALL_H, 'wall', { paint: 'stripes', trim: 'primary' }));   // jeden kolor listwy na pierścień — ciągłość na stykach 45°
-  w.push(...ring(R_MID, [0, 2, 4, 6], [], WALL_H, 'wall', { paint: 'geo', trim: 'secondary' }));
+  w.push(...ring(R_MID, [0, 2, 4, 6], [], WALL_H, 'wall', { paint: 'geo', trim: 'secondary' }, [1, 3, 5, 7]));   // okna na przekątnych
   // rdzeń: tylko boki N/E/S/W jako osłony połówkowe (przekątne otwarte)
   for (const i of [0, 2, 4, 6]) {
     const half = R_CORE * TAN;
@@ -96,7 +101,10 @@ function buildWalls() {
   // narożniki: NE filar + osłona przed przejściem, NW osłona przed przejściem (równoległe do boków przekątnych)
   sym(w, [box(16.4, -16.4, 0.8, 0.8, CEILING, 'pillar', 45 * DEG)]);
   sym(w, [box(13.6, -13.6, 2.4, 0.4, HALF_H, 'half', -45 * DEG)]);  // styczna do boku NE (wzdłuż (1,1)/√2)
-  sym(w, [box(-13.6, -13.6, 2.4, 0.4, HALF_H, 'half', 45 * DEG)]);  // styczna do boku NW (wzdłuż (1,−1)/√2)
+  sym(w, [{ kind: 'net', x: -13.6, z: -13.6, w: 2.8, rot: 45 * DEG }]);   // siatka przed przejściem NW (widać, nie przejdziesz)
+  // beczki w narożniku NW, opony w pasach spawnów N i E (obrazy: S, W)
+  sym(w, [{ kind: 'barrel', x: -17.0, z: -15.6 }, { kind: 'barrel', x: -16.62, z: -16.0 }]);
+  sym(w, [{ kind: 'tires', x: 11, z: -17.6 }, { kind: 'tires', x: 17.6, z: -11 }]);
   return w;
 }
 

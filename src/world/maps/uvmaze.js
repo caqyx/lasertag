@@ -2,12 +2,13 @@
 //
 // Siatka 18×18 komórek po 2 m (arena 36×36 m, środek w (0,0)). Wiersz 0 = z min („północ"), kolumna 0 = x min („zachód").
 // Środek komórki (r, c): x = -18 + 2c + 1, z = -18 + 2r + 1.
-// Legenda: '#' ściana pełna 2.4 m, 'h' osłona połówkowa 1.1 m, 'o' filar 0.6×0.6 do sufitu, '.' pusto.
+// Legenda: '#' ściana pełna 2.4 m, 'h' osłona połówkowa 1.1 m, 'o' filar 0.6×0.6 do sufitu, 'w' okno strzeleckie
+// (parapet 1.1 m + nadproże od 1.85 m — CONFIG.elements.window), '.' pusto. Elementy poza siatką: walls (opony, beczki, siatki).
 //
 // Układ „trzy linie" (symetria obrotowa 180° wokół środka — (r, c) ↔ (17−r, 17−c); uczciwe strony N↔S i E↔W):
-//  - pierścień zewnętrzny (wiersze/kolumny 0 i 17) = korytarz spawnów; ostrogi N/S (c8–9) dzielą go na połowy,
+//  - pierścień zewnętrzny (wiersze/kolumny 0 i 17) = korytarz spawnów; siatki N/S (x = 0) dzielą go na połowy,
 //    ściany pierścienia (wiersze 1/16, kolumny 1/16) mają bramy co 3–4 komórki,
-//  - 3 linie N–S: lane W (kolumna 2), lane środkowy (c8–9: ostroga → okno 'hh' → plac → okno → ostroga), lane E (c15),
+//  - 3 linie N–S: lane W (kolumna 2), lane środkowy (c8–9: okno 'ww' → plac → okno 'ww'), lane E (c15),
 //  - 2 pasma poprzeczne (wiersze 2 i 15) z osłoną, łączące wszystkie bramy pierścienia,
 //  - plac centralny 16×12 m (wiersze 6–11, kolumny 5–12): 2 filary, 4 osłony, okna 'hh' w ścianach N/S, wejścia z lane W/E,
 //  - 2 małe place w parze obrotowej: NE (filar, otwarty na pierścień E przy spawnie E) i SW (filar, przy spawnie W),
@@ -15,24 +16,24 @@
 //    (inaczej szczelina 0.7 m — PLAN §3, strefa zahaczania 0.7–1.25 m).
 
 const ROWS = [
-  '........##........', //  0  N (spawny drużyny 0, ostroga środkowa)
+  '..................', //  0  N (spawny drużyny 0; siatka maskująca w osi x = 0 zamiast ostrogi)
   '.##.###.##.###.##.', //  1  ściana pierścienia N, bramy c3/c7/c10/c14
   '.#.......h......#.', //  2  pasmo N (korytarz poprzeczny, osłona)
   '...#.###..###.....', //  3  plac NE (otwarty na pierścień E)
   '.#.............o..', //  4  plac NE — filar
-  '.#.###.#hh#.##....', //  5  północna ściana placu z oknem 'hh'
+  '.#.###.#ww#.##....', //  5  północna ściana placu z oknem strzeleckim 'ww'
   '.#..#........#..#.', //  6  plac centralny
-  '.#..h.o....h....#.', //  7  plac centralny: filar W, osłona E
+  '.#..h.o.........#.', //  7  plac centralny: filar W (stos opon na E — walls)
   '.#.#.....h....#...', //  8  plac centralny: osłona środkowa
   '...#....h.....#.#.', //  9  plac centralny: osłona środkowa
-  '.#....h....o.h..#.', // 10  plac centralny: osłona W, filar E
+  '.#.........o.h..#.', // 10  plac centralny: filar E (stos opon na W — walls)
   '.#..#........#..#.', // 11  plac centralny
-  '....##.#hh#.###.#.', // 12  południowa ściana placu z oknem 'hh'
+  '....##.#ww#.###.#.', // 12  południowa ściana placu z oknem strzeleckim 'ww'
   '..o.............#.', // 13  plac SW — filar
   '.....###..###.#...', // 14  plac SW (otwarty na pierścień W)
   '.#......h.......#.', // 15  pasmo S (korytarz poprzeczny, osłona)
   '.##.###.##.###.##.', // 16  ściana pierścienia S
-  '........##........', // 17  S (spawny drużyny 1, ostroga środkowa)
+  '..................', // 17  S (spawny drużyny 1; siatka maskująca w osi x = 0)
 ];
 
 const CEILING = 4.5;
@@ -63,7 +64,14 @@ export default {
     heights: { wall: 2.4, half: 1.1, pillar: CEILING }, // wysokości brył z siatki
     pillarSize: 0.6,
   },
-  walls: [],
+  // Elementy (CONFIG.elements), każdy z obrazem 180°: siatki zamiast ostróg N/S (połowy pasa spawnów widzą się, nie przejdą),
+  // stosy opon na placu centralnym (zamiast osłon 'h'), para beczek na placu NE (i SW).
+  walls: [
+    { kind: 'net', x: 0, z: -17, w: 0.08, d: 2, rot: 0 }, { kind: 'net', x: 0, z: 17, w: 0.08, d: 2, rot: 0 },
+    { kind: 'tires', x: 5, z: -3 }, { kind: 'tires', x: -5, z: 3 },
+    { kind: 'barrel', x: 10.7, z: -11.2 }, { kind: 'barrel', x: 11.2, z: -10.95 },
+    { kind: 'barrel', x: -10.7, z: 11.2 }, { kind: 'barrel', x: -11.2, z: 10.95 },
+  ],
   ramps: [],
   decor: [],
   // Kolejność = priorytet (preset bierze pierwsze N): 2 → przekątna NE/SW, 4 → cztery ćwiartki, 6 → + plac, 8 → + pierścień N/S.

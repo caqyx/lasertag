@@ -353,7 +353,80 @@ function spawnPanel(rubberBuf, trimBuf, world, sp, frameColor, teamColor) {
 
 /** bryła wyniesiona (platforma lub barierka na galerii) → wygląd stalowej konstrukcji zamiast ściany z farbą */
 function isSteel(s) {
-  return !s.boundary && s.y0 > A.steelMinY && (s.kind === 'platform' || s.kind === 'half' || s.kind === 'wall');
+  return !s.boundary && !s.window && s.y0 > A.steelMinY && (s.kind === 'platform' || s.kind === 'half' || s.kind === 'wall');
+}
+
+// ---------------------------------------------------------------- elementy: beczki, opony, siatki (CONFIG.elements)
+
+// walec (ściana boczna) o promieniu r, y0..y1, n segmentów; inner = true → normalne do środka (wnętrze opony)
+function addCyl(buf, cx, cz, r, y0, y1, n, inner = false) {
+  const i0 = buf.count;
+  for (let k = 0; k <= n; k++) {
+    const a = (k / n) * Math.PI * 2, c = Math.cos(a), sn = Math.sin(a), sg = inner ? -1 : 1;
+    buf.vert(cx + c * r, y0, cz + sn * r, c * sg, 0, sn * sg, k / n, 0);
+    buf.vert(cx + c * r, y1, cz + sn * r, c * sg, 0, sn * sg, k / n, 1);
+  }
+  for (let k = 0; k < n; k++) {
+    const a = i0 + 2 * k;
+    if (inner) buf.quad(a, a + 2, a + 3, a + 1); else buf.quad(a, a + 1, a + 3, a + 2);   // CCW z zewnątrz (lub od środka)
+  }
+}
+// pierścień poziomy (pokrywa) r0..r1 na wysokości y, normalna w górę; r0 = 0 → pełny krąg
+function addDisc(buf, cx, cz, r0, r1, y, n) {
+  const i0 = buf.count;
+  for (let k = 0; k <= n; k++) {
+    const a = (k / n) * Math.PI * 2, c = Math.cos(a), sn = Math.sin(a);
+    buf.vert(cx + c * r0, y, cz + sn * r0, 0, 1, 0, 0, 0);
+    buf.vert(cx + c * r1, y, cz + sn * r1, 0, 1, 0, 0, 0);
+  }
+  for (let k = 0; k < n; k++) { const a = i0 + 2 * k; buf.quad(a, a + 2, a + 3, a + 1); }   // CCW patrząc z góry
+}
+// neonowy obręcz z n prętów
+function ringBars(buf, cx, y, cz, r, n, size, col) {
+  for (let k = 0; k < n; k++) {
+    const a0 = (k / n) * Math.PI * 2, a1 = ((k + 1) / n) * Math.PI * 2;
+    addBar(buf, cx + Math.cos(a0) * r, y, cz + Math.sin(a0) * r, cx + Math.cos(a1) * r, y, cz + Math.sin(a1) * r, size, size, col.r, col.g, col.b);
+  }
+}
+/** beczka / stos opon: korpus w buforze gumy (ciemny), obręcze neonowe w buforze listew */
+function addProp(bodyBuf, trimBuf, s, col, accentCol) {
+  const PR = A.props, n = PR.segments, r = s.radius, h = s.y1, t = A.trimSize * PR.trimScale;
+  if (s.prop === 'barrel') {
+    addCyl(bodyBuf, s.cx, s.cz, r, 0, h, n);
+    addDisc(bodyBuf, s.cx, s.cz, 0, r, h, n);
+    for (const f of PR.barrelBands) ringBars(trimBuf, s.cx, h * f, s.cz, r + t * 0.5, n, t, col);
+    ringBars(trimBuf, s.cx, h - t * 0.5, s.cz, r - t * 0.5, n, t * 0.8, accentCol);   // rant pokrywy
+    return;
+  }
+  // opony: k sztuk, każda = zewnętrzny walec + wewnętrzny + pokrywa-pierścień; neon na bieżniku co drugiej
+  const k = PR.tireCount, th = h / k, ri = r * PR.tireInner;
+  for (let j = 0; j < k; j++) {
+    const y0 = j * th + PR.tireGap, y1 = (j + 1) * th;
+    addCyl(bodyBuf, s.cx, s.cz, r, y0, y1, n);
+    addCyl(bodyBuf, s.cx, s.cz, ri, y0, y1, n, true);
+    addDisc(bodyBuf, s.cx, s.cz, ri, r, y1, n);
+    ringBars(trimBuf, s.cx, (y0 + y1) / 2, s.cz, r + t * 0.5, n, t, j % 2 ? accentCol : col);
+  }
+}
+/** siatka maskująca: ażur (bufor siatek barierek), słupki stalowe na końcach, neon na górnej krawędzi */
+function addNet(steelBuf, trimBuf, netBuf, s, col) {
+  const NT = A.net, longX = s.hx >= s.hz, L = longX ? s.hx : s.hz;
+  for (const end of [-1, 1]) {
+    if (longX) toWorld(s, end * L, 0, _wa); else toWorld(s, 0, end * L, _wa);
+    addBar(steelBuf, _wa[0], s.y0, _wa[1], _wa[0], s.y1, _wa[1], NT.post, NT.post, 1, 1, 1);
+  }
+  if (longX) { toWorld(s, -s.hx, 0, _wa); toWorld(s, s.hx, 0, _wb); } else { toWorld(s, 0, -s.hz, _wa); toWorld(s, 0, s.hz, _wb); }
+  const len = 2 * L, G = NT.tile;
+  const nx = longX ? -s.sin : s.cos, nz = longX ? -s.cos : -s.sin;
+  const yA = s.y0 + NT.bottomGap, yB = s.y1;
+  const i = netBuf.count;
+  netBuf.vert(_wa[0], yA, _wa[1], nx, 0, nz, 0, 0);
+  netBuf.vert(_wb[0], yA, _wb[1], nx, 0, nz, len / G, 0);
+  netBuf.vert(_wb[0], yB, _wb[1], nx, 0, nz, len / G, (yB - yA) / G);
+  netBuf.vert(_wa[0], yB, _wa[1], nx, 0, nz, 0, (yB - yA) / G);
+  netBuf.quad(i, i + 1, i + 2, i + 3);
+  addBar(trimBuf, _wa[0], yB, _wa[1], _wb[0], yB, _wb[1], A.trimSize, A.trimSize, col.r, col.g, col.b);
+  addBar(steelBuf, _wa[0], yA, _wa[1], _wb[0], yA, _wb[1], NT.post * 0.6, NT.post * 0.6, 1, 1, 1);
 }
 
 // prostopadłościan bryły do bufora stali; UV w metrach / kafel kratki (góra: x/z, boki: wzdłuż/wysokość)
@@ -924,6 +997,7 @@ export function buildArena(world, preset, textures, opts = {}) {
   const rubberBuf = new GeoBuf();
   const steelBuf = new GeoBuf();   // galerie/kładki/barierki/rampy: stal z kratką
   const railBuf = new GeoBuf();    // siatka barierek (ażur, alphaTest)
+  const netBuf = new GeoBuf();     // siatki maskujące (przezroczyste, CONFIG.elements.net)
   const covers = opts.covers || (() => false);
   const reflPassU = { value: 1 };   // 1 = normalny render; < 1 podczas renderu odbicia (wspólny uniform ścian)
   const cycle = A.boundaryCycle.includes(world.id);
@@ -951,6 +1025,11 @@ export function buildArena(world, preset, textures, opts = {}) {
   world.solids.forEach((s, i) => {
     if (covers(s)) return; // wizual dekoracji (np. rdzeń reaktora) zastępuje bryłę
     const tk = mainKey(s.trim, i);
+    if (s.prop) {   // beczka / opony: jeden wizual na grupę brył kolizji
+      if (s.group === i) addProp(rubberBuf, trimBuf, s, trimCol[tk && tk !== 'accent' ? tk : 'secondary'], trimCol.accent);
+      return;
+    }
+    if (s.kind === 'net') { addNet(steelBuf, trimBuf, netBuf, s, trimCol[tk && tk !== 'accent' ? tk : 'uv']); return; }
     if (isSteel(s)) {
       // obrysy galerii/barierek w kolorach przewodnich; czerwień (akcent) tylko jako krótkie pasy ostrzegawcze
       const ek = tk && tk !== 'accent' ? tk : (s.kind === 'platform' ? 'secondary' : 'primary');
@@ -1012,6 +1091,7 @@ export function buildArena(world, preset, textures, opts = {}) {
       }
     }
     if (s.trimBottom) trimLoop(trimBuf, s, s.y0 + A.trimSize / 2 + A.trimBottomLift, col);
+    if (s.lintel) trimLoop(trimBuf, s, s.y0 + A.trimSize / 2, col);   // górna krawędź otworu okna
   });
   // ramy przejść: listwa nad otworem między współliniowymi segmentami ścian (przerwa doorFrame.gap) — heks czytelny z oczu gracza
   if (A.doorFrame.maps.includes(world.id)) {
@@ -1273,6 +1353,24 @@ export function buildArena(world, preset, textures, opts = {}) {
       }));
       const m = new THREE.Mesh(own(geo), mat);
       m.name = 'railMesh';
+      group.add(m);
+    }
+  }
+
+  // siatki maskujące: przezroczyste (krycie z tekstury — z daleka półprzezroczysta mgiełka, bez znikania jak przy alphaTest),
+  // słaba emisja w kolorze uv (fluorescencja); bez zapisu głębi, obustronne
+  {
+    const geo = netBuf.toGeometry();
+    if (geo) {
+      const NT = A.net, tex = textures.get('net');
+      const mat = own(new THREE.MeshStandardMaterial({
+        color: NT.color, alphaMap: tex, transparent: true, opacity: NT.opacity, depthWrite: false,
+        side: THREE.DoubleSide, roughness: 0.9, metalness: 0,
+        emissive: new THREE.Color(pal.uv), emissiveMap: tex, emissiveIntensity: NT.glow * darkNorm,
+      }));
+      const m = new THREE.Mesh(own(geo), mat);
+      m.name = 'nets';
+      m.renderOrder = 2;
       group.add(m);
     }
   }

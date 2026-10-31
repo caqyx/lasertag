@@ -69,19 +69,26 @@ test('UV Maze: liczby i rodzaje brył, wysokości wg legendy', () => {
   for (const s of world.solids) byKind[s.kind] = (byKind[s.kind] || 0) + 1;
   const pillarsInGrid = uvmaze.grid.rows.join('').split('').filter((c) => c === 'o').length;
   assert.equal(byKind.pillar, pillarsInGrid);
-  assert.deepEqual(Object.keys(byKind).sort(), ['half', 'pillar', 'wall']);
+  assert.deepEqual(Object.keys(byKind).sort(), ['half', 'net', 'pillar', 'wall']);
+  const E = CONFIG.elements;
   for (const s of world.solids) {
+    if (s.boundary) { assert.equal(s.y0, 0); assert.equal(s.y1, 4.5); continue; }
+    if (s.lintel) { assert.equal(s.y0, E.window.lintel); assert.equal(s.y1, E.window.top); continue; }
     assert.equal(s.y0, 0);
-    if (s.boundary) { assert.equal(s.y1, 4.5); continue; }
+    if (s.prop) { assert.equal(s.y1, E[s.prop].h); continue; }   // beczki/opony: 2 bryły pod 0°/45°
+    if (s.kind === 'net') { assert.equal(s.y1, E.net.h); assert.equal(s.seeThrough, true); continue; }
     if (s.kind === 'wall') assert.equal(s.y1, 2.4);
     if (s.kind === 'half') assert.equal(s.y1, 1.1);
     if (s.kind === 'pillar') { assert.equal(s.y1, 4.5); assert.equal(s.hx, 0.3); assert.equal(s.hz, 0.3); }
     assert.ok(s.hx > 0 && s.hz > 0);
     assert.equal(s.rot, 0);
   }
-  // 58 = układ „trzy linie” (2026-10-31): 44 ściany w tym 4 obwodowe, 10 połówek (runy „hh” scalone), 4 filary (było 70 przy starym labiryncie).
-  // Zmiana mapy wymaga świadomej aktualizacji.
-  assert.equal(world.solids.length, 58);
+  // 70 = układ „trzy linie” + elementy (2026-10-31): 4 obwodowe, z siatki 38 ścian, 6 połówek, 4 filary, 2 okna 'ww'
+  // (parapet + nadproże = 4); z walls: 2 siatki, 2 stosy opon i 4 beczki (po 2 bryły kolizji = 12). Zmiana mapy = świadoma aktualizacja.
+  assert.equal(world.solids.filter((s) => s.prop).length, 12);
+  assert.equal(world.solids.filter((s) => s.kind === 'net').length, 2);
+  assert.equal(world.solids.filter((s) => s.window).length, 4);   // 2 okna 'ww' × (parapet + nadproże)
+  assert.equal(world.solids.length, 70);
 });
 
 test('obwód: dokładnie 4 bryły boundary, na zewnątrz bounds, szczelne narożniki, wysokość = sufit', () => {
@@ -112,16 +119,17 @@ test('obwód: dokładnie 4 bryły boundary, na zewnątrz bounds, szczelne naroż
 test('siatka: każda komórka #/h pokryta dokładnie jedną bryłą właściwego rodzaju, puste komórki wolne', () => {
   const rows = uvmaze.grid.rows;
   const cell = uvmaze.grid.cell;
-  const grid = world.solids.filter((s) => !s.boundary && s.kind !== 'pillar');
+  const grid = world.solids.filter((s) => !s.boundary && s.kind !== 'pillar' && !s.prop && s.kind !== 'net');   // bez elementów z walls
   for (let r = 0; r < rows.length; r++) {
     for (let c = 0; c < rows[r].length; c++) {
       const x = -18 + (c + 0.5) * cell;
       const z = -18 + (r + 0.5) * cell;
       const covering = grid.filter((s) => pointIn(s, x, 0.5, z));
       const ch = rows[r][c];
-      if (ch === '#' || ch === 'h') {
-        assert.equal(covering.length, 1, `komórka (${r},${c}) '${ch}' pokryta ${covering.length}×`);
+      if (ch === '#' || ch === 'h' || ch === 'w') {
+        assert.equal(covering.length, 1, `komórka (${r},${c}) '${ch}' pokryta ${covering.length}×`);   // y = 0.5: okno → sam parapet
         assert.equal(covering[0].kind, ch === '#' ? 'wall' : 'half');
+        assert.equal(covering[0].window, ch === 'w');
       } else {
         assert.equal(covering.length, 0, `komórka (${r},${c}) '${ch}' zajęta przez bryłę`);
       }
@@ -132,12 +140,12 @@ test('siatka: każda komórka #/h pokryta dokładnie jedną bryłą właściwego
 test('scalanie runów: każdy poziomy run długości ≥ 2 to jedna bryła; bryły nie są pocięte', () => {
   const rows = uvmaze.grid.rows;
   const cell = uvmaze.grid.cell;
-  const grid = world.solids.filter((s) => !s.boundary && s.kind !== 'pillar');
+  const grid = world.solids.filter((s) => !s.boundary && s.kind !== 'pillar' && !s.prop && s.kind !== 'net' && !s.lintel);
   for (let r = 0; r < rows.length; r++) {
     let c = 0;
     while (c < rows[r].length) {
       const ch = rows[r][c];
-      if (ch !== '#' && ch !== 'h') { c++; continue; }
+      if (ch !== '#' && ch !== 'h' && ch !== 'w') { c++; continue; }
       let e = c;
       while (e + 1 < rows[r].length && rows[r][e + 1] === ch) e++;
       if (e > c) {

@@ -555,15 +555,18 @@ function halfCoverNear(world) {
   const C = CONFIG.bots;
   const solids = world.solids;
   const lim2 = C.halfCoverDist * C.halfCoverDist;
+  const limP = C.halfCoverDist + CONFIG.elements.propCoverExtra;   // beczki/opony: mały obrys (jak nav.cover)
+  const limP2 = limP * limP;
   for (let i = 0; i < solids.length; i++) {
     const so = solids[i];
+    if (so.seeThrough === true) continue;   // siatka nie osłania
     const top = so.y1 - HC[1];
     if (top < C.halfCover[0] || top > C.halfCover[1] || so.y0 - HC[1] > C.halfCoverBase) continue;
     const dx = HC[0] - so.cx, dz = HC[2] - so.cz;
     const lx = dx * so.cos - dz * so.sin, lz = dx * so.sin + dz * so.cos;
     const qx = lx < -so.hx ? lx + so.hx : lx > so.hx ? lx - so.hx : 0;
     const qz = lz < -so.hz ? lz + so.hz : lz > so.hz ? lz - so.hz : 0;
-    if (qx * qx + qz * qz <= lim2) return true;
+    if (qx * qx + qz * qz <= (so.prop !== '' ? limP2 : lim2)) return true;
   }
   return false;
 }

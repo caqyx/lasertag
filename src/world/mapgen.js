@@ -26,7 +26,8 @@ const PAINTS = ['stripes', 'geo', 'splatter', 'grid'];
 const TRIM_PS = ['primary', 'secondary'];
 const TRIM_HALF = ['accent', 'secondary'];
 
-const KIND_OF = { '#': 'wall', h: 'half', o: 'pillar' };
+const KIND_OF = { '#': 'wall', h: 'half', o: 'pillar', w: 'window' };
+const RUN_CHARS = '#hw';   // znaki scalane w runy (prostokąty)
 
 /**
  * @param {object} mapData  MapData (PLAN §1)
@@ -42,7 +43,7 @@ export function buildWorld(mapData, opts) {
 
   const solids = [];
   if (mapData.grid) addGridSolids(mapData, bounds, solids);
-  for (const wall of mapData.walls || []) solids.push(solidFromWall(wall));
+  for (const wall of mapData.walls || []) expandWall(wall, solids);
   addPerimeter(mapData, bounds, solids);
 
   const ramps = (mapData.ramps || []).map(rampFromData);
@@ -106,9 +107,10 @@ function addGridSolids(mapData, bounds, out) {
 
   const box = (kind, c0, c1, r0, r1, h) => {
     // komórki [c0..c1] × [r0..r1] włącznie
-    out.push(makeSolid(kind,
-      x0 + (c0 + c1 + 1) * cell / 2, z0 + (r0 + r1 + 1) * cell / 2,
-      (c1 - c0 + 1) * cell / 2, (r1 - r0 + 1) * cell / 2, 0, h, 0));
+    const cx = x0 + (c0 + c1 + 1) * cell / 2, cz = z0 + (r0 + r1 + 1) * cell / 2;
+    const hx = (c1 - c0 + 1) * cell / 2, hz = (r1 - r0 + 1) * cell / 2;
+    if (kind === 'window') { pushWindow(out, cx, cz, hx, hz, 0, null); return; }
+    out.push(makeSolid(kind, cx, cz, hx, hz, 0, h, 0));
   };
 
   // 1) runy poziome tego samego znaku, długość ≥ 2
@@ -116,7 +118,7 @@ function addGridSolids(mapData, bounds, out) {
     let c = 0;
     while (c < nc) {
       const ch = rows[r][c];
-      if (ch !== '#' && ch !== 'h') { c++; continue; }
+      if (!RUN_CHARS.includes(ch)) { c++; continue; }
       let e = c;
       while (e + 1 < nc && rows[r][e + 1] === ch) e++;
       if (e > c) {
@@ -131,7 +133,7 @@ function addGridSolids(mapData, bounds, out) {
     let r = 0;
     while (r < nr) {
       const ch = rows[r][c];
-      if ((ch !== '#' && ch !== 'h') || used[r * nc + c]) { r++; continue; }
+      if (!RUN_CHARS.includes(ch) || used[r * nc + c]) { r++; continue; }
       let e = r;
       while (e + 1 < nr && rows[e + 1][c] === ch && !used[(e + 1) * nc + c]) e++;
       box(KIND_OF[ch], c, c, r, e, heightOf(ch));
@@ -155,6 +157,62 @@ function solidFromWall(wl) {
   if (wl.trim !== undefined) s.trim = wl.trim;
   if (wl.trimBottom !== undefined) s.trimBottom = !!wl.trimBottom;
   return s;
+}
+
+/**
+ * Bryła z MapData.walls → 1+ bryły. Makra (CONFIG.elements):
+ *   window — parapet (half, 0..sill) + nadproże (wall, lintel..top, flaga lintel); otwór sill..lintel przepuszcza wzrok i strzał,
+ *   barrel / tires — okrągła osłona: 2 kwadraty (0° i 45°) o połowie boku r·k (gwiazda ≈ koło r), flaga prop, wspólna grupa,
+ *   net — siatka maskująca: blokuje ruch, flaga seeThrough (raycast i linia wzroku ją pomijają).
+ */
+function expandWall(wl, out) {
+  const E = CONFIG.elements;
+  const kind = wl.kind || 'wall';
+  if (kind === 'window') {
+    pushWindow(out, wl.x, wl.z, wl.w / 2, wl.d / 2, wl.rot || 0, wl);
+    return;
+  }
+  if (kind === 'barrel' || kind === 'tires') {
+    const P = E[kind];
+    const r = wl.r ?? P.r;
+    const h = wl.h ?? P.h;
+    const a = r * P.k;
+    const rot = wl.rot || 0;
+    const group = out.length;
+    for (let k = 0; k < 2; k++) {
+      const s = makeSolid('half', wl.x, wl.z, a, a, 0, h, rot + k * Math.PI / 4);
+      s.prop = kind; s.group = group; s.radius = r;
+      s.paint = 'none';
+      if (wl.trim !== undefined) s.trim = wl.trim;
+      out.push(s);
+    }
+    return;
+  }
+  if (kind === 'net') {
+    const s = makeSolid('net', wl.x, wl.z, wl.w / 2, (wl.d ?? E.net.t) / 2, wl.y || 0, (wl.y || 0) + (wl.h ?? E.net.h), wl.rot || 0);
+    s.seeThrough = true;
+    s.paint = 'none';
+    s.trim = wl.trim ?? 'uv';
+    s.trimBottom = false;
+    out.push(s);
+    return;
+  }
+  out.push(solidFromWall(wl));
+}
+
+/** Okno strzeleckie: parapet + nadproże o wspólnym obrysie (cx, cz, hx, hz, rot). ext = pola paint/trim z danych. */
+function pushWindow(out, cx, cz, hx, hz, rot, ext) {
+  const W = CONFIG.elements.window;
+  const sill = makeSolid('half', cx, cz, hx, hz, 0, W.sill, rot);
+  const lintel = makeSolid('wall', cx, cz, hx, hz, W.lintel, W.top, rot);
+  sill.window = true; lintel.window = true; lintel.lintel = true;
+  if (ext) {
+    for (const s of [sill, lintel]) {
+      if (ext.paint !== undefined) s.paint = ext.paint;
+      if (ext.trim !== undefined) s.trim = ext.trim;
+    }
+  }
+  out.push(sill, lintel);
 }
 
 function addPerimeter(mapData, b, out) {
@@ -184,6 +242,14 @@ function makeSolid(kind, cx, cz, hx, hz, y0, y1, rot) {
     kind, cx, cz, hx, hz, y0, y1, rot,
     cos: Math.cos(rot), sin: Math.sin(rot),
     paint: undefined, trim: undefined, trimBottom: undefined, boundary: false,
+    // elementy (CONFIG.elements): stały kształt obiektu dla V8 (te same pola w każdej bryle)
+    seeThrough: false,   // siatka: blokuje ruch, nie wzrok/strzał
+    window: false,       // część okna strzeleckiego (parapet / nadproże)
+    lintel: false,       // nadproże okna (wisi nad otworem — render jak ściana, nie stal)
+    prop: '',            // 'barrel' | 'tires' — okrągła osłona renderowana raz na grupę
+    group: -1,           // indeks pierwszej bryły grupy (prop)
+    radius: 0,           // promień wizualny propa
+    mover: -1,           // indeks drzwi przesuwnych (MapData.doors) lub -1
   };
 }
 
@@ -384,7 +450,7 @@ function freeLine(world, x, y, z, dx, dz) {
     }
     if (t0 <= t1 && t0 >= 0 && t0 < best) best = t0;
   };
-  for (const s of world.solids) test(s, s.y0, s.y1);
+  for (const s of world.solids) if (!s.seeThrough) test(s, s.y0, s.y1);   // siatka nie zasłania widoku
   for (const r of world.ramps) test(r, 0, Math.max(r.y0, r.y1)); // rampa zachowawczo jako prostopadłościan
   return best;
 }

@@ -508,7 +508,7 @@ function pointInSolid(world) {
   const out = g.outSolids;
   for (let k = 0; k < n; k++) {
     const s = solids[out[k]];
-    if (y < s.y0 || y > s.y1) continue;
+    if (s.seeThrough === true || y < s.y0 || y > s.y1) continue;
     const dx = x - s.cx;
     const dz = z - s.cz;
     const lx = dx * s.cos - dz * s.sin;
@@ -593,7 +593,9 @@ function raycastInternal(world, outHit) {
       const i = g.solidItems[j];
       if (sStamp[i] === st) continue;
       sStamp[i] = st;
-      rayObb(solids[i], i);
+      const so = solids[i];
+      if (so.seeThrough === true) continue;   // siatka maskująca: przepuszcza wzrok i strzał
+      rayObb(so, i);
     }
     for (let j = g.rampStart[kCell], e = g.rampStart[kCell + 1]; j < e; j++) {
       const i = g.rampItems[j];

@@ -170,6 +170,15 @@ export const CONFIG = Object.freeze({
     },
   },
 
+  // Elementy map rozwijane przez mapgen z MapData.walls (kind: window | barrel | tires | net) i MapData.doors.
+  elements: {
+    window: { sill: 1.1, lintel: 1.85, top: 2.4 },   // parapet 0..sill, otwór sill..lintel (oko stojącego 1.65 widzi), nadproże lintel..top
+    barrel: { r: 0.32, h: 1.05, k: 0.86 },          // beczka: promień, wysokość (> oko kucającego 1.0 → osłona); kolizja = gwiazda 2 kwadratów o połowie boku r·k
+    tires: { r: 0.45, h: 1.05, k: 0.86 },           // stos opon (3 × 0.35 m)
+    net: { h: 2.2, t: 0.08 },                       // siatka maskująca: wysokość, grubość (blokuje ruch, przepuszcza wzrok i strzał)
+    propCoverExtra: 0.3,    // m — beczki/opony: większy zasięg flagi cover (nav) i kucania (bots.halfCoverDist) — mały obrys, węzły dalej od krawędzi
+  },
+
   nav: {
     cell: 1.0,              // rozdzielczość próbkowania węzłów
     clearance: 0.45,        // min. odległość węzła od ściany
@@ -211,6 +220,8 @@ export const CONFIG = Object.freeze({
       paintWide: 2.5,         // szerokość kafla farby = S × to (S ≥ paintWideFrom), inaczej 2 × S
       paintWideFrom: 1024,
       accentShare: 0.08,      // udział akcentu wśród drobnych elementów farby
+      netSize: 256,           // tekstura siatki maskującej
+      net: { cells: 6, rope: 0.12, strips: 26 },   // oczka na kafel, grubość linki (× oczko), pasy maskujące
       paintVJitter: ['neonhive', 'reactor', 'orbita'],   // losowe przesunięcie farby w pionie per ściana
       bandSplit: ['neonhive', 'reactor', 'orbita'],      // styl stripes: poziome taśmy w odcinkach (nie przez cały kafel)
       paintBlur: [1.0, 0.0004], // rozmycie masek farby σ = max([0] px, szer. kafla × [1]) — shader wyostrza (SDF-lite)
@@ -289,6 +300,8 @@ export const CONFIG = Object.freeze({
       spawnPanel: { width: 1.6, height: 0.9, depth: 0.04, y: 1.45, intensity: 0.9, marker: 0.16, trimScale: 0.8 },
       rampWarn: { inset: 0.08, lift: 0.01, width: 0.06, height: 0.012, k: 0.8 },   // pasy ostrzegawcze na końcach ramp
       platformWarn: { spacing: 1.8, length: 0.32, k: 0.75 },   // krótkie skośne pasy ostrzegawcze na czołach galerii
+      props: { segments: 16, trimScale: 0.8, barrelBands: [0.28, 0.72], tireCount: 3, tireInner: 0.55, tireGap: 0.02 },   // beczki / opony
+      net: { post: 0.07, tile: 0.9, bottomGap: 0.04, color: '#1a1830', opacity: 0.85, glow: 0.35 },   // siatka maskująca: słupki, kafel tekstury (m), materiał (przezroczysty, emisja uv)
       rail: { kick: 0.25, postSpacing: 1.2, post: 0.06, rail: 0.05, midY: 0.5, meshAlphaTest: 0.35 },   // barierki: ażur
       floorRoughnessMap: { neonhive: 1.3, reactor: 0.55 },   // Hive: szersze, miękkie pobłyski PointLight (bez owalnych „decali”)
       floorRoughness: 0.75,         // × roughnessMap (≈0.6) → ~0.45 (półpołysk)
