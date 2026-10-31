@@ -28,12 +28,17 @@ W repo **nie było `docs/SPEC.md` ani `reference/ref1–4.png`**.
 | Mapa | Iteracje (wynik recenzenta) | Ostatnie zrzuty |
 |---|---|---|
 | UV Maze | 4/12 → 4/12 → **12/12** | `screenshots/review3/`, `screenshots/iter6/` |
-| Neon Hive | 9 → 10 → 10 → 9/12 | `screenshots/iter8/` |
-| Reactor | 7 → 9 → 10 → 10/12 (+ poprawka mgły po ocenie) | `screenshots/iter8b/` |
+| Neon Hive | 9 → 10 → 10 → 9 → 9/12 (runda dodatkowa iter9) | `screenshots/iter9/` |
+| Reactor | 7 → 9 → 10 → 10 → **11/12** (runda dodatkowa iter9) | `screenshots/iter9/` |
 
-Finalne zrzuty wszystkich map na Ultra: `screenshots/final/` (UV Maze z iter6, Neon Hive z iter8, Reactor z iter8b).
+Finalne zrzuty wszystkich map na Ultra: `screenshots/final/` (UV Maze z iter6, Neon Hive i Reactor z iter9).
 
-**Otwarte punkty M4 (ostatnie oceny):**
+**Runda dodatkowa (iter9, na prośbę użytkownika):**
+- Reactor 11/12. Jedyne NIE to podłoga (za mało połysku); uwagi: przepalony środek rdzenia, jasna mgła pod sufitem w overview.
+- Neon Hive 9/12. NIE: halo lamp jako twarde „grzyby”, heksy czytelne z dekoru, a nie z architektury, dwa kleksy na podłodze.
+- Czytelność heksów to problem bryły (komory w danych mapy wyglądają z poziomu oka jak boksy). Wymaga przeprojektowania ścian w `maps/neonhive.js`, a nie samego renderu.
+
+**Otwarte punkty M4 (oceny przed iter9):**
 - Neon Hive (NIE: mgła/dym, czytelność heksów, artefakty):
   - stożki światła wciąż odbierane jako bryły z krawędzią;
   - owalne plamy światła na podłodze;
