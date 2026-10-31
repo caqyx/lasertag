@@ -850,12 +850,12 @@ export function buildArena(world, preset, textures, opts = {}) {
   const steelBuf = new GeoBuf();   // galerie/kładki/barierki/rampy: stal z kratką
   const railBuf = new GeoBuf();    // siatka barierek (ażur, alphaTest)
   const covers = opts.covers || (() => false);
-  const reflPassU = { value: 1 };
+  const reflPassU = { value: 1 };   // 1 = normalny render; < 1 podczas renderu odbicia (wspólny uniform ścian)
   const cycle = A.boundaryCycle.includes(world.id);
   const topLine = A.topLine.maps.includes(world.id);
   let boundaryIdx = 0;
   let signIdx = 0;
-  const signBuf = new GeoBuf();   // 1 = normalny render; < 1 podczas renderu odbicia (wspólny uniform ścian)
+  const signBuf = new GeoBuf();
   const warnKey = fullAccent ? 'accent' : 'secondary';
 
   const setCur = (buf, aKey, bKey, washKey, top, bot) => {

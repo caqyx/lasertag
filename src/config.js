@@ -151,7 +151,8 @@ export const CONFIG = Object.freeze({
     holdView: [6, 25],      // m — zakres odległości widocznych węzłów liczonych jako „widok na przejście"
     holdRange: [4, 20],     // m — odległość pozycji zasadzki od bota
     holdSweep: 0.35,        // rad — amplituda rozglądania się w zasadzce
-    halfCover: [0.9, 1.4],  // m — wysokość osłony połówkowej (kucanie za nią)
+    halfCover: [1.05, 1.4], // m — wysokość osłony połówkowej nad podłogą węzła (min > player.crouchEyeHeight)
+    halfCoverBase: 0.2,     // m — maks. wysokość spodu osłony nad podłogą węzła
     halfCoverDist: 1.2,     // m — maks. odległość krawędzi osłony od węzła
     // słuch: strzały w promieniu → podejście (z flanki: level.flankChance)
     hearRadius: 15,

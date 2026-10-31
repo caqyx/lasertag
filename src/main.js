@@ -9,7 +9,6 @@ import { MAPS } from './world/maps/index.js';
 import { buildWorld } from './world/mapgen.js';
 import { buildNav } from './world/nav.js';
 import { raycastWorld, createHit } from './world/physics.js';
-import * as movement from './game/movement.js';
 import { createGraphics } from './render/graphics.js';
 import { applyDebugCam, listDebugCams } from './render/debugCams.js';
 import { resetInputState } from './game/input/inputState.js';
@@ -312,15 +311,11 @@ function boot(graphics) {
 
   // --- Kamera gracza: wygładzona wysokość oka (kucanie) + death cam ---
   const CC = CONFIG.camera;
+  const TWO_PI = Math.PI * 2;
   const upHit = createHit();
   let eyeY = eyeHeight;          // wygładzony offset oka nad stopami
   let deadCam = false;           // death cam aktywna (wykrycie przejścia alive → eliminated)
   let deathT = 0, deathYaw = 0, deathPitch = 0, deathTopH = 0;
-
-  /** Docelowa wysokość oka: movement.eyeHeightOf(body) (kucanie), do czasu jego dodania — CONFIG.player.eyeHeight. */
-  function eyeTarget(b) {
-    return typeof movement.eyeHeightOf === 'function' ? movement.eyeHeightOf(b) : eyeHeight;
-  }
 
   function placeCamera(alpha, dt) {
     if (debugCam) return;
@@ -328,7 +323,7 @@ function boot(graphics) {
     const x = player.prevX + (b.x - player.prevX) * alpha;
     const y = player.prevY + (b.y - player.prevY) * alpha;
     const z = player.prevZ + (b.z - player.prevZ) * alpha;
-    eyeY += (eyeTarget(b) - eyeY) * (1 - Math.exp(-CC.eyeSmoothing * dt));
+    eyeY += (b.eyeHeight - eyeY) * (1 - Math.exp(-CC.eyeSmoothing * dt));
     if (player.state !== 'alive') { deathCamera(x, y, z, dt); return; }
     deadCam = false;
     camera.position.set(x, y + eyeY, z);
@@ -364,10 +359,9 @@ function boot(graphics) {
       if (hz > 1e-3) {
         const k = 1 - Math.exp(-CC.deathLookRate * dt);
         let d = Math.atan2(-dx, -dz) - deathYaw;
-        while (d > Math.PI) d -= Math.PI * 2;
-        while (d < -Math.PI) d += Math.PI * 2;
+        d -= TWO_PI * Math.round(d / TWO_PI);
         deathYaw += d * k;
-        deathPitch += (Math.atan2(kb.y + eyeHeight - cy, hz) - deathPitch) * k;
+        deathPitch += (Math.atan2(kb.y + kb.eyeHeight - cy, hz) - deathPitch) * k;
       }
     }
     camera.rotation.set(deathPitch, deathYaw, 0);

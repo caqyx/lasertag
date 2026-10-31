@@ -8,7 +8,7 @@
 // Ochrona celu: wiązka zatrzymuje się na nim, SHOT.value = 2, brak HIT i brak zmian HP/punktów.
 
 import { CONFIG } from '../config.js';
-import { raycastWorldBuf, RAYARG, segmentClearSeg, SEG, createHit } from '../world/physics.js';
+import { raycastWorldBuf, RAYARG, segmentClearSeg, SEG, createHit, groundHeight } from '../world/physics.js';
 import { EV } from '../core/events.js';
 import { SENSOR_OFFSETS, resetVitals, placeAt } from './participant.js';
 import { resetWeapon } from './weapon.js';
@@ -64,7 +64,7 @@ export function eyeRay(P, out) {
   const b = P.body;
   const cp = Math.cos(b.pitch);
   out.ox = b.x;
-  out.oy = b.y + eyeOf(b);
+  out.oy = b.y + b.eyeHeight;
   out.oz = b.z;
   out.dx = -Math.sin(b.yaw) * cp;
   out.dy = Math.sin(b.pitch);
@@ -87,7 +87,7 @@ export function muzzlePoint(P, out) {
   const fx = -sy * cp, fy = sp, fz = -cy * cp;
   const ox = o[0], oy = o[1], of = -o[2];
   out.x = b.x + rx * ox + ux * oy + fx * of;
-  out.y = b.y + eyeOf(b) + uy * oy + fy * of;
+  out.y = b.y + b.eyeHeight + uy * oy + fy * of;
   out.z = b.z + rz * ox + uz * oy + fz * of;
   return out;
 }
@@ -423,7 +423,8 @@ export function pickSpawn(sim, P) {
 
 /**
  * Wszystkie spawny zajęte: punkt o spawnOffset od sp w jednym z 8 kierunków — linia od spawnu wolna od brył
- * (na wysokości bioder i oka, z zapasem promienia), bez uczestnika w spawnOccupiedRadius. Brak → sp.
+ * (na wysokości bioder i oka, z zapasem promienia), podłoga w punkcie ≈ sp.y (±0.05), bez uczestnika
+ * w spawnOccupiedRadius. Brak → sp.
  */
 function spawnOffset(sim, P, sp) {
   const C = CONFIG.combat;
@@ -436,6 +437,9 @@ function spawnOffset(sim, P, sp) {
     const dx = ALT_DIRS[k * 2], dz = ALT_DIRS[k * 2 + 1];
     const x = sp.x + dx * off, z = sp.z + dz * off;
     if (x < b.minX + r || x > b.maxX - r || z < b.minZ + r || z > b.maxZ - r) continue;
+    // podłoga w punkcie docelowym na wysokości spawnu (spawn na galerii: nie spadaj z krawędzi)
+    const gy = groundHeight(sim.world, x, z, sp.y + CONFIG.physics.stepHeight, r);
+    if (gy < sp.y - 0.05 || gy > sp.y + 0.05) continue;
     SEG[0] = sp.x; SEG[1] = sp.y + 0.5; SEG[2] = sp.z;
     SEG[3] = sp.x + dx * reach; SEG[4] = sp.y + 0.5; SEG[5] = sp.z + dz * reach;
     if (!segmentClearSeg(sim.world)) continue;

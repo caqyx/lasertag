@@ -71,7 +71,9 @@ export function setupRoster(modeId, opts = {}) {
       color = teamColor(team);
     } else {
       // gracz dostaje kolor pc, boty kolejne kolory z pominięciem koloru gracza
-      const k = isPlayer ? pc : (pc + i) % ffaColors.length;
+      // (cykl po len−1 kolorach — przy > len uczestnikach bot nie dostaje koloru gracza)
+      const len = ffaColors.length;
+      const k = isPlayer ? pc : (pc + 1 + (i - 1) % (len - 1)) % len;
       color = ffaColors[k];
     }
     roster.push({

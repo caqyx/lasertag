@@ -227,5 +227,6 @@ tests/                unit/*.test.mjs (node --test), smoke/*.mjs (Playwright), t
 | D-013 | 2026-10-30 | Sprint tylko gdy moveZ > 0 i moveZ ≥ |moveX|. | Brak sprintu bokiem przy wejściu analogowym/botach. |
 | D-014 | 2026-10-30 | Obwód areny: ściany 1 m na zewnątrz bounds; spawny team = strona (N0,S1,E2,W3); tdm2 używa team%2. | Jedna konwencja danych dla wszystkich trybów. |
 | D-015 | 2026-10-30 | Prędkości: chód 3.8 m/s, sprint 5.6 m/s (było 5.2/7.6). | Feedback z gry: „za szybko”; hala laser tag = tempo chodu. |
-| D-016 | 2026-10-30 | Hit stun 0.45 s + boty w stylu zasadzkowym (HOLD przy osłonie, flankowanie na dźwięk, patrol chodem, krótszy dystans ognia). | Feedback: „chodzi o atakowanie nagle zamiast nawalania się”. |
+| D-016 | 2026-10-30 | Hit stun 0.45 s + boty w stylu zasadzkowym (HOLD przy osłonie, flankowanie na dźwięk, patrol chodem, krótszy dystans ognia). Percepcja bota w HOLD-kucu liczona z wysokości oka stojącego — celowo („wyglądanie” zza osłony połówkowej). | Feedback: „chodzi o atakowanie nagle zamiast nawalania się”. |
 | D-017 | 2026-10-30 | Kolizje uczestnik–uczestnik (koło vs koło) + ukrywanie awatara przy kamerze; kucanie (C). | Feedback: „czarny klocek” = kamera w korpusie bota; brak kucania. |
+| D-018 | 2026-10-31 | Ciała wyeliminowanych nie blokują żywych (separacja tylko żywy–żywy). | Unika blokowania przejść i rozpychania przy respawnie. |

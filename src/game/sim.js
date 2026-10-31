@@ -94,8 +94,8 @@ const SEPARATION_PASSES = 3;   // iteracje rozpychania (n ≤ 16 → O(n²) tani
 const SEP_EPS = 1e-4;          // m — zapas po rozepchnięciu
 
 /**
- * Separacja ciał uczestników: koło vs koło w XZ, gdy zakresy Y [y, y+height] się nakładają. Żywi rozpychani po połowie
- * (wyeliminowany stoi — żywy dostaje całe przesunięcie), składowa prędkości „w siebie" usuwana, potem ponowne
+ * Separacja ciał żywych uczestników: koło vs koło w XZ, gdy zakresy Y [y, y+height] się nakładają; rozpychani po połowie.
+ * Ciała wyeliminowanych nie blokują (D-018). Składowa prędkości „w siebie" usuwana, potem ponowne
  * rozwiązanie kolizji ze ścianami (żeby nie wepchnąć w ścianę). Bez alokacji.
  */
 function separateParticipants(sim) {
@@ -106,11 +106,10 @@ function separateParticipants(sim) {
     for (let i = 0; i < n; i++) {
       const A = ps[i];
       const a = A.body;
-      const aMov = A.state === 'alive';
+      if (A.state !== 'alive') continue;   // D-018: wyeliminowani nie blokują żywych
       for (let j = i + 1; j < n; j++) {
         const B = ps[j];
-        const bMov = B.state === 'alive';
-        if (!aMov && !bMov) continue;
+        if (B.state !== 'alive') continue;
         const b = B.body;
         if (a.y >= b.y + b.height || b.y >= a.y + a.height) continue;
         let dx = a.x - b.x;
@@ -123,8 +122,7 @@ function separateParticipants(sim) {
         const nx = dx / d;
         const nz = dz / d;
         const pen = rr - (d2 < 1e-18 ? 0 : d) + SEP_EPS;
-        const wa = aMov ? (bMov ? 0.5 : 1) : 0;
-        const wb = bMov ? (aMov ? 0.5 : 1) : 0;
+        const wa = 0.5, wb = 0.5;
         if (wa > 0) {
           a.x += nx * pen * wa; a.z += nz * pen * wa;
           const vn = a.vx * nx + a.vz * nz;

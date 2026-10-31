@@ -10,7 +10,7 @@
 import { CONFIG } from '../../config.js';
 import { segmentClearSeg, SEG } from '../../world/physics.js';
 import { nearestNodeBuf, NEAR, findPath, randomNode, smoothPath } from '../../world/nav.js';
-import { isEnemy, sameTeam, eyeOf, heightScale } from '../combat.js';
+import { isEnemy, sameTeam, heightScale } from '../combat.js';
 import { skillScale, stepAdapt } from './adapt.js';
 
 export const BOT_STATE = Object.freeze({ PATROL: 'patrol', HOLD: 'hold', ENGAGE: 'engage', COVER: 'cover', CHASE: 'chase' });
@@ -313,7 +313,7 @@ function perceive(B, P, sim) {
       const hl = Math.sqrt(dx * dx + dz * dz);
       if (hl > 1e-3 && (dx * fx + dz * fz) / hl < cosHalf) continue;
     }
-    SEG[0] = b.x; SEG[1] = b.y + eye; SEG[2] = b.z; SEG[3] = q.x; SEG[4] = q.y + eyeOf(q); SEG[5] = q.z;
+    SEG[0] = b.x; SEG[1] = b.y + eye; SEG[2] = b.z; SEG[3] = q.x; SEG[4] = q.y + q.eyeHeight; SEG[5] = q.z;
     if (!segmentClearSeg(sim.world)) continue;   // kucający cel za połówką jest niewidoczny
     best = Q; bestD = d2; bestProt = prot;
   }
@@ -489,7 +489,7 @@ function startHold(B, P, sim) {
       const inv = 1 / Math.sqrt(e2);
       vx += ex * inv; vz += ez * inv;
     }
-    if (score >= 2 && halfCoverNear(sim.world, nav.x[n], nav.z[n])) score += 2;   // preferuj połówkę (kucanie)
+    if (score >= 2 && halfCoverNear(sim.world, nav.x[n], nav.y[n], nav.z[n])) score += 2;   // preferuj połówkę (kucanie)
     if (score > bestScore) { bestScore = score; best = n; B.holdYaw = Math.atan2(-vx, -vz); }
   }
   if (best < 0) return false;
@@ -500,7 +500,7 @@ function startHold(B, P, sim) {
   B.goal = best;
   const ht = B.L.holdTime;
   B.holdTimer = ht[0] + (ht[1] - ht[0]) * (sim.rng.int(0, U - 1) * INV_U);
-  B.holdCrouch = halfCoverNear(sim.world, nav.x[best], nav.z[best]);
+  B.holdCrouch = halfCoverNear(sim.world, nav.x[best], nav.y[best], nav.z[best]);
   setPath(B, P, len);
   return true;
 }
@@ -520,7 +520,7 @@ function startHoldNear(B, P, sim) {
     const dx = nav.x[n] - b.x, dz = nav.z[n] - b.z;
     let d2 = dx * dx + dz * dz;
     if (d2 >= bestD) continue;
-    if (halfCoverNear(sim.world, nav.x[n], nav.z[n])) d2 *= 0.25;   // preferuj połówkę (kucanie)
+    if (halfCoverNear(sim.world, nav.x[n], nav.y[n], nav.z[n])) d2 *= 0.25;   // preferuj połówkę (kucanie)
     if (d2 < bestD) { bestD = d2; best = n; }
   }
   if (best < 0) return false;
@@ -532,24 +532,28 @@ function startHoldNear(B, P, sim) {
   B.holdYaw = Math.atan2(-(B.lastKnownX - nav.x[best]), -(B.lastKnownZ - nav.z[best]));
   const ht = B.L.holdTime;
   B.holdTimer = ht[0] + (ht[1] - ht[0]) * (sim.rng.int(0, U - 1) * INV_U);
-  B.holdCrouch = halfCoverNear(sim.world, nav.x[best], nav.z[best]);
+  B.holdCrouch = halfCoverNear(sim.world, nav.x[best], nav.y[best], nav.z[best]);
   setPath(B, P, len);
   return true;
 }
 
-// scratch: punkt (x, z) dla halfCoverNear
-const HC = new Float64Array(2);
+// scratch: punkt (x, y, z) dla halfCoverNear
+const HC = new Float64Array(3);
 
-/** Czy przy węźle stoi osłona połówkowa (top w CONFIG.bots.halfCover) — wtedy kucanie ma sens. */
-function halfCoverNear(world, x, z) {
-  HC[0] = x; HC[1] = z;
+/**
+ * Czy przy węźle stoi osłona połówkowa — wtedy kucanie ma sens. Wysokości bryły liczone względem podłogi węzła
+ * (ny): spód ≤ halfCoverBase nad nią, top w CONFIG.bots.halfCover nad nią (galerie, np. Reactor 3.2 m).
+ */
+function halfCoverNear(world, x, ny, z) {
+  HC[0] = x; HC[1] = ny; HC[2] = z;
   const C = CONFIG.bots;
   const solids = world.solids;
   const lim2 = C.halfCoverDist * C.halfCoverDist;
   for (let i = 0; i < solids.length; i++) {
     const so = solids[i];
-    if (so.y1 < C.halfCover[0] || so.y1 > C.halfCover[1] || so.y0 > 0.2) continue;
-    const dx = HC[0] - so.cx, dz = HC[1] - so.cz;
+    const top = so.y1 - HC[1];
+    if (top < C.halfCover[0] || top > C.halfCover[1] || so.y0 - HC[1] > C.halfCoverBase) continue;
+    const dx = HC[0] - so.cx, dz = HC[2] - so.cz;
     const lx = dx * so.cos - dz * so.sin, lz = dx * so.sin + dz * so.cos;
     const qx = lx < -so.hx ? lx + so.hx : lx > so.hx ? lx - so.hx : 0;
     const qz = lz < -so.hz ? lz + so.hz : lz > so.hz ? lz - so.hz : 0;
@@ -619,7 +623,7 @@ function steerAim(B, P) {
   if (B.resampleAim) { B.resampleAim = false; B.needErr = true; }
   const T = B.target;
   if ((B.state === BOT_STATE.ENGAGE || B.state === BOT_STATE.COVER || B.state === BOT_STATE.HOLD) && T !== null && B.targetVisible) {
-    const ex = b.x, ey = b.y + eyeOf(b), ez = b.z;
+    const ex = b.x, ey = b.y + b.eyeHeight, ez = b.z;
     const dx = T.body.x - ex, dy = T.body.y + CONFIG.bots.aimHeight * heightScale(T.body) - ey, dz = T.body.z - ez;
     B.desYaw = Math.atan2(-dx, -dz) + B.errYaw;
     B.desPitch = Math.atan2(dy, Math.sqrt(dx * dx + dz * dz)) + B.errPitch;
@@ -796,7 +800,7 @@ function allyInLine(B, P, sim) {
   const ps = sim.participants;
   const b = P.body;
   const T = B.target.body;
-  const ox = b.x, oy = b.y + eyeOf(b), oz = b.z;
+  const ox = b.x, oy = b.y + b.eyeHeight, oz = b.z;
   const vx = T.x - ox, vy = T.y + CONFIG.bots.aimHeight * heightScale(T) - oy, vz = T.z - oz;
   const len2 = vx * vx + vy * vy + vz * vz;
   if (len2 < 1e-6) return false;
