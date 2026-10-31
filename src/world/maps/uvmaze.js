@@ -4,31 +4,35 @@
 // Środek komórki (r, c): x = -18 + 2c + 1, z = -18 + 2r + 1.
 // Legenda: '#' ściana pełna 2.4 m, 'h' osłona połówkowa 1.1 m, 'o' filar 0.6×0.6 do sufitu, '.' pusto.
 //
-// Układ (symetria obrotowa 180° wokół środka — uczciwe strony N↔S i E↔W):
-//  - pierścień zewnętrzny (wiersze/kolumny 0 i 17) = korytarz spawnów, podzielony krótkimi „ostrogami" na połowy,
-//  - centralny plac ~20×12 m z osłonami 'h' i filarami 'o'; ściany placu mają „okna" 'h' (strzał nad osłoną),
-//  - dwa małe place: NE (z filarem) i SW (z filarem),
-//  - brak ślepych zaułków dłuższych niż 1 komórka (kieszenie przy osłonach), wszystko połączone pętlami.
+// Układ „trzy linie" (symetria obrotowa 180° wokół środka — (r, c) ↔ (17−r, 17−c); uczciwe strony N↔S i E↔W):
+//  - pierścień zewnętrzny (wiersze/kolumny 0 i 17) = korytarz spawnów; ostrogi N/S (c8–9) dzielą go na połowy,
+//    ściany pierścienia (wiersze 1/16, kolumny 1/16) mają bramy co 3–4 komórki,
+//  - 3 linie N–S: lane W (kolumna 2), lane środkowy (c8–9: ostroga → okno 'hh' → plac → okno → ostroga), lane E (c15),
+//  - 2 pasma poprzeczne (wiersze 2 i 15) z osłoną, łączące wszystkie bramy pierścienia,
+//  - plac centralny 16×12 m (wiersze 6–11, kolumny 5–12): 2 filary, 4 osłony, okna 'hh' w ścianach N/S, wejścia z lane W/E,
+//  - 2 małe place w parze obrotowej: NE (filar, otwarty na pierścień E przy spawnie E) i SW (filar, przy spawnie W),
+//  - zero ślepych zaułków (każda wolna komórka ma ≥ 2 wolnych sąsiadów), filary bez brył w sąsiedztwie 8 komórek
+//    (inaczej szczelina 0.7 m — PLAN §3, strefa zahaczania 0.7–1.25 m).
 
 const ROWS = [
-  '........##........', //  0  N (spawny drużyny 0)
-  '.##.###.##.###.#..', //  1
-  '.#...........#....', //  2
-  '...##h###.#..#.o..', //  3  plac NE (filar)
-  '.#........#.......', //  4
-  '.#.##.#hh.##.##.#.', //  5  północna ściana placu z oknem 'hh'
-  '...#........o.#...', //  6
-  '.#h#.h.o..h...#.#.', //  7
-  '##....#.o..##.....', //  8
-  '.....##..o.#....##', //  9
-  '.#.#...h..o.h.#h#.', // 10
-  '...#.o........#...', // 11
-  '.#.##.##.hh#.##.#.', // 12  południowa ściana placu z oknem 'hh'
-  '.......#........#.', // 13
-  '..o.#..#.###h##...', // 14  plac SW (filar)
-  '....#...........#.', // 15
-  '..#.###.##.###.##.', // 16
-  '........##........', // 17  S (spawny drużyny 1)
+  '........##........', //  0  N (spawny drużyny 0, ostroga środkowa)
+  '.##.###.##.###.##.', //  1  ściana pierścienia N, bramy c3/c7/c10/c14
+  '.#.......h......#.', //  2  pasmo N (korytarz poprzeczny, osłona)
+  '...#.###..###.....', //  3  plac NE (otwarty na pierścień E)
+  '.#.............o..', //  4  plac NE — filar
+  '.#.###.#hh#.##....', //  5  północna ściana placu z oknem 'hh'
+  '.#..#........#..#.', //  6  plac centralny
+  '.#..h.o....h....#.', //  7  plac centralny: filar W, osłona E
+  '.#.#.....h....#...', //  8  plac centralny: osłona środkowa
+  '...#....h.....#.#.', //  9  plac centralny: osłona środkowa
+  '.#....h....o.h..#.', // 10  plac centralny: osłona W, filar E
+  '.#..#........#..#.', // 11  plac centralny
+  '....##.#hh#.###.#.', // 12  południowa ściana placu z oknem 'hh'
+  '..o.............#.', // 13  plac SW — filar
+  '.....###..###.#...', // 14  plac SW (otwarty na pierścień W)
+  '.#......h.......#.', // 15  pasmo S (korytarz poprzeczny, osłona)
+  '.##.###.##.###.##.', // 16  ściana pierścienia S
+  '........##........', // 17  S (spawny drużyny 1, ostroga środkowa)
 ];
 
 const CEILING = 4.5;
@@ -88,8 +92,8 @@ export default {
     { name: 'corridor', pos: [7, 1.65, -13], look: [-15, 1.4, -13] },
     // róg NW placu centralnego, widok po przekątnej na osłony i filary
     { name: 'plaza', pos: [-5, 1.65, -5], look: [6, 1.0, -1] },
-    // spawn zachodni (plac SW), widok wzdłuż wiersza 13 na wschód
-    { name: 'spawn', pos: [-17, 1.65, 9], look: [-3, 1.4, 9] },
+    // spawn zachodni przy placu SW: filar po prawej, widok wzdłuż pasma S (wiersz 13) na wschód
+    { name: 'spawn', pos: [-17, 1.65, 10], look: [-3, 1.4, 8] },
     // róg korytarza SE, długa perspektywa na północ (kolumna 15, przecięta osłoną) w mgłę
     { name: 'corner', pos: [13, 1.65, 13], look: [13, 1.5, -9] },
   ],

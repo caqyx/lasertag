@@ -79,8 +79,9 @@ test('UV Maze: liczby i rodzaje brył, wysokości wg legendy', () => {
     assert.ok(s.hx > 0 && s.hz > 0);
     assert.equal(s.rot, 0);
   }
-  // 70 = obecny stan (52 ściany w tym 4 obwodowe, 10 połówek, 8 filarów) — zmiana mapy wymaga świadomej aktualizacji
-  assert.equal(world.solids.length, 70);
+  // 58 = układ „trzy linie” (2026-10-31): 44 ściany w tym 4 obwodowe, 10 połówek (runy „hh” scalone), 4 filary (było 70 przy starym labiryncie).
+  // Zmiana mapy wymaga świadomej aktualizacji.
+  assert.equal(world.solids.length, 58);
 });
 
 test('obwód: dokładnie 4 bryły boundary, na zewnątrz bounds, szczelne narożniki, wysokość = sufit', () => {

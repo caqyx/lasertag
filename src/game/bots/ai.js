@@ -490,7 +490,7 @@ function startHold(B, P, sim) {
       const inv = 1 / Math.sqrt(e2);
       vx += ex * inv; vz += ez * inv;
     }
-    if (score >= 2 && halfCoverNear(sim.world, nav.x[n], nav.y[n], nav.z[n])) score += 2;   // preferuj połówkę (kucanie)
+    if (score >= 2 && halfCoverAt(sim.world, nav, n)) score += 2;   // preferuj połówkę (kucanie)
     if (score > bestScore) { bestScore = score; best = n; B.holdYaw = Math.atan2(-vx, -vz); }
   }
   if (best < 0) return false;
@@ -501,7 +501,7 @@ function startHold(B, P, sim) {
   B.goal = best;
   const ht = B.L.holdTime;
   B.holdTimer = ht[0] + (ht[1] - ht[0]) * (sim.rng.int(0, U - 1) * INV_U);
-  B.holdCrouch = halfCoverNear(sim.world, nav.x[best], nav.y[best], nav.z[best]);
+  B.holdCrouch = halfCoverAt(sim.world, nav, best);
   setPath(B, P, len);
   return true;
 }
@@ -521,7 +521,7 @@ function startHoldNear(B, P, sim) {
     const dx = nav.x[n] - b.x, dz = nav.z[n] - b.z;
     let d2 = dx * dx + dz * dz;
     if (d2 >= bestD) continue;
-    if (halfCoverNear(sim.world, nav.x[n], nav.y[n], nav.z[n])) d2 *= 0.25;   // preferuj połówkę (kucanie)
+    if (halfCoverAt(sim.world, nav, n)) d2 *= 0.25;   // preferuj połówkę (kucanie)
     if (d2 < bestD) { bestD = d2; best = n; }
   }
   if (best < 0) return false;
@@ -533,7 +533,7 @@ function startHoldNear(B, P, sim) {
   B.holdYaw = Math.atan2(-(B.lastKnownX - nav.x[best]), -(B.lastKnownZ - nav.z[best]));
   const ht = B.L.holdTime;
   B.holdTimer = ht[0] + (ht[1] - ht[0]) * (sim.rng.int(0, U - 1) * INV_U);
-  B.holdCrouch = halfCoverNear(sim.world, nav.x[best], nav.y[best], nav.z[best]);
+  B.holdCrouch = halfCoverAt(sim.world, nav, best);
   setPath(B, P, len);
   return true;
 }
@@ -541,12 +541,17 @@ function startHoldNear(B, P, sim) {
 // scratch: punkt (x, y, z) dla halfCoverNear
 const HC = new Float64Array(3);
 
+/** halfCoverNear dla węzła n: współrzędne przez HC, nie jako argumenty double (boxing V8, D-012). */
+function halfCoverAt(world, nav, n) {
+  HC[0] = nav.x[n]; HC[1] = nav.y[n]; HC[2] = nav.z[n];
+  return halfCoverNear(world);
+}
+
 /**
- * Czy przy węźle stoi osłona połówkowa — wtedy kucanie ma sens. Wysokości bryły liczone względem podłogi węzła
+ * Czy przy punkcie HC stoi osłona połówkowa — wtedy kucanie ma sens. Wysokości bryły liczone względem podłogi węzła
  * (ny): spód ≤ halfCoverBase nad nią, top w CONFIG.bots.halfCover nad nią (galerie, np. Reactor 3.2 m).
  */
-function halfCoverNear(world, x, ny, z) {
-  HC[0] = x; HC[1] = ny; HC[2] = z;
+function halfCoverNear(world) {
   const C = CONFIG.bots;
   const solids = world.solids;
   const lim2 = C.halfCoverDist * C.halfCoverDist;
