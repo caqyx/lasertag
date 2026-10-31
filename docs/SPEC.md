@@ -67,6 +67,11 @@ mecze 5-minutowe z botami. Architektura gotowa na tryb online (M5, poza tą sesj
 - **tdm4** — 4 drużyny 2-osobowe (czerwoni / niebiescy / zieloni / żółci), 5 min, limit 30 eliminacji drużyny.
 - Wygrywa najwyższy wynik punktowy (remis → więcej eliminacji → remis ogłoszony).
 
+### 2.7 Ruch i stamina
+- Chód 3.8 m/s, sprint 5.6 m/s tylko do przodu (D-013/D-015). **Stamina** (0..1, wspólna mechanika gracza i botów, D-023):
+  sprint zużywa 0.25/s (pełny pasek ≈ 4 s), skok kosztuje 0.12 (niedostępny poniżej); regeneracja 0.2/s po 1 s bez
+  sprintu/skoku, stojąc lub w kucu ×1.5. Przy 0 → **wyczerpanie**: sprint zablokowany, dopóki stamina < 0.35. Respawn = pełna.
+
 ## 3. Mapy
 
 Wszystkie mapy są **danymi** (`src/world/maps/*.js`) przetwarzanymi przez generator (`mapgen.js`).
@@ -237,3 +242,4 @@ tests/                unit/*.test.mjs (node --test), smoke/*.mjs (Playwright), t
 | D-020 | 2026-10-31 | NaN/Inf guard (ShaderPass) przed bloomem + clamp HDR 64 na High/Ultra. | Feedback: „czarne klocki" tylko na High/Ultra — pojedynczy NaN rozlewany przez mip-chain bloomu. |
 | D-021 | 2026-10-31 | Farba UV: rozmyta maska + wyostrzanie smoothstep/fwidth w shaderze zamiast większych tekstur. | Feedback: pikseloza z bliska; bez wzrostu pamięci. |
 | D-022 | 2026-10-31 | Pętla wizualna M4 zamknięta po 4 iteracjach (Hive 9–10/12, Reactor 10/12); otwarte punkty w REPORT-FINAL. | Brief: max ~3 próby na problem; oceny recenzentów oscylują ±1. |
+| D-023 | 2026-10-31 | Stamina (`CONFIG.player.stamina`): drain 0.25/s, regen 0.2/s po 1 s (×1.5 stojąc/w kucu), wyczerpanie przy 0 → sprint dopiero od 0.35, skok −0.12 (niedostępny poniżej). Pola ciała `stamina`/`sprinting`/`exhausted` (kontrakt dla HUD); respawn = pełna. Boty: ta sama mechanika, sprint (odwrót/pościg) od stamina > 0.4 do < 0.15. Logika w małych helperach movement.js z dt przez Float64Array (D-012) — wpisana wprost w stepMovement powiększała funkcję tak, że V8 przestawał inline'ować moveBody (boxing dt). | Feedback: „nie można sprintować aż tyle”; sprint jako zasób zamiast stałego trybu. |

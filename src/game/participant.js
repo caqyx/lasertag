@@ -2,7 +2,7 @@
 // Czysty JS, bez three. Alokacje tylko przy tworzeniu.
 
 import { CONFIG } from '../config.js';
-import { createBody } from './movement.js';
+import { createBody, resetStamina } from './movement.js';
 import { createInputState } from './input/inputState.js';
 import { createWeapon } from './weapon.js';
 
@@ -99,6 +99,7 @@ export function placeAt(P, x, y, z, yaw) {
   b.onGround = true;
   b.crouch = 0; b.height = CONFIG.player.height; b.eyeHeight = CONFIG.player.eyeHeight; // respawn na stojąco
   P.input.crouch = false;
+  resetStamina(b); // D-023: respawn z pełną staminą
   P.prevX = x; P.prevY = y; P.prevZ = z;
   P.input.yaw = yaw;
   P.input.pitch = 0;

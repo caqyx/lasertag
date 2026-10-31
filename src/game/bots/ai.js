@@ -138,9 +138,14 @@ function sampleBot(B, P, sim, out) {
   out.yaw = B.yaw;
   out.pitch = B.pitch;
   localMove(B, out);
-  // sprint tylko do osłony (wycofanie) i w pościgu na hard; patrol/zasadzka/podejście do dźwięku — chodem
+  // sprint tylko do osłony (wycofanie) i w pościgu na hard; patrol/zasadzka/podejście do dźwięku — chodem.
+  // D-023: ta sama stamina co gracz — start przy stamina > sprintStartStamina, kontynuacja do sprintStopStamina
+  // (rezerwa na skok), nigdy przy exhausted
   if (!B.onRamp && B.moving && (B.state === BOT_STATE.COVER ||
-      (B.state === BOT_STATE.CHASE && B.L.sprintChase && !B.investigating))) out.sprint = true;
+      (B.state === BOT_STATE.CHASE && B.L.sprintChase && !B.investigating))) {
+    const b = P.body;
+    if (!b.exhausted && b.stamina > (b.sprinting ? CONFIG.bots.sprintStopStamina : CONFIG.bots.sprintStartStamina)) out.sprint = true;
+  }
   out.crouch = B.crouch;
   if (B.jumpNow) { out.jump = true; B.jumpNow = false; }
 }
