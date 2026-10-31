@@ -248,6 +248,7 @@ export const CONFIG = Object.freeze({
       boundaryCycle: ['reactor'],   // mapy, w których ściany obwodowe dostają różne style farby per strona
       topLine: { maps: ['neonhive'], width: 0.06, height: 0.012, k: 0.8 },   // neon na wierzchu ścian (plaster czytelny z góry)
       boundaryPanel: 9,             // szerokość panelu farby na ścianie obwodowej (m) przy boundaryCycle
+      accentWash: 0.12,             // poświata lica bryły z listwą akcentu (czerwień) — czarna bryła z czerwoną krawędzią
       lampAccentRemap: { reactor: 'primary' },   // lampy w kolorze akcentu → ten klucz palety (bez czerwonych stożków/plam)
       uvRemap: { reactor: 'secondary' },   // mapy bez fioletu w palecie: kolor 'uv' (listwy, lampy, stożki, sufit) → ten klucz
       coneTint: { neonhive: { key: 'primary', mix: 0.55 } }, // stożki światła podbarwione kolorem przewodnim mapy
@@ -270,7 +271,7 @@ export const CONFIG = Object.freeze({
       paintMargin: { edge: 0.09, bottom: 0.17, strip: 0.09, maxY: 4.4 },   // farba nie dochodzi do krawędzi/listew (m)
       // przygaszenie bliskich listew; udział mgły; cieniowanie „rurki" (boki ciemniejsze → gradient rdzeń/brzeg)
       neon: { nearMin: 0.6, near: [0.6, 3.5], fog: 0.65, tubeEdge: 0.55, tubePow: 0.6 },
-      ceilingPool: { radius: 2.8, strength: 0.06, panelRef: 0.006 },            // plamy światła lamp na stropie
+      ceilingPool: { radius: 2.8, strength: 0.06, panelRef: 0.006, desat: { neonhive: 0.75, reactor: 0.5 }, gain: { neonhive: 0.5, reactor: 0.7 } },            // plamy światła lamp na stropie
       spawnPanel: { width: 1.6, height: 0.9, depth: 0.04, y: 1.45, intensity: 0.9, marker: 0.16, trimScale: 0.8 },
       rampWarn: { inset: 0.08, lift: 0.01, width: 0.06, height: 0.012, k: 0.8 },   // pasy ostrzegawcze na końcach ramp
       platformWarn: { spacing: 1.8, length: 0.32, k: 0.75 },   // krótkie skośne pasy ostrzegawcze na czołach galerii

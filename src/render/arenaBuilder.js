@@ -693,6 +693,7 @@ function patchCeilingMaterial(mat, lamps) {
   mat.onBeforeCompile = (sh) => {
     sh.uniforms.lampPos = { value: lamps.pos };
     sh.uniforms.lampCol = { value: lamps.col };
+    sh.uniforms.poolK = { value: new THREE.Vector2(lamps.desat || 0, lamps.gain ?? 1) };
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vCWPos;')
       .replace('#include <fog_vertex>', '#include <fog_vertex>\n  vCWPos = ( modelMatrix * vec4( transformed, 1.0 ) ).xyz;');
@@ -700,7 +701,8 @@ function patchCeilingMaterial(mat, lamps) {
       .replace('#include <common>', `#include <common>
 varying vec3 vCWPos;
 uniform vec3 lampPos[ ${MAX_LAMPS} ];
-uniform vec3 lampCol[ ${MAX_LAMPS} ];`)
+uniform vec3 lampCol[ ${MAX_LAMPS} ];
+uniform vec2 poolK;   // x: odbarwienie plam, y: mnożnik jasności (per mapa)`)
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
   {
     vec3 pool = vec3( 0.0 );
@@ -709,6 +711,7 @@ uniform vec3 lampCol[ ${MAX_LAMPS} ];`)
       float k = 1.0 / ( 1.0 + dot( d, d ) / ${(A.ceilingPool.radius * A.ceilingPool.radius).toFixed(3)} );
       pool += lampCol[ i ] * k * k;
     }
+    pool = mix( pool, vec3( dot( pool, vec3( 0.2126, 0.7152, 0.0722 ) ) ), poolK.x ) * poolK.y;
     // panel (tekstura) moduluje plamę; normalizacja do średniej jasności paneli
     totalEmissiveRadiance += pool * ( diffuseColor.rgb / ${A.ceilingPool.panelRef.toFixed(4)} ) * ${A.ceilingPool.strength.toFixed(4)};
   }`);
@@ -875,7 +878,7 @@ export function buildArena(world, preset, textures, opts = {}) {
     const ka = pk * boost(aKey), kb = pk * boost(bKey);
     c.pa[0] = palLin[aKey].r * ka; c.pa[1] = palLin[aKey].g * ka; c.pa[2] = palLin[aKey].b * ka;
     c.pb[0] = palLin[bKey].r * kb; c.pb[1] = palLin[bKey].g * kb; c.pb[2] = palLin[bKey].b * kb;
-    const w = washKey ? palLin[washKey] : null, kw = boost(washKey);
+    const w = washKey ? palLin[washKey] : null, kw = boost(washKey) * (washKey === 'accent' ? A.accentWash : 1);
     c.wash[0] = w ? w.r * kw : 0; c.wash[1] = w ? w.g * kw : 0; c.wash[2] = w ? w.b * kw : 0;
     c.top = top; c.bot = bot;
   };
@@ -1000,6 +1003,8 @@ export function buildArena(world, preset, textures, opts = {}) {
         lamps.col.push(lin(lightColorHex(world, L0.color), darkNorm));
       } else { lamps.pos.push(new THREE.Vector3(0, -1000, 0)); lamps.col.push(new THREE.Color(0, 0, 0)); }
     }
+    lamps.desat = (A.ceilingPool.desat || {})[world.id] || 0;
+    lamps.gain = (A.ceilingPool.gain || {})[world.id] ?? 1;
     patchCeilingMaterial(mat, lamps);
     const m = new THREE.Mesh(geo, mat);
     m.name = 'ceiling';
