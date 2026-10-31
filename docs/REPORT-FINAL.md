@@ -28,12 +28,16 @@ W repo **nie było `docs/SPEC.md` ani `reference/ref1–4.png`**.
 | Mapa | Iteracje (wynik recenzenta) | Ostatnie zrzuty |
 |---|---|---|
 | UV Maze | 4/12 → 4/12 → **12/12** | `screenshots/review3/`, `screenshots/iter6/` |
-| Neon Hive | 9 → 10 → 10 → 9 → 9/12 (runda dodatkowa iter9) | `screenshots/iter9/` |
-| Reactor | 7 → 9 → 10 → 10 → **11/12** (runda dodatkowa iter9) | `screenshots/iter9/` |
+| Neon Hive | 9 → 10 → 10 → 9 → 9 → 9 → **12/12** (iter11: nowy układ plastra miodu + przycinanie listew) | `screenshots/iter11/` |
+| Reactor | 7 → 9 → 10 → 10 → 11 → 10 → 10/12 (iter11; oceny oscylują 10–11) | `screenshots/iter11/` |
 
-Finalne zrzuty wszystkich map na Ultra: `screenshots/final/` (UV Maze z iter6, Neon Hive i Reactor z iter9).
+Finalne zrzuty wszystkich map na Ultra: `screenshots/final/` (UV Maze z iter6, Neon Hive i Reactor z iter11).
 
-**Runda dodatkowa (iter9, na prośbę użytkownika):**
+**Rundy dodatkowe iter10–iter11 (na prośbę użytkownika):**
+- **Neon Hive: nowy układ.** Pełne heksy flat-top stykają się bokami, mają wspólne ściany z przejściami, komorę centralną R6 z heks-filarem i heksagonalne osłony. Do tego render: przycinanie listew wewnątrz sąsiednich brył, ramy przejść i słabsza łuna. Wynik **12/12**.
+- **Reactor: 10/12.** NIE: podłoga i artefakty. Mora na kracie galerii i odbicia oceniane raz jako za mocne, raz jako za słabe. Kolejni recenzenci dają 10–11/12.
+
+**Runda dodatkowa (iter9):**
 - Reactor 11/12. Jedyne NIE to podłoga (za mało połysku); uwagi: przepalony środek rdzenia, jasna mgła pod sufitem w overview.
 - Neon Hive 9/12. NIE: halo lamp jako twarde „grzyby”, heksy czytelne z dekoru, a nie z architektury, dwa kleksy na podłodze.
 - Czytelność heksów to problem bryły (komory w danych mapy wyglądają z poziomu oka jak boksy). Wymaga przeprojektowania ścian w `maps/neonhive.js`, a nie samego renderu.
