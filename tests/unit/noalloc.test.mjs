@@ -25,6 +25,7 @@ import { buildNav } from '../../src/world/nav.js';
 import { createBotBrain } from '../../src/game/bots/ai.js';
 import neonhive from '../../src/world/maps/neonhive.js';
 import reactor from '../../src/world/maps/reactor.js';
+import orbita from '../../src/world/maps/orbita.js';
 import { createAdapt, recordFromEvents } from '../../src/game/bots/adapt.js';
 import { createMatch, stepMatch } from '../../src/game/match.js';
 
@@ -170,7 +171,7 @@ const SCENARIOS = {
 };
 // stepSim z 8 botami (createBotBrain: patrol/engage/cover/chase, nav, widzenie) na każdej mapie
 const LEVELS = ['easy', 'normal', 'hard'];
-for (const [mapName, data] of [['uvmaze', uvmaze], ['neonhive', neonhive], ['reactor', reactor]]) {
+for (const [mapName, data] of [['uvmaze', uvmaze], ['neonhive', neonhive], ['reactor', reactor], ['orbita', orbita]]) {
   const w = mapName === 'uvmaze' ? world : buildWorld(data);
   const nav = buildNav(w);
   const sim = createSim({ world: w, seed: 21 });

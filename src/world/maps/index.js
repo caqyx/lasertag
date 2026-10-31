@@ -2,5 +2,6 @@
 import uvmaze from './uvmaze.js';
 import neonhive from './neonhive.js';
 import reactor from './reactor.js';
+import orbita from './orbita.js';
 
-export const MAPS = { uvmaze, neonhive, reactor };
+export const MAPS = { uvmaze, neonhive, reactor, orbita };
