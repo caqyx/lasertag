@@ -120,7 +120,7 @@ const _wa = [0, 0], _wb = [0, 0];
 
 // Ściana pionowa prostokąta: rogi lokalne (l0 → l1), wysokość y0..y1, normalna lokalna (nlx, nlz).
 // u w metrach wzdłuż ściany (rośnie w prawo patrząc z zewnątrz), v = y (metry) → skala do kafla farby.
-function addSide(buf, s, lx0, lz0, lx1, lz1, nlx, nlz, y0, y1, uOff, tileW, tileH, mirror = false) {
+function addSide(buf, s, lx0, lz0, lx1, lz1, nlx, nlz, y0, y1, uOff, tileW, tileH, mirror = false, vOff = 0) {
   toWorld(s, lx0, lz0, _wa); toWorld(s, lx1, lz1, _wb);
   const nx = nlx * s.cos + nlz * s.sin, nz = -nlx * s.sin + nlz * s.cos;
   const len = Math.hypot(lx1 - lx0, lz1 - lz0);
@@ -129,10 +129,11 @@ function addSide(buf, s, lx0, lz0, lx1, lz1, nlx, nlz, y0, y1, uOff, tileW, tile
   const P = TX.wallMeters;
   const p0 = uOff / P, p1 = (uOff + len) / P;
   const i = buf.count;
-  buf.wvert(_wa[0], y0, _wa[1], nx, 0, nz, u0, y0 / tileH, 0, len, p0, y0 / P);
-  buf.wvert(_wb[0], y0, _wb[1], nx, 0, nz, u1, y0 / tileH, len, len, p1, y0 / P);
-  buf.wvert(_wb[0], y1, _wb[1], nx, 0, nz, u1, y1 / tileH, len, len, p1, y1 / P);
-  buf.wvert(_wa[0], y1, _wa[1], nx, 0, nz, u0, y1 / tileH, 0, len, p0, y1 / P);
+  const v0 = (y0 + vOff) / tileH, v1 = (y1 + vOff) / tileH;
+  buf.wvert(_wa[0], y0, _wa[1], nx, 0, nz, u0, v0, 0, len, p0, y0 / P);
+  buf.wvert(_wb[0], y0, _wb[1], nx, 0, nz, u1, v0, len, len, p1, y0 / P);
+  buf.wvert(_wb[0], y1, _wb[1], nx, 0, nz, u1, v1, len, len, p1, y1 / P);
+  buf.wvert(_wa[0], y1, _wa[1], nx, 0, nz, u0, v1, 0, len, p0, y1 / P);
   buf.quad(i, i + 1, i + 2, i + 3);
 }
 
@@ -148,17 +149,19 @@ function addCap(buf, s, y, up) {
   buf.quad(i, i + 1, i + 2, i + 3);
 }
 
-function addSolid(paintBuf, plainBuf, s, rng) {
+function addSolid(paintBuf, plainBuf, s, rng, vJit = false) {
   const uScale = A.wallUScale[0] + (A.wallUScale[1] - A.wallUScale[0]) * rng();
   const tileW = s.boundary ? TX.paintMeters[0] * A.boundaryPaintScale : TX.paintMeters[0] * uScale;
   const tileH = s.boundary ? TX.paintMeters[1] * A.boundaryPaintScale : TX.paintMeters[1];
   const { hx, hz, y0, y1 } = s;
   const base = rng() * tileW * 4;
   const off = [base, base + 2 * hz + rng() * tileW, base + rng() * tileW * 2, base + rng() * tileW * 3];
-  addSide(paintBuf, s, hx, hz, hx, -hz, 1, 0, y0, y1, off[0], tileW, tileH, rng() < 0.5);
-  addSide(paintBuf, s, -hx, -hz, -hx, hz, -1, 0, y0, y1, off[1], tileW, tileH, rng() < 0.5);
-  addSide(paintBuf, s, -hx, hz, hx, hz, 0, 1, y0, y1, off[2], tileW, tileH, rng() < 0.5);
-  addSide(paintBuf, s, hx, -hz, -hx, -hz, 0, -1, y0, y1, off[3], tileW, tileH, rng() < 0.5);
+  // vJit: losowe przesunięcie farby w pionie per ściana (mniej powtórzeń tego samego muralu)
+  const vo = () => (vJit ? rng() * tileH : 0);
+  addSide(paintBuf, s, hx, hz, hx, -hz, 1, 0, y0, y1, off[0], tileW, tileH, rng() < 0.5, vo());
+  addSide(paintBuf, s, -hx, -hz, -hx, hz, -1, 0, y0, y1, off[1], tileW, tileH, rng() < 0.5, vo());
+  addSide(paintBuf, s, -hx, hz, hx, hz, 0, 1, y0, y1, off[2], tileW, tileH, rng() < 0.5, vo());
+  addSide(paintBuf, s, hx, -hz, -hx, -hz, 0, -1, y0, y1, off[3], tileW, tileH, rng() < 0.5, vo());
   const w = plainBuf.cur.wash, sw = A.capWash;
   const saved = [w[0], w[1], w[2]];
   w[0] *= sw; w[1] *= sw; w[2] *= sw;
@@ -626,27 +629,31 @@ float floorMask() {
     vec2 ruv = gl_FragCoord.xy / reflRes;
     ruv.y = 1.0 - ruv.y;
     vec2 px = 1.0 / reflRes;
+    // droga za lustrem w punkcie środkowym → rozmycie rośnie z odległością od punktu styku (kolorowe smugi, nie kształty)
+    float behind0 = max( -perspectiveDepthToViewZ( texture2D( tReflectDepth, ruv ).x, camNear, camFar ) - vViewPosition.z, 0.0 );
+    float spread = ${A.reflect.streak.toFixed(1)} * ( 1.0 + behind0 * ${A.reflect.blurGrow.toFixed(2)} );
+    float bias = ${A.reflect.mipBias.toFixed(2)} + min( behind0 * ${A.reflect.mipGrow.toFixed(2)}, ${A.reflect.mipMax.toFixed(1)} );
     vec3 rc = vec3( 0.0 );
-    // smuga pionowa: ${A.reflect.taps} próbek wzdłuż pionu ekranu (bez zależności od roughness → zero falowania)
     float wsum = 0.0;
+    // ${A.reflect.taps} próbek wzdłuż pionu ekranu z naprzemiennym przesunięciem w poziomie; zanik liczony per próbka
+    // (głębia ½ rozdzielczości uśredniona → miękki brzeg odbicia zamiast schodków)
     for ( int k = 0; k < ${A.reflect.taps}; k ++ ) {
       float t = float( k ) / float( ${A.reflect.taps - 1} ) * 2.0 - 1.0;
       float w = 1.0 - abs( t ) * 0.7;
-      rc += texture2D( tReflect, ruv + vec2( 0.0, t * ${A.reflect.streak.toFixed(1)} ) * px * 2.0, ${A.reflect.mipBias.toFixed(2)} ).rgb * w;
+      vec2 o = vec2( ( mod( float( k ), 2.0 ) - 0.5 ) * ${A.reflect.sideSpread.toFixed(2)}, t ) * spread * px * 2.0;
+      vec3 sc = texture2D( tReflect, ruv + o, bias ).rgb;
+      float bd = max( -perspectiveDepthToViewZ( texture2D( tReflectDepth, ruv + o ).x, camNear, camFar ) - vViewPosition.z, 0.0 );
+      float f = exp( -bd / ${A.reflect.fadeLen.toFixed(2)} );
+      rc += sc * w * f;
       wsum += w;
     }
     rc /= wsum;
     if ( any( isnan( rc ) ) || any( isinf( rc ) ) ) rc = vec3( 0.0 );   // odbicie nie przenosi NaN/Inf na podłogę
     rc = min( rc, vec3( ${A.reflect.maxValue.toFixed(1)} ) );
-    // zanik z odległością od podłogi: głębia punktu odbitego − głębia podłogi ≈ droga za lustrem
-    float rDepth = texture2D( tReflectDepth, ruv ).x;
-    float rViewZ = perspectiveDepthToViewZ( rDepth, camNear, camFar );
-    float behind = max( -rViewZ - vViewPosition.z, 0.0 );   // vViewPosition.z = głębia podłogi (dodatnia)
-    float hFade = exp( -behind / ${A.reflect.fadeLen.toFixed(2)} );
     vec3 fN = normalize( ( viewMatrix * vec4( 0.0, 1.0, 0.0, 0.0 ) ).xyz );
     float ndv = clamp( abs( dot( fN, vViewPosition ) ) * inversesqrt( max( dot( vViewPosition, vViewPosition ), 1e-12 ) ), 0.0, 1.0 );
     float fres = ${A.reflect.f0.toFixed(3)} + ( 1.0 - ${A.reflect.f0.toFixed(3)} ) * pow( 1.0 - ndv, 5.0 );
-    totalEmissiveRadiance += rc * ${A.reflect.strength.toFixed(3)} * fres * hFade * ( 1.0 - floorMask() );
+    totalEmissiveRadiance += rc * ${A.reflect.strength.toFixed(3)} * fres * ( 1.0 - floorMask() );
   }
 `);
   };
@@ -754,6 +761,9 @@ void main() {
 export function lightColorHex(world, hex) {
   const p = world.palette;
   if (hex && A.uvRemap[world.id] && hex.toLowerCase() === p.uv.toLowerCase()) return paletteFor(world).uv;
+  // lampy w kolorze akcentu (np. czerwień Reactora) → klucz palety (czerwone tylko listwy/pasy ostrzegawcze)
+  const lr = A.lampAccentRemap[world.id];
+  if (lr && hex && p.accent && hex.toLowerCase() === p.accent.toLowerCase()) return p[lr];
   if (accentMode(world) === 'full') return hex;
   return hex && p.accent && hex.toLowerCase() === p.accent.toLowerCase() ? p.uv : hex;
 }
@@ -853,6 +863,7 @@ export function buildArena(world, preset, textures, opts = {}) {
   const reflPassU = { value: 1 };   // 1 = normalny render; < 1 podczas renderu odbicia (wspólny uniform ścian)
   const cycle = A.boundaryCycle.includes(world.id);
   const topLine = A.topLine.maps.includes(world.id);
+  const vJit = TX.paintVJitter.includes(world.id);
   let boundaryIdx = 0;
   let signIdx = 0;
   const signBuf = new GeoBuf();
@@ -896,14 +907,14 @@ export function buildArena(world, preset, textures, opts = {}) {
         pbuf.curBoundary = true;
         setCur(pbuf, pa, pb, tk, top, bot);
         setCur(plainBuf, pa, pb, tk, top, bot);
-        addSolid(pbuf, plainBuf, sub, rng);
+        addSolid(pbuf, plainBuf, sub, rng, vJit);
       }
     } else {
       const buf = style ? paintBufs[style] : plainBuf;
       buf.curBoundary = !!s.boundary;
       setCur(buf, aKey, bKey, tk, top, bot);
       setCur(plainBuf, aKey, bKey, tk, top, bot);
-      addSolid(buf, plainBuf, s, rng);
+      addSolid(buf, plainBuf, s, rng, vJit);
     }
     rubberFor(rubberBuf, trimBuf, s, world, tk && dimCol[tk] ? dimCol[tk] : dimCol.uv);
     if (!tk) return;
@@ -1175,7 +1186,9 @@ export function buildArena(world, preset, textures, opts = {}) {
       color: 0xffffff, map: textures.get('floor:color'),
       roughness: A.floorRoughness, roughnessMap: textures.get('floor:rough'),
       metalness: A.floorMetalness,
-      emissive: 0xffffff, emissiveMap: textures.get('floor:emissive'), emissiveIntensity: A.floorEmissiveIntensity * darkNorm,
+      // siatka: tekstura biała × kolor siatki mapy (domyślnie uv palety)
+      emissive: new THREE.Color(A.floorGrid[world.id] || world.palette.uv), emissiveMap: textures.get('floor:emissive'),
+      emissiveIntensity: A.floorEmissiveIntensity * darkNorm,
     }));
     patchFloorMaterial(floorMat, floorUniforms);
     floorMesh = new THREE.Mesh(geo, floorMat);
@@ -1218,7 +1231,7 @@ export function buildArena(world, preset, textures, opts = {}) {
     coneMat = own(new THREE.ShaderMaterial({
       uniforms: {
         ...THREE.UniformsUtils.clone(THREE.UniformsLib.fog),
-        opacity: { value: A.coneOpacity }, time: { value: 0 },
+        opacity: { value: A.coneOpacity * (A.coneOpacityMap[world.id] ?? 1) }, time: { value: 0 },
       },
       fog: true,
       vertexShader: CONE_VERT, fragmentShader: CONE_FRAG,

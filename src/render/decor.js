@@ -173,6 +173,7 @@ function buildReactorCore(d, world, own) {
   const R = (d.r || 2.6) * D.core.coverScale;
   const green = new THREE.Color(pal.primary);
   const red = new THREE.Color(pal.accent);
+  const bandCol = green.clone().lerp(new THREE.Color(1, 1, 1), D.core.bandWhite);   // pasma płaszcza: biało-zielone
   const fogU = THREE.UniformsUtils.clone(THREE.UniformsLib.fog);
 
   // 1) rdzeń energii
@@ -186,7 +187,7 @@ function buildReactorCore(d, world, own) {
   const coreGeo = own(mergeGeometries([stripForMerge(mant, ['position', 'normal', 'aK']), stripForMerge(rod, ['position', 'normal', 'aK'])]));
   mant.dispose(); rod.dispose();
   const coreMat = own(new THREE.ShaderMaterial({
-    uniforms: { ...fogU, time: { value: 0 }, colA: { value: green }, colB: { value: red }, intensity: { value: D.core.intensity } },
+    uniforms: { ...fogU, time: { value: 0 }, colA: { value: green }, colB: { value: bandCol }, intensity: { value: D.core.intensity } },
     vertexShader: CORE_VERT, fragmentShader: CORE_FRAG, fog: true, side: THREE.DoubleSide,
   }));
   const core = new THREE.Mesh(coreGeo, coreMat);

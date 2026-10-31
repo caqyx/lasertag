@@ -78,6 +78,7 @@ varying float vCenterDepth;
 varying float vWorldY;
 uniform float ceilY;
 uniform float planeFade;
+uniform vec3 hiFade;   // x..y: wysokość przejścia (m), z: jasność powyżej
 void main() {
   float d = texture2D(map, vUv).r;
   d *= smoothstep(0.0, planeFade, vWorldY) * smoothstep(0.0, planeFade, ceilY - vWorldY);
@@ -85,7 +86,10 @@ void main() {
   float near = smoothstep(nearFade.x, nearFade.y, vCenterDepth) * smoothstep(0.3, nearFade.x + 0.6, vDepth);
   float fogF = exp(-fogDensity * fogDensity * vDepth * vDepth);
   float a = d * opacity * near * fogF;
-  gl_FragColor = vec4(vColor * a, 1.0);
+  // powyżej wysokości ścian: ciemniej i bez koloru (brak barwnej „zupy" pod sufitem)
+  float hi = smoothstep(hiFade.x, hiFade.y, vWorldY);
+  vec3 col = mix(vColor, vec3(dot(vColor, vec3(0.2126, 0.7152, 0.0722))) * hiFade.z, hi);
+  gl_FragColor = vec4(col * a, 1.0);
 }`;
 
 export function createSmoke(world, count, rng, opts = {}) {
@@ -131,6 +135,7 @@ export function createSmoke(world, count, rng, opts = {}) {
       nearFade: { value: new THREE.Vector2(SM.nearFade[0], SM.nearFade[1]) },
       ceilY: { value: world.ceiling },
       planeFade: { value: SM.planeFade },
+      hiFade: { value: new THREE.Vector3(SM.hiFade[0], SM.hiFade[1], SM.hiFade[2]) },
     },
     vertexShader: VERT,
     fragmentShader: FRAG,

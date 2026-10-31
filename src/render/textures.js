@@ -19,7 +19,7 @@ function hashString(s) {
 
 const T = CONFIG.render.textures;
 
-export function createTextures({ size, anisotropy, palette, seed }) {
+export function createTextures({ size, anisotropy, palette, seed, bandSplit = false }) {
   const cache = new Map();
   const S = size;
 
@@ -39,13 +39,13 @@ export function createTextures({ size, anisotropy, palette, seed }) {
     let tex = cache.get(name);
     if (tex) return tex;
     const rng = createRng((seed ^ hashString(name)) >>> 0).next;
-    if (name.startsWith('paint:')) tex = finish(drawPaint(name.slice(6), S, palette, rng), { srgb: false });
+    if (name.startsWith('paint:')) tex = finish(drawPaint(name.slice(6), S, palette, rng, bandSplit), { srgb: false });
     else if (name === 'wall:color') tex = finish(drawWallColor(S, rng));
     else if (name === 'steel:grate') tex = finish(drawGrate(Math.min(S, 512), rng));
     else if (name === 'signs') tex = finish(drawSigns(Math.min(S, CONFIG.render.arena.signs.texSize), palette, rng), { repeat: false });
     else if (name === 'floor:color') tex = finish(drawFloorColor(S, rng));
     else if (name === 'floor:rough') tex = finish(drawFloorRough(S, rng), { srgb: false });
-    else if (name === 'floor:emissive') tex = finish(drawFloorEmissive(S, palette));
+    else if (name === 'floor:emissive') tex = finish(drawFloorEmissive(S));
     else if (name === 'ceiling') tex = finish(drawCeiling(S, rng));
     else if (name === 'smoke') tex = finish(drawSmoke(Math.min(S, T.smokeSize), rng), { srgb: false, repeat: false });
     else throw new Error(`textures: nieznana tekstura '${name}'`);
@@ -88,7 +88,7 @@ function wrapX(W, fn) { fn(-W); fn(0); fn(W); }
 // ---------------------------------------------------------------- farba UV
 // Kafel = T.paintMeters[0] × T.paintMeters[1] m (domyślnie 6 × 2.4).
 
-function drawPaint(style, S, palette, rng) {
+function drawPaint(style, S, palette, rng, bandSplit) {
   // szerokość kafla: 2.5×S przy dużych teksturach (ostrzejsze krawędzie z bliska), 2×S poniżej
   const W = Math.round(S * (S >= T.paintWideFrom ? T.paintWide : 2));
   const H = Math.round(W * T.paintMeters[1] / T.paintMeters[0]);
@@ -104,7 +104,7 @@ function drawPaint(style, S, palette, rng) {
   const cols = paletteColors();
   g.lineJoin = 'miter';
   g.lineCap = 'butt';
-  if (style === 'stripes') paintStripes(g, W, H, ppm, cols, rng);
+  if (style === 'stripes') paintStripes(g, W, H, ppm, cols, rng, bandSplit);
   else if (style === 'geo') paintGeo(g, W, H, ppm, cols, rng);
   else if (style === 'splatter') paintSplatter(g, W, H, ppm, cols, rng);
   else if (style === 'grid') paintGrid(g, W, H, ppm, cols, rng);
@@ -128,17 +128,29 @@ function blurWrapped(c, sigma) {
   return c;
 }
 
-function paintStripes(g, W, H, ppm, cols, rng) {
+function paintStripes(g, W, H, ppm, cols, rng, bandSplit) {
   // 1) poziome pakiety taśm (grube + cienkie), pełna szerokość — bezszwowe
   const bands = 3 + Math.floor(rng() * 3);
   for (let b = 0; b < bands; b++) {
     let y = rr(rng, 0.1, 0.9) * H;
     const col = pick(rng, cols);
     const n = 1 + Math.floor(rng() * 4);
+    // bandSplit: pakiet w odcinkach z przerwami (pełna szerokość z bliska/pod kątem czyta się jak rozciągnięta farba)
+    const segs = [];
+    if (bandSplit) {
+      const x0 = rng() * ppm;
+      for (let x = x0; x < W;) {
+        const l = Math.min(rr(rng, 0.7, 2.4) * ppm, W + x0 - 0.25 * ppm - x);   // ostatni odcinek nie wchodzi na pierwszy (zawinięcie)
+        if (l < 0.2 * ppm) break;
+        segs.push(x, l);
+        x += l + rr(rng, 0.25, 0.9) * ppm;
+      }
+    }
     for (let i = 0; i < n; i++) {
       const th = (i === 0 ? rr(rng, 0.05, 0.14) : rr(rng, 0.008, 0.035)) * ppm;
       g.fillStyle = i % 2 && rng() < 0.4 ? pick(rng, cols) : col;
-      g.fillRect(0, y, W, th);
+      if (!bandSplit) g.fillRect(0, y, W, th);
+      else for (let k = 0; k < segs.length; k += 2) wrapX(W, (dx) => g.fillRect(segs[k] + dx, y, segs[k + 1], th));
       y += th + rr(rng, 0.015, 0.06) * ppm;
     }
   }
@@ -604,14 +616,14 @@ function drawFloorRough(S, rng) {
   return c;
 }
 
-function drawFloorEmissive(S, palette) {
-  // bardzo subtelna emisyjna siatka (kolor uv) na krawędzi kafla → linie co T.floorMeters m
+function drawFloorEmissive(S) {
+  // bardzo subtelna emisyjna siatka (biała; kolor = emissive materiału) na krawędzi kafla → linie co T.floorMeters m
   const c = makeCanvas(S, S);
   const g = c.getContext('2d');
   g.fillStyle = '#000';
   g.fillRect(0, 0, S, S);
   const lw = Math.max(1, Math.round(S * T.floorLine / T.floorMeters));
-  g.fillStyle = palette.uv;
+  g.fillStyle = '#fff';
   g.fillRect(0, 0, lw, S);
   g.fillRect(0, 0, S, lw);
   // znaczniki krzyżowe w środku kafla (bardzo drobne)

@@ -207,6 +207,8 @@ export const CONFIG = Object.freeze({
       paintWide: 2.5,         // szerokość kafla farby = S × to (S ≥ paintWideFrom), inaczej 2 × S
       paintWideFrom: 1024,
       accentShare: 0.08,      // udział akcentu wśród drobnych elementów farby
+      paintVJitter: ['neonhive', 'reactor'],   // losowe przesunięcie farby w pionie per ściana
+      bandSplit: ['neonhive', 'reactor'],      // styl stripes: poziome taśmy w odcinkach (nie przez cały kafel)
       paintBlur: [1.0, 0.0004], // rozmycie masek farby σ = max([0] px, szer. kafla × [1]) — shader wyostrza (SDF-lite)
       // wyostrzanie maski w shaderze ściany: w = max(fwidth(maska)·k, min); przy texel/px rawFrom..rawTo → surowa maska
       paintSharpen: { k: 0.7, min: 0.015, rawFrom: 1.2, rawTo: 2.0 },
@@ -224,6 +226,7 @@ export const CONFIG = Object.freeze({
         glowRings: [1.6, 3.0, 3.8, 5.2, 6.8],
         ringIntensity: 1.6,
         warnIntensity: 1.4,
+        bandWhite: 0.6,             // wędrujące pasmo płaszcza rdzenia: zieleń → biel (zamiast czerwieni → pomarańcz)
         steelGlow: 0.015,
         glassOpacity: 0.12,
         collarIntensity: 1.1,
@@ -245,6 +248,7 @@ export const CONFIG = Object.freeze({
       boundaryCycle: ['reactor'],   // mapy, w których ściany obwodowe dostają różne style farby per strona
       topLine: { maps: ['neonhive'], width: 0.06, height: 0.012, k: 0.8 },   // neon na wierzchu ścian (plaster czytelny z góry)
       boundaryPanel: 9,             // szerokość panelu farby na ścianie obwodowej (m) przy boundaryCycle
+      lampAccentRemap: { reactor: 'primary' },   // lampy w kolorze akcentu → ten klucz palety (bez czerwonych stożków/plam)
       uvRemap: { reactor: 'secondary' },   // mapy bez fioletu w palecie: kolor 'uv' (listwy, lampy, stożki, sufit) → ten klucz
       coneTint: { neonhive: { key: 'primary', mix: 0.55 } }, // stożki światła podbarwione kolorem przewodnim mapy
       // poświata UV/neonu na licu ściany (× kolor listwy bryły × faktura): mocna przy listwie, gaśnie w dół
@@ -274,11 +278,13 @@ export const CONFIG = Object.freeze({
       floorRoughness: 0.75,         // × roughnessMap (≈0.6) → ~0.45 (półpołysk)
       floorMetalness: 0.2,
       floorEmissiveIntensity: 0.16,
+      floorGrid: { neonhive: '#2a6670', reactor: '#2f7a78' },   // kolor siatki podłogi (domyślnie palette.uv)
       floorEnvIntensity: 0.25,      // PMREM (ogólny połysk); odbicia neonów robi RT (reflect)
       // odbicie planarne podłogi (preset.envReflections): RT w skali rozdz., rozmycie mipmapą + smuga pionowa (taps),
       // zanik z odległością od podłogi (głębia RT), farba przygaszona w odbiciu (odbijają się głównie listwy)
-      reflect: { scale: 0.5, mipBias: 2.4, streak: 9, taps: 9, strength: 0.45, f0: 0.25, maskSoft: 0.45,
-        fadeLen: 5.0, paintInReflection: 0.25, maxValue: 16 },
+      // odbicie podłogi: smuga rośnie z drogą za lustrem (blurGrow/m, mipGrow/m ≤ mipMax), zanik fadeLen (m) per próbka
+      reflect: { scale: 0.5, mipBias: 2.4, streak: 7, taps: 9, strength: 0.24, f0: 0.25, maskSoft: 0.9,
+        fadeLen: 2.2, blurGrow: 0.7, mipGrow: 0.6, mipMax: 2.5, sideSpread: 0.7, paintInReflection: 0.25, maxValue: 16 },
       accentPolicy: { default: 'full', uvmaze: 'paint' },   // 'paint' = akcent tylko w farbie; 'full' = też listwy/światła
       darkNormRef: 0.15,            // emisja tła w kolorze uv × min(1, ref / luminancja uv) (jasny uv → ciemniej)
       darkNormMin: 0.25,
@@ -319,6 +325,7 @@ export const CONFIG = Object.freeze({
       coneBottomRadius: 1.7,
       coneBottom: 0.0,
       coneOpacity: 0.45,
+      coneOpacityMap: { neonhive: 0.7, reactor: 0.55 },   // mnożnik krycia stożków per mapa
       coneMargin: 0.15,             // stożek ≥ tyle od brył (brak twardych przecięć)
       coneMinHeight: 0.8,
       coneCheckRadius: 1.0,         // promień sprawdzania kolizji stożka z bryłami (m)
@@ -363,19 +370,20 @@ export const CONFIG = Object.freeze({
     driftRadius: 1.4,       // promień wolnej orbity kłębu (m); prędkość = drift
     spin: 0.05,             // maks. prędkość obrotu tekstury (rad/s)
     baseGlow: 2.2,          // jasność bazowa (× darkNorm mapy)
-    lightGain: 3.5,         // ile koloru lampy łapie dym
+    lightGain: 1.8,         // ile koloru lampy łapie dym
     lightRangeScale: 0.9,
     lightDrop: 1.0,
     nearFade: [1.2, 3.5],   // zanik przy kamerze (m, głębia środka kłębu)
     margin: 1.0,
     wallClearance: 0.6,     // min. odstęp środka kłębu od bryły
     planeFade: 0.6,         // zanik kłębu przy podłodze i suficie (m)
+    hiFade: [2.0, 3.0, 0.3], // powyżej ścian: przejście (m) do odbarwionej, ciemniejszej mgiełki (× jasność)
     sizeFloor: 0.9,         // min. rozmiar kłębu w ciasnych miejscach
     sizePerClearance: 2.4,  // rozmiar ≤ (prześwit − dryf) × to (brak przecięć ze ścianami)
     lowBand: [0.25, 1.0],   // warstwa dolna (m) — równomierna przyziemna mgiełka
     highBand: [3.0, 4.2],   // warstwa podsufitowa (m)
-    lowShare: 0.6,
-    highShare: 0.25,
+    lowShare: 0.85,
+    highShare: 0.0,         // bez warstwy podsufitowej (lokalne kule przy lampach)
     aspect: [2.2, 3.6],     // kłęby jako poziome smugi (szerokość / wysokość)
     tilt: 0.25,             // maks. przechył smugi (rad)
     fogMix: 0.6,            // odcień bazowy = lerp(uv palety, mgła, fogMix) — ciemny, chłodny

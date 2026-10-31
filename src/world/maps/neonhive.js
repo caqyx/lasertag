@@ -150,8 +150,8 @@ export default {
     spawn(-19.5, 7, 3), spawn(-19.5, -7, 3),
   ],
   cams: [
-    // pod sufitem (0.35 m) nad pasem N, ukośnie w dół nad szczytami ścian: komora centralna + 4 satelity
-    { name: 'overview', pos: [-4, 4.15, -20], look: [-2, 0, 0] },
+    // między dźwigarami (z −13 / −9), tuż nad ich dolnym pasem, ~55° w dół: plaster miodu z góry (komora centralna + satelity)
+    { name: 'overview', pos: [-1, 4.2, -11], look: [-0.6, 0, -8.06] },
     // korytarz promieniowy między satelitami (kierunek 0°), patrzy do środka
     { name: 'corridor', pos: [17.5, 1.65, 0.6], look: [0, 1.4, 0.6] },
     // korytarz pierścieniowy przy wejściu do komory centralnej (bok 4), widok na filar i osłony

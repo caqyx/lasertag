@@ -150,6 +150,7 @@ export function createGraphics({ canvas, presetName = CONFIG.defaults.preset }) 
     textures = createTextures({
       size: preset.texSize, anisotropy: Math.min(preset.anisotropy, renderer.capabilities.getMaxAnisotropy()),
       palette: world.palette, seed: world.seed >>> 0,
+      bandSplit: CONFIG.render.textures.bandSplit.includes(world.id),
     });
     decor = createDecor(world, preset);
     scene.add(decor.group);
