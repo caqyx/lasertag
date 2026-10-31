@@ -21,7 +21,7 @@ W repo **nie było `docs/SPEC.md` ani `reference/ref1–4.png`**.
 
 **Testy:**
 - `npm test`: **264 pass, 0 fail, 1 todo**. Todo to tunelowanie przy dt = 1 s i v = 15 m/s — nieosiągalne przy 60 Hz, świadomie pominięte.
-- `npm run smoke`: 3 mapy × 4 presety mieszczą się w budżecie; pełny przepływ meczu działa; 0 błędów i ostrzeżeń konsoli; brak wycieków przy zmianach map i presetów.
+- `npm run smoke`: 3 mapy × 4 presety mieszczą się w budżecie; pełny przepływ meczu działa (menu → mecz → koniec → restart, 3 tryby i 3 mapy, ostatni przebieg 112 s); 0 błędów i ostrzeżeń konsoli; brak wycieków przy zmianach map i presetów. Obserwację odliczania w smoke zmieniłem na ostrzeżenie: przy ciężkim ładowaniu w SwiftShader test nie zdążał jej zrobić, a zamrożenie w odliczaniu sprawdza deterministycznie test unit.
 
 ## 2. Pętla wizualna (SPEC §6)
 
