@@ -66,12 +66,12 @@ function sym(list, items) {
 
 function buildWalls() {
   const w = [];
-  w.push(...ring(R_OUT, [1, 3, 5, 7], [], WALL_H, 'wall', { paint: 'stripes' }));
-  w.push(...ring(R_MID, [0, 2, 4, 6], [], WALL_H, 'wall', { paint: 'geo' }));
+  w.push(...ring(R_OUT, [1, 3, 5, 7], [], WALL_H, 'wall', { paint: 'stripes', trim: 'primary' }));   // jeden kolor listwy na pierścień — ciągłość na stykach 45°
+  w.push(...ring(R_MID, [0, 2, 4, 6], [], WALL_H, 'wall', { paint: 'geo', trim: 'secondary' }));
   // rdzeń: tylko boki N/E/S/W jako osłony połówkowe (przekątne otwarte)
   for (const i of [0, 2, 4, 6]) {
     const half = R_CORE * TAN;
-    w.push(sidePiece(R_CORE, i, -half, half, HALF_H, 'half', { trim: 'accent' }));
+    w.push(sidePiece(R_CORE, i, -half, half, HALF_H, 'half', { trim: 'uv' }));
   }
   // filar-romb w środku (do sufitu)
   w.push(box(0, 0, 1.2, 1.2, CEILING, 'pillar', 45 * DEG));
@@ -143,7 +143,7 @@ export default {
   ],
   cams: [
     // wysoko pod sufitem w narożniku NW, ukośnie nad pierścieniami
-    { name: 'overview', pos: [-19.2, 4.8, -19.2], look: [3, 0, 3] },
+    { name: 'overview', pos: [-19.2, 3.9, -19.2], look: [4, 0, 4] },   // pod kratownicą (wyżej kamera wchodziła w dźwigary)
     // korytarz zewnętrzny N na wysokości oka, wzdłuż łuku na wschód
     { name: 'corridor', pos: [-5, 1.65, -12.25], look: [8, 1.4, -11.5] },
     // rdzeń: od przejścia SW przez osłony i filar

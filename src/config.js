@@ -183,7 +183,7 @@ export const CONFIG = Object.freeze({
     toneMapping: 'neutral', // 'neutral' | 'aces' (patrz graphics.js)
     toneMappingExposure: 0.95,
     fogDensity: 0.055,
-    fogDensityMap: { neonhive: 0.068 },   // gęstość mgły per mapa (głębia w dali przy ciemnej mgle)
+    fogDensityMap: { neonhive: 0.068, orbita: 0.072 },   // gęstość mgły per mapa (głębia w dali przy ciemnej mgle)
     fogTint: 0.07,          // kolor mgły = lerp(palette.fog, palette.uv, fogTint)
     fogTintMap: { reactor: 0.0 },   // Reactor: mgła bez turkusu (ciemny strop w overview)
     clearColor: '#05030a',
@@ -211,8 +211,8 @@ export const CONFIG = Object.freeze({
       paintWide: 2.5,         // szerokość kafla farby = S × to (S ≥ paintWideFrom), inaczej 2 × S
       paintWideFrom: 1024,
       accentShare: 0.08,      // udział akcentu wśród drobnych elementów farby
-      paintVJitter: ['neonhive', 'reactor'],   // losowe przesunięcie farby w pionie per ściana
-      bandSplit: ['neonhive', 'reactor'],      // styl stripes: poziome taśmy w odcinkach (nie przez cały kafel)
+      paintVJitter: ['neonhive', 'reactor', 'orbita'],   // losowe przesunięcie farby w pionie per ściana
+      bandSplit: ['neonhive', 'reactor', 'orbita'],      // styl stripes: poziome taśmy w odcinkach (nie przez cały kafel)
       paintBlur: [1.0, 0.0004], // rozmycie masek farby σ = max([0] px, szer. kafla × [1]) — shader wyostrza (SDF-lite)
       // wyostrzanie maski w shaderze ściany: w = max(fwidth(maska)·k, min); przy texel/px rawFrom..rawTo → surowa maska
       paintSharpen: { k: 0.7, min: 0.015, rawFrom: 1.2, rawTo: 2.0 },
@@ -248,7 +248,7 @@ export const CONFIG = Object.freeze({
       paintIntensity: 0.75,         // emisja farby UV (maski × kolor bryły; HDR → bloom)
       paintIntensityMap: { neonhive: 0.7 },   // mnożnik emisji farby per mapa
       paintScaleMap: { neonhive: 0.75 },      // skala motywów farby per mapa (< 1 → mniejsze motywy)
-      accentPaintMap: { neonhive: 0.5 },      // róż w Hive tylko jako drobne, ciemniejsze akcenty
+      accentPaintMap: { neonhive: 0.5, orbita: 0.5 },      // róż w Hive tylko jako drobne, ciemniejsze akcenty
       accentPaintScale: 0.8,        // akcent (limonka) tylko w drobnych elementach farby
       boundaryPaintScale: 1.4,      // ściany obwodowe: kafel 8.4 × 3.36 m (duże murale, ostre z bliska)
       boundaryPaintIntensityMap: { neonhive: 0.85 },   // Hive: bursztyn na obwodzie jaśniejszy (nie matowy)
@@ -259,7 +259,7 @@ export const CONFIG = Object.freeze({
       topLine: { maps: ['neonhive'], width: 0.06, height: 0.012, k: 0.8, post: 0.045, postK: 1.2, postKey: 'uv' },   // neon na wierzchu ścian (plaster czytelny z góry)
       boundaryPanel: 9,             // szerokość panelu farby na ścianie obwodowej (m) przy boundaryCycle
       washMap: { neonhive: 0.45 },   // mnożnik poświaty lica od listew per mapa (Hive: bez pomarańczowej łuny)
-      trimClip: ['neonhive'],       // listwy przycinane do zewnętrznego obrysu nachodzących brył
+      trimClip: ['neonhive', 'orbita'],       // listwy przycinane do zewnętrznego obrysu nachodzących brył
       doorFrame: { maps: ['neonhive'], gap: [1.8, 2.8], size: 0.05, k: 0.9 },   // listwa nad przejściem
       accentWash: 0.12,             // poświata lica bryły z listwą akcentu (czerwień) — czarna bryła z czerwoną krawędzią
       // kolory lamp (klucz palety → klucz palety): bez czerwonych/różowych stożków, plam i nalotu na podłodze
