@@ -123,7 +123,8 @@ export default {
   walls: buildWalls(),
   ramps: [],
   decor: [],
-  // kolejność = priorytet: 2 → rdzeń, 4 → + narożniki NE/SW, 6 → + NW/SE, 8 → + korytarz N/S
+  // kolejność = priorytet: 2 → rdzeń, 4 → + narożniki NE/SW, 6 → + NW/SE, 8 → + korytarz N/S.
+  // Akcent (pomarańcz) tylko w farbie i listwach osłon rdzenia, nie w lampach (D-008: inaczej brązowe plamy na stropie).
   lights: [
     { x: 2.5, y: 4.7, z: -2.5, color: '#6fd8ff', intensity: 10, range: 12 },     // rdzeń NE
     { x: -2.5, y: 4.7, z: 2.5, color: '#b04bff', intensity: 10, range: 12 },     // rdzeń SW
@@ -131,8 +132,8 @@ export default {
     { x: -15, y: 4.7, z: 15, color: '#4b3cff', intensity: 12, range: 13 },      // narożnik SW
     { x: -15, y: 4.7, z: -15, color: '#6fd8ff', intensity: 10, range: 13 },     // narożnik NW
     { x: 15, y: 4.7, z: 15, color: '#b04bff', intensity: 10, range: 13 },       // narożnik SE
-    { x: 0, y: 4.7, z: -12.2, color: '#ff8a00', intensity: 6, range: 10 },      // korytarz zewnętrzny N (akcent)
-    { x: 0, y: 4.7, z: 12.2, color: '#ff8a00', intensity: 6, range: 10 },       // korytarz zewnętrzny S (akcent)
+    { x: 0, y: 4.7, z: -12.2, color: '#b04bff', intensity: 7, range: 10 },      // korytarz zewnętrzny N
+    { x: 0, y: 4.7, z: 12.2, color: '#6fd8ff', intensity: 7, range: 10 },       // korytarz zewnętrzny S
   ],
   spawns: [
     spawn(-6, -18, 0), spawn(6, -18, 0),     // N
