@@ -3,7 +3,8 @@
 // Ośmiokąty foremne „flat” (boki N/E/S/W + 4 przekątne), środek w (0,0). Bok i ma normalną pod kątem 45°·i w płaszczyźnie
 // (x, z): i = 0 E (+x), 2 S (+z), 4 W, 6 N; nieparzyste = przekątne (1 SE, 3 SW, 5 NW, 7 NE).
 //   • pierścień zewnętrzny (apotema 15 m): pełne boki N/E/S/W, przejścia 3.0 m na przekątnych → narożniki hali,
-//   • pierścień środkowy (apotema 9.5 m): przejścia 3.0 m na bokach N/E/S/W, na przekątnych okna strzeleckie 1.6 m,
+//   • pierścień środkowy (apotema 9.5 m): przejścia 3.0 m na bokach N/E/S/W z drzwiami rozsuwanymi (pary N/S i E/W
+//     w przeciwfazie — co najmniej jedna para otwarta), na przekątnych okna strzeleckie 1.6 m,
 //   • rdzeń (apotema 4.5 m): osłony połówkowe na bokach N/E/S/W, przekątne otwarte, filar-romb w środku.
 // Przejścia kolejnych pierścieni są obrócone o 45° — do środka idzie się spiralą, bez linii wzroku na wylot.
 // Pas spawnów między pierścieniem zewnętrznym a obwodem (4.8 m) przecina pośrodku osłona połówkowa każdej strony.
@@ -56,6 +57,31 @@ function ring(a, open, skip, h, kind, extra, win = []) {
     }
   }
   return out;
+}
+
+/**
+ * Drzwi rozsuwane w przejściu boku i pierścienia o apotemie a: 2 skrzydła po GAP/2, chowane w sąsiednie segmenty ściany.
+ * phase: przesunięcie cyklu (pary N/S i E/W w przeciwfazie — „obracająca się” spirala).
+ */
+function slidingDoors(a, i, phase) {
+  const th = 45 * i * DEG;
+  const nx = Math.cos(th); const nz = Math.sin(th);
+  const tx = -nz; const tz = nx;
+  const rot = Math.atan2(-tz, tx);
+  const half = GAP / 2;
+  return [-1, 1].map((sg) => ({
+    x: a * nx + tx * sg * half / 2, z: a * nz + tz * sg * half / 2, w: half, rot,
+    slide: [tx * sg * half, tz * sg * half], cycle: DOOR_CYCLE, phase,
+  }));
+}
+const DOOR_CYCLE = [7, 1.5, 7];   // otwarte, ruch, zamknięte [s]
+const DOOR_PERIOD = 7 + 1.5 + 7 + 1.5;
+
+function buildDoors() {
+  const d = [];
+  for (const i of [6, 2]) d.push(...slidingDoors(R_MID, i, 0));                 // N, S
+  for (const i of [0, 4]) d.push(...slidingDoors(R_MID, i, DOOR_PERIOD / 2));   // E, W (przeciwfaza)
+  return d;
 }
 
 /** Punkt w odległości r od środka pod kątem 45°·i. */
@@ -129,6 +155,7 @@ export default {
     ambient: '#120c2e',
   },
   walls: buildWalls(),
+  doors: buildDoors(),   // drzwi rozsuwane w przejściach pierścienia środkowego
   ramps: [],
   decor: [],
   // kolejność = priorytet: 2 → rdzeń, 4 → + narożniki NE/SW, 6 → + NW/SE, 8 → + korytarz N/S.

@@ -69,7 +69,7 @@ test('UV Maze: liczby i rodzaje brył, wysokości wg legendy', () => {
   for (const s of world.solids) byKind[s.kind] = (byKind[s.kind] || 0) + 1;
   const pillarsInGrid = uvmaze.grid.rows.join('').split('').filter((c) => c === 'o').length;
   assert.equal(byKind.pillar, pillarsInGrid);
-  assert.deepEqual(Object.keys(byKind).sort(), ['half', 'net', 'pillar', 'wall']);
+  assert.deepEqual(Object.keys(byKind).sort(), ['door', 'half', 'net', 'pillar', 'wall']);
   const E = CONFIG.elements;
   for (const s of world.solids) {
     if (s.boundary) { assert.equal(s.y0, 0); assert.equal(s.y1, 4.5); continue; }
@@ -77,18 +77,21 @@ test('UV Maze: liczby i rodzaje brył, wysokości wg legendy', () => {
     assert.equal(s.y0, 0);
     if (s.prop) { assert.equal(s.y1, E[s.prop].h); continue; }   // beczki/opony: 2 bryły pod 0°/45°
     if (s.kind === 'net') { assert.equal(s.y1, E.net.h); assert.equal(s.seeThrough, true); continue; }
+    if (s.kind === 'door') { assert.equal(s.y1, E.door.h); assert.ok(s.mover >= 0); continue; }
     if (s.kind === 'wall') assert.equal(s.y1, 2.4);
     if (s.kind === 'half') assert.equal(s.y1, 1.1);
     if (s.kind === 'pillar') { assert.equal(s.y1, 4.5); assert.equal(s.hx, 0.3); assert.equal(s.hz, 0.3); }
     assert.ok(s.hx > 0 && s.hz > 0);
     assert.equal(s.rot, 0);
   }
-  // 70 = układ „trzy linie” + elementy (2026-10-31): 4 obwodowe, z siatki 38 ścian, 6 połówek, 4 filary, 2 okna 'ww'
-  // (parapet + nadproże = 4); z walls: 2 siatki, 2 stosy opon i 4 beczki (po 2 bryły kolizji = 12). Zmiana mapy = świadoma aktualizacja.
+  // 74 = układ „trzy linie” + elementy (2026-10-31): 4 obwodowe, z siatki 38 ścian, 6 połówek, 4 filary, 2 okna 'ww'
+  // (parapet + nadproże = 4); z walls: 2 siatki, 2 stosy opon i 4 beczki (po 2 bryły kolizji = 12); 4 drzwi przesuwne (doors).
+  // Zmiana mapy = świadoma aktualizacja.
   assert.equal(world.solids.filter((s) => s.prop).length, 12);
   assert.equal(world.solids.filter((s) => s.kind === 'net').length, 2);
   assert.equal(world.solids.filter((s) => s.window).length, 4);   // 2 okna 'ww' × (parapet + nadproże)
-  assert.equal(world.solids.length, 70);
+  assert.equal(world.solids.filter((s) => s.kind === 'door').length, 4);
+  assert.equal(world.solids.length, 74);
 });
 
 test('obwód: dokładnie 4 bryły boundary, na zewnątrz bounds, szczelne narożniki, wysokość = sufit', () => {

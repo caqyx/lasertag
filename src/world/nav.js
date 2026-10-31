@@ -131,6 +131,28 @@ function edgeWalkable(world, ax, ah, az, bx, bh, bz) {
  * @returns {object} Nav (PLAN §8.1) + pola wewnętrzne (siatka komórek, bufory A*)
  */
 export function buildNav(world) {
+  // drzwi przesuwne: graf budowany przy otwartych drzwiach (węzły w przejściu istnieją), potem przywrócenie póz
+  const doors = world.doors || [];
+  const saved = doors.map((D) => [world.solids[D.solid].cx, world.solids[D.solid].cz]);
+  for (const D of doors) { const s = world.solids[D.solid]; s.cx = D.x0 + D.sx; s.cz = D.z0 + D.sz; }
+  const nav = buildNavStatic(world);
+  doors.forEach((D, i) => { const s = world.solids[D.solid]; s.cx = saved[i][0]; s.cz = saved[i][1]; });
+  // węzeł → drzwi, gdy leży w strefie skrzydła zamkniętego: promień gracza + ½ oczka grafu — węzły po obu stronach cienkiego
+  // skrzydła; inaczej krawędź między nimi przecinałaby zamknięte drzwi (findPath omija węzły strefy przy doorOpen < pass)
+  const nodeDoor = new Int16Array(nav.count).fill(-1);
+  const r = CONFIG.player.radius + nav.cell * 0.5;
+  doors.forEach((D, d) => {
+    const s = world.solids[D.solid];
+    const closed = { cx: D.x0, cz: D.z0, hx: s.hx, hz: s.hz, cos: s.cos, sin: s.sin };
+    for (let i = 0; i < nav.count; i++) if (circleDist2(closed, nav.x[i], nav.z[i]) < r * r && nav.y[i] < s.y1) nodeDoor[i] = d;
+  });
+  nav.nodeDoor = nodeDoor;
+  nav.doorOpen = world.doorOpen || new Float64Array(0);
+  nav.doorPass = CONFIG.elements.door.pass;
+  return nav;
+}
+
+function buildNavStatic(world) {
   const C = CONFIG.nav;
   const P = CONFIG.player;
   const cell = C.cell;
@@ -500,6 +522,7 @@ export function findPath(nav, from, to, outPath) {
   const X = nav.x; const Y = nav.y; const Z = nav.z;
   const es = nav.edgeStart; const ed = nav.edges; const ec = nav.cost;
   const tx = X[to]; const ty = Y[to]; const tz = Z[to];
+  const nodeDoor = nav.nodeDoor; const doorOpen = nav.doorOpen; const pass = nav.doorPass;
 
   seen[from] = st;
   G[from] = 0;
@@ -519,6 +542,8 @@ export function findPath(nav, from, to, outPath) {
     for (let j = es[cur], e = es[cur + 1]; j < e; j++) {
       const nb = ed[j];
       if (closed[nb] === st) continue;
+      const nd = nodeDoor[nb];
+      if (nd >= 0 && doorOpen[nd] < pass) continue;   // drzwi przesuwne nie w pełni otwarte
       const ng = gc + ec[j];
       if (seen[nb] === st) {
         if (ng >= G[nb]) continue;
@@ -595,7 +620,8 @@ export function smoothPath(nav, path, len) {
     const prev = path[k - 1];
     // każdy węzeł pomiędzy anchor a k musi być na tym samym poziomie (płasko)
     const d = nav.y[prev] - nav.y[anchor];
-    if (d >= FLAT_DY || d <= -FLAT_DY || !straightOk(nav, anchor, path[k])) {
+    // węzeł w przejściu drzwi przesuwnych zostaje w ścieżce (bot sprawdza go przed wejściem — drzwi mogą się zamknąć)
+    if (d >= FLAT_DY || d <= -FLAT_DY || nav.nodeDoor[prev] >= 0 || !straightOk(nav, anchor, path[k])) {
       path[out++] = prev;
       anchor = prev;
     }

@@ -9,12 +9,14 @@ import { resolveBodyWalls } from '../world/physics.js';
 import { stepWeapon, resetWeapon } from './weapon.js';
 import { resetVitals, placeAt } from './participant.js';
 import { resolveShot, stepParticipantState, pickSpawn } from './combat.js';
+import { resetDoors, stepDoors } from './doors.js';
 
 /**
  * @param {{ world:object, seed?:number, friendlyFire?:boolean, teamCount?:number }} o
  *   teamCount > 0 → spawny drużynowe (sp.team % teamCount === P.team); 0 (domyślnie) → wszystkie spawny.
  */
 export function createSim(o) {
+  resetDoors(o.world, 0);   // drzwi przesuwne: poza z czasu 0 (świat współdzielony między meczami)
   const nTeams = CONFIG.colors.ffa.length;
   const teams = [];
   for (let t = 0; t < nTeams; t++) teams.push({ score: 0, elims: 0, deaths: 0 });
@@ -186,6 +188,7 @@ function fireOne(sim, P, dt) {
  */
 export function stepSim(sim, dt) {
   sim.time += dt;
+  stepDoors(sim, dt);   // drzwi przesuwne przed ruchem (czujnik widzi pozycje z poprzedniego kroku)
   const ps = sim.participants;
   for (let i = 0; i < ps.length; i++) sampleOne(sim, ps[i]);
   for (let i = 0; i < ps.length; i++) moveOne(sim, ps[i], dt);

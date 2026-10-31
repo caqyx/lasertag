@@ -173,6 +173,39 @@ function addSolid(paintBuf, plainBuf, s, rng, vJit = false) {
   w[0] = saved[0]; w[1] = saved[1]; w[2] = saved[2];
 }
 
+/**
+ * Skrzydło drzwi przesuwnych w pozie zamkniętej (x0, z0): ciemny korpus + neon na krawędziach + pasy ostrzegawcze na licach.
+ * Jeden bufor z kolorami wierzchołków (materiał listew) → 1 draw call na skrzydło.
+ */
+function doorGeometry(s, D, col, warnCol) {
+  const DR = A.door, t = A.trimSize;
+  const buf = new GeoBuf({ color: true });
+  const c = { ...s, cx: D.x0, cz: D.z0 };
+  const longX = c.hx >= c.hz, L = longX ? c.hx : c.hz, T = longX ? c.hz : c.hx;
+  const end = (u, v, out) => (longX ? toWorld(c, u, v, out) : toWorld(c, v, u, out));
+  const body = DR.body;
+  end(-L, 0, _wa); end(L, 0, _wb);
+  // korpus o DR.inset cieńszy od bryły: w kieszeni chowa się za licem ściany (bez z-fightingu, gdy lico drzwi = lico ściany)
+  addBar(buf, _wa[0], c.y1 / 2, _wa[1], _wb[0], c.y1 / 2, _wb[1], 2 * (T - DR.inset), c.y1, body.r, body.g, body.b);
+  // neon: górna i dolna krawędź (po obu licach), pionowe krawędzie skrzydła
+  for (const v of [-1, 1]) {
+    end(-L, v * (T + DR.trimOff), _wa); end(L, v * (T + DR.trimOff), _wb);
+    addBar(buf, _wa[0], c.y1 - t / 2, _wa[1], _wb[0], c.y1 - t / 2, _wb[1], t, t, col.r, col.g, col.b);
+    addBar(buf, _wa[0], t * 1.5, _wa[1], _wb[0], t * 1.5, _wb[1], t, t, col.r * DR.dim, col.g * DR.dim, col.b * DR.dim);
+    for (const u of [-L, L]) {
+      end(u, v * (T + DR.trimOff), _wa);
+      addBar(buf, _wa[0], t, _wa[1], _wa[0], c.y1 - t, _wa[1], t, t, col.r, col.g, col.b);
+    }
+    // ukośne pasy ostrzegawcze w dolnej części lica
+    for (let u = -L + DR.stripe.gap; u + DR.stripe.run <= L - DR.stripe.gap * 0.5; u += DR.stripe.gap) {
+      end(u, v * (T + DR.trimOff), _wa); end(u + DR.stripe.run, v * (T + DR.trimOff), _wb);
+      addBar(buf, _wa[0], DR.stripe.y0, _wa[1], _wb[0], DR.stripe.y1, _wb[1], DR.stripe.w, DR.stripe.w,
+        warnCol.r * DR.stripe.k, warnCol.g * DR.stripe.k, warnCol.b * DR.stripe.k);
+    }
+  }
+  return buf.toGeometry();
+}
+
 // ---------------------------------------------------------------- listwy, odboje
 
 // pętla wokół bryły na wysokości y: pręty o przekroju tw × th, odsunięte o off od ściany
@@ -998,6 +1031,7 @@ export function buildArena(world, preset, textures, opts = {}) {
   const steelBuf = new GeoBuf();   // galerie/kładki/barierki/rampy: stal z kratką
   const railBuf = new GeoBuf();    // siatka barierek (ażur, alphaTest)
   const netBuf = new GeoBuf();     // siatki maskujące (przezroczyste, CONFIG.elements.net)
+  let neonMat = null;              // materiał listew (współdzielony z drzwiami przesuwnymi)
   const covers = opts.covers || (() => false);
   const reflPassU = { value: 1 };   // 1 = normalny render; < 1 podczas renderu odbicia (wspólny uniform ścian)
   const cycle = A.boundaryCycle.includes(world.id);
@@ -1029,6 +1063,7 @@ export function buildArena(world, preset, textures, opts = {}) {
       if (s.group === i) addProp(rubberBuf, trimBuf, s, trimCol[tk && tk !== 'accent' ? tk : 'secondary'], trimCol.accent);
       return;
     }
+    if (s.mover >= 0) return;   // drzwi przesuwne: osobny mesh (doorMeshes), przesuwany w update
     if (s.kind === 'net') { addNet(steelBuf, trimBuf, netBuf, s, trimCol[tk && tk !== 'accent' ? tk : 'uv']); return; }
     if (isSteel(s)) {
       // obrysy galerii/barierek w kolorach przewodnich; czerwień (akcent) tylko jako krótkie pasy ostrzegawcze
@@ -1382,11 +1417,27 @@ export function buildArena(world, preset, textures, opts = {}) {
       geo.deleteAttribute('uv');
       const mat = own(new THREE.MeshBasicMaterial({ vertexColors: true, fog: true }));
       patchNeonMaterial(mat);
+      neonMat = mat;
       const m = new THREE.Mesh(own(geo), mat);
       m.name = 'neon';
       group.add(m);
     }
   }
+
+  // drzwi przesuwne: mesh na skrzydło (materiał listew), przesuwany w update o (bryła − poza zamknięta)
+  const doorMeshes = [];
+  (world.doors || []).forEach((D, i) => {
+    const s = world.solids[D.solid];
+    const tk = mainKey(s.trim, D.solid) || 'secondary';
+    const geo = doorGeometry(s, D, trimCol[tk === 'accent' ? 'secondary' : tk], trimCol[warnKey]);
+    if (!neonMat) { neonMat = own(new THREE.MeshBasicMaterial({ vertexColors: true, fog: true })); patchNeonMaterial(neonMat); }
+    geo.deleteAttribute('uv');
+    const m = new THREE.Mesh(own(geo), neonMat);
+    m.name = 'door' + i;
+    m.matrixAutoUpdate = true;
+    group.add(m);
+    doorMeshes.push({ mesh: m, solid: s, x0: D.x0, z0: D.z0 });
+  });
 
   // --- podłoga
   const reflOn = !!preset.envReflections;
@@ -1521,6 +1572,11 @@ export function buildArena(world, preset, textures, opts = {}) {
     group,
     update(time) {
       if (coneMat) coneMat.uniforms.time.value = time;
+      for (let i = 0; i < doorMeshes.length; i++) {   // drzwi przesuwne: poza z symulacji (bez alokacji)
+        const d = doorMeshes[i];
+        d.mesh.position.set(d.solid.cx - d.x0, 0, d.solid.cz - d.z0);
+        d.mesh.visible = world.doorOpen[i] < A.door.hideOpen;   // w pełni otwarte = schowane w kieszeni ściany
+      }
     },
     setSize(w, h) {
       floorUniforms.reflRes.value.set(w, h);

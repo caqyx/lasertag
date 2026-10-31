@@ -44,6 +44,7 @@ export function buildWorld(mapData, opts) {
   const solids = [];
   if (mapData.grid) addGridSolids(mapData, bounds, solids);
   for (const wall of mapData.walls || []) expandWall(wall, solids);
+  const doors = addDoors(mapData, solids);
   addPerimeter(mapData, bounds, solids);
 
   const ramps = (mapData.ramps || []).map(rampFromData);
@@ -65,6 +66,9 @@ export function buildWorld(mapData, opts) {
     lights: (mapData.lights || []).map((l) => ({ ...l })),
     cams: (mapData.cams || []).map((c) => ({ name: c.name, pos: c.pos.slice(), look: c.look.slice() })),
     decor: (mapData.decor || []).map((x) => ({ ...x })),
+    // drzwi przesuwne: stały opis + stan otwarcia (0 zamknięte … 1 otwarte); jeden aktywny sim na świat (game/doors.js)
+    doors,
+    doorOpen: new Float64Array(doors.length).fill(1),
   };
   world.grid = createSpatialGrid(bounds, solids, ramps);
   const autoYawProblems = [];
@@ -200,6 +204,31 @@ function expandWall(wl, out) {
   out.push(solidFromWall(wl));
 }
 
+/**
+ * Drzwi przesuwne (MapData.doors): { x, z, w, d?, h?, rot?, slide: [sx, sz], cycle: [open, move, closed], phase? }.
+ * (x, z) = poza zamknięta; poza otwarta = (x + sx, z + sz) — skrzydło chowa się w kieszeń ściany. Bryła startuje otwarta
+ * (graf nawigacji budowany przy otwartych drzwiach), kubełki SpatialGrid obejmują cały tor ruchu (sweep).
+ */
+function addDoors(mapData, out) {
+  const E = CONFIG.elements.door;
+  const list = [];
+  (mapData.doors || []).forEach((d, i) => {
+    const [sx, sz] = d.slide;
+    const [tOpen, tMove, tClosed] = d.cycle;
+    const s = makeSolid('door', d.x + sx, d.z + sz, d.w / 2, (d.d ?? E.t) / 2, 0, d.h ?? E.h, d.rot || 0);
+    s.mover = i; s.sweepX = -sx; s.sweepZ = -sz;
+    s.paint = 'none';
+    s.trim = d.trim ?? 'secondary';
+    s.trimBottom = false;
+    list.push({
+      solid: out.length, x0: d.x, z0: d.z, sx, sz,
+      tOpen, tMove, tClosed, period: tOpen + tMove + tClosed + tMove, phase: d.phase || 0,
+    });
+    out.push(s);
+  });
+  return list;
+}
+
 /** Okno strzeleckie: parapet + nadproże o wspólnym obrysie (cx, cz, hx, hz, rot). ext = pola paint/trim z danych. */
 function pushWindow(out, cx, cz, hx, hz, rot, ext) {
   const W = CONFIG.elements.window;
@@ -250,6 +279,7 @@ function makeSolid(kind, cx, cz, hx, hz, y0, y1, rot) {
     group: -1,           // indeks pierwszej bryły grupy (prop)
     radius: 0,           // promień wizualny propa
     mover: -1,           // indeks drzwi przesuwnych (MapData.doors) lub -1
+    sweepX: 0, sweepZ: 0, // drzwi: przesunięcie od pozy z buildWorld do drugiej skrajnej (kubełki obejmują cały tor)
   };
 }
 
@@ -294,6 +324,10 @@ function obbAabb(o, out) {
   const ex = c * o.hx + s * o.hz;
   const ez = s * o.hx + c * o.hz;
   out[0] = o.cx - ex; out[1] = o.cz - ez; out[2] = o.cx + ex; out[3] = o.cz + ez;
+  // drzwi przesuwne: AABB całego toru ruchu (sweep), żeby bryła była w kubełkach w każdej pozycji
+  const wx = o.sweepX || 0, wz = o.sweepZ || 0;
+  if (wx < 0) out[0] += wx; else out[2] += wx;
+  if (wz < 0) out[1] += wz; else out[3] += wz;
 }
 
 function buildBuckets(g, list) {

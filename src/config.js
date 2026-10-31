@@ -154,6 +154,7 @@ export const CONFIG = Object.freeze({
     halfCover: [1.05, 1.4], // m — wysokość osłony połówkowej nad podłogą węzła (min > player.crouchEyeHeight)
     halfCoverBase: 0.2,     // m — maks. wysokość spodu osłony nad podłogą węzła
     halfCoverDist: 1.2,     // m — maks. odległość krawędzi osłony od węzła
+    doorStopDist: 1.0,      // m — drzwi przesuwne zamykają się: bot dalej niż to od węzła przejścia porzuca ścieżkę
     // słuch: strzały w promieniu → podejście (z flanki: level.flankChance)
     hearRadius: 15,
     hearMemory: 1.0,        // s — jak długo usłyszany strzał jest „świeży"
@@ -176,6 +177,7 @@ export const CONFIG = Object.freeze({
     barrel: { r: 0.32, h: 1.05, k: 0.86 },          // beczka: promień, wysokość (> oko kucającego 1.0 → osłona); kolizja = gwiazda 2 kwadratów o połowie boku r·k
     tires: { r: 0.45, h: 1.05, k: 0.86 },           // stos opon (3 × 0.35 m)
     net: { h: 2.2, t: 0.08 },                       // siatka maskująca: wysokość, grubość (blokuje ruch, przepuszcza wzrok i strzał)
+    door: { h: 2.4, t: 0.3, pass: 0.98, safety: 0.05 },   // drzwi przesuwne (MapData.doors): wysokość, grubość; nav przepuszcza przy otwarciu ≥ pass; zapas czujnika (m)
     propCoverExtra: 0.3,    // m — beczki/opony: większy zasięg flagi cover (nav) i kucania (bots.halfCoverDist) — mały obrys, węzły dalej od krawędzi
   },
 
@@ -301,6 +303,8 @@ export const CONFIG = Object.freeze({
       rampWarn: { inset: 0.08, lift: 0.01, width: 0.06, height: 0.012, k: 0.8 },   // pasy ostrzegawcze na końcach ramp
       platformWarn: { spacing: 1.8, length: 0.32, k: 0.75 },   // krótkie skośne pasy ostrzegawcze na czołach galerii
       props: { segments: 16, trimScale: 0.8, barrelBands: [0.28, 0.72], tireCount: 3, tireInner: 0.55, tireGap: 0.02 },   // beczki / opony
+      door: { body: { r: 0.012, g: 0.012, b: 0.03 }, trimOff: 0.01, dim: 0.45, inset: 0.01, hideOpen: 0.999,   // drzwi przesuwne: ciemny korpus (HDR liniowy), neon krawędzi
+        stripe: { gap: 0.5, run: 0.3, y0: 0.25, y1: 0.75, w: 0.05, k: 0.8 } },   // pasy ostrzegawcze na licach
       net: { post: 0.07, tile: 0.9, bottomGap: 0.04, color: '#1a1830', opacity: 0.85, glow: 0.35 },   // siatka maskująca: słupki, kafel tekstury (m), materiał (przezroczysty, emisja uv)
       rail: { kick: 0.25, postSpacing: 1.2, post: 0.06, rail: 0.05, midY: 0.5, meshAlphaTest: 0.35 },   // barierki: ażur
       floorRoughnessMap: { neonhive: 1.3, reactor: 0.55 },   // Hive: szersze, miękkie pobłyski PointLight (bez owalnych „decali”)

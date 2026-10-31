@@ -703,6 +703,16 @@ function steerMove(B, P, sim) {
     if (B.visited[n] === 0) { B.visited[n] = 1; B.visitedCount++; }
     B.pathIdx++;
   }
+  // drzwi przesuwne: następny węzeł w przejściu, które się zamyka → porzuć ścieżkę (think wybierze nową, findPath je omija).
+  // Bot już w przejściu idzie dalej — czujnik drzwi wstrzymuje zamykanie, póki stoi w świetle przejścia.
+  if (B.pathIdx < B.pathLen) {
+    const n = B.path[B.pathIdx];
+    const nd = nav.nodeDoor[n];
+    if (nd >= 0 && nav.doorOpen[nd] < nav.doorPass) {
+      const dx = nav.x[n] - b.x, dz = nav.z[n] - b.z;
+      if (dx * dx + dz * dz > C.doorStopDist * C.doorStopDist) { B.pathLen = 0; B.pathIdx = 0; }
+    }
+  }
   if (B.state === BOT_STATE.COVER && B.pathIdx >= B.pathLen && B.coverHold > 0) B.coverHold -= B.dt;
   if (B.state === BOT_STATE.HOLD) {
     const arrived = B.pathIdx >= B.pathLen;

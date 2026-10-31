@@ -9,6 +9,7 @@
 //  - pierścień zewnętrzny (wiersze/kolumny 0 i 17) = korytarz spawnów; siatki N/S (x = 0) dzielą go na połowy,
 //    ściany pierścienia (wiersze 1/16, kolumny 1/16) mają bramy co 3–4 komórki,
 //  - 3 linie N–S: lane W (kolumna 2), lane środkowy (c8–9: okno 'ww' → plac → okno 'ww'), lane E (c15),
+//  - drzwi przesuwne w bramach c7/c10 przy ostrogach (doors) — naprzemiennie otwarte,
 //  - 2 pasma poprzeczne (wiersze 2 i 15) z osłoną, łączące wszystkie bramy pierścienia,
 //  - plac centralny 16×12 m (wiersze 6–11, kolumny 5–12): 2 filary, 4 osłony, okna 'hh' w ścianach N/S, wejścia z lane W/E,
 //  - 2 małe place w parze obrotowej: NE (filar, otwarty na pierścień E przy spawnie E) i SW (filar, przy spawnie W),
@@ -71,6 +72,15 @@ export default {
     { kind: 'tires', x: 5, z: -3 }, { kind: 'tires', x: -5, z: 3 },
     { kind: 'barrel', x: 10.7, z: -11.2 }, { kind: 'barrel', x: 11.2, z: -10.95 },
     { kind: 'barrel', x: -10.7, z: 11.2 }, { kind: 'barrel', x: -11.2, z: 10.95 },
+  ],
+  // Drzwi przesuwne (CONFIG.elements.door) w bramach c7 i c10 pierścienia N (obraz 180°: S), chowane w ścianę c8–9.
+  // Bramy przy ostrodze otwierają się naprzemiennie (faza ½ okresu); bramy c3/c14 zawsze otwarte. Skrzydło przy licu
+  // wewnętrznym ściany (z = ±14.15): styka się z narożnikiem osłony r2 c9 (bez szczeliny 0.85 m po przekątnej).
+  doors: [
+    { x: -3, z: -14.15, w: 2, slide: [2, 0], cycle: [6, 1.2, 6], phase: 0 },
+    { x: 3, z: -14.15, w: 2, slide: [-2, 0], cycle: [6, 1.2, 6], phase: 7.2 },
+    { x: 3, z: 14.15, w: 2, slide: [-2, 0], cycle: [6, 1.2, 6], phase: 0 },
+    { x: -3, z: 14.15, w: 2, slide: [2, 0], cycle: [6, 1.2, 6], phase: 7.2 },
   ],
   ramps: [],
   decor: [],
