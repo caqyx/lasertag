@@ -196,7 +196,7 @@ export const CONFIG = Object.freeze({
     fogDensity: 0.055,
     fogDensityMap: { neonhive: 0.068, orbita: 0.072 },   // gęstość mgły per mapa (głębia w dali przy ciemnej mgle)
     fogTint: 0.07,          // kolor mgły = lerp(palette.fog, palette.uv, fogTint)
-    fogTintMap: { reactor: 0.0 },   // Reactor: mgła bez turkusu (ciemny strop w overview)
+    fogTintMap: { reactor: 0.0, orbita: 0.0 },   // Reactor: mgła bez turkusu (ciemny strop w overview)
     clearColor: '#05030a',
     msaaSamples: 4,
     hdrMax: 64,             // strażnik HDR przed bloomem: clamp jasności, NaN/Inf → 0
@@ -302,11 +302,12 @@ export const CONFIG = Object.freeze({
       spawnPanel: { width: 1.6, height: 0.9, depth: 0.04, y: 1.45, intensity: 0.9, marker: 0.16, trimScale: 0.8 },
       rampWarn: { inset: 0.08, lift: 0.01, width: 0.06, height: 0.012, k: 0.8 },   // pasy ostrzegawcze na końcach ramp
       platformWarn: { spacing: 1.8, length: 0.32, k: 0.75 },   // krótkie skośne pasy ostrzegawcze na czołach galerii
-      props: { segments: 24, trimScale: 0.9, ringK: 1.6, barrelBands: [0.28, 0.72], lidInner: 0.9, lidDrop: 0.03,   // beczki / opony
+      props: { segments: 24, trimScale: 0.9, ringK: 1.6, barrelVisual: 0.82, barrelBands: [0.28, 0.72], lidInner: 0.9, lidDrop: 0.03,   // beczki / opony
         tireCount: 3, tireInner: 0.5, tireShoulder: 0.84, tireBevel: 0.3, tireGap: 0.04 },
       window: { jambIn: 0.04 },   // okno strzeleckie: ościeża (pionowe neony) cofnięte od końców otworu
       door: { body: { r: 0.012, g: 0.012, b: 0.03 }, trimOff: 0.01, dim: 0.45, inset: 0.01, hideOpen: 0.999,   // drzwi przesuwne: ciemny korpus (HDR liniowy), neon krawędzi
-        stripe: { gap: 0.5, run: 0.3, y0: 0.25, y1: 0.75, w: 0.05, k: 0.8 } },   // pasy ostrzegawcze na licach
+        midY: 0.55, seamMin: 0.8,   // pas środkowy (× wysokość), pionowa szczelina na skrzydłach dłuższych niż 2·seamMin
+        stripe: { gap: 0.28, run: 0.18, y0: 0.2, y1: 0.7, w: 0.06, k: 1.3 } },   // pasy ostrzegawcze na licach
       net: { post: 0.07, tile: 0.9, bottomGap: 0.04, color: '#2a2648', opacity: 0.9, glow: 0.9, frameDim: 0.5 },   // siatka maskująca: słupki, kafel tekstury (m), materiał (przezroczysty, emisja uv)
       rail: { kick: 0.25, postSpacing: 1.2, post: 0.06, rail: 0.05, midY: 0.5, meshAlphaTest: 0.35 },   // barierki: ażur
       floorRoughnessMap: { neonhive: 1.3, reactor: 0.55 },   // Hive: szersze, miękkie pobłyski PointLight (bez owalnych „decali”)
@@ -363,7 +364,7 @@ export const CONFIG = Object.freeze({
       // świetlówki UV pod osią dźwigara: oprawa na 2 wspornikach, regularny rytm
       uvTube: { length: 1.2, thickness: 0.035, spacing: 4, housing: 0.06, housingWidth: 0.1, housingPad: 0.05,
         drop: 0.12, bracket: 0.03, bracketInset: 0.15, intensity: 1.5, lampClear: [1.5, 2.5] },
-      uvTubeMap: { reactor: { spacing: 8, length: 0.7, intensity: 0.8, skipTall: true }, neonhive: { drop: 0.0 } },   // Hive: tuba tuż pod pasem dźwigara   // Reactor: mniej „deszczu kresek” w mgle
+      uvTubeMap: { reactor: { spacing: 8, length: 0.7, intensity: 0.8, skipTall: true }, neonhive: { drop: 0.0 }, uvmaze: { drop: 0.0 }, orbita: { drop: 0.0, spacing: 6 } },   // Hive: tuba tuż pod pasem dźwigara   // Reactor: mniej „deszczu kresek” w mgle
       conesMinSmoke: 48,            // stożki światła tylko gdy preset.smoke ≥ (High/Ultra)
       coneSegments: 24,
       coneTopRadius: 0.22,

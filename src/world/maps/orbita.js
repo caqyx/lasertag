@@ -151,7 +151,7 @@ export default {
     secondary: '#b04bff', // fiolet
     uv: '#4b3cff',        // indygo UV
     accent: '#ff8a00',    // pomarańcz
-    fog: '#05061a',
+    fog: '#07041a',   // ciemny fiolet (bez domieszki indygo: fogTintMap orbita = 0 — wcześniej niebieska mgiełka)
     ambient: '#120c2e',
   },
   walls: buildWalls(),

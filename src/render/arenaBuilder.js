@@ -196,6 +196,13 @@ function doorGeometry(s, D, col, warnCol) {
       end(u, v * (T + DR.trimOff), _wa);
       addBar(buf, _wa[0], t, _wa[1], _wa[0], c.y1 - t, _wa[1], t, t, col.r, col.g, col.b);
     }
+    // środkowy pas (dim) i pionowa szczelina w połowie skrzydła — panel czyta się jako drzwi, nie ściana
+    end(-L, v * (T + DR.trimOff), _wa); end(L, v * (T + DR.trimOff), _wb);
+    addBar(buf, _wa[0], c.y1 * DR.midY, _wa[1], _wb[0], c.y1 * DR.midY, _wb[1], t * 0.7, t * 0.7, col.r * DR.dim, col.g * DR.dim, col.b * DR.dim);
+    if (L > DR.seamMin) {
+      end(0, v * (T + DR.trimOff), _wa);
+      addBar(buf, _wa[0], t * 2, _wa[1], _wa[0], c.y1 - t * 2, _wa[1], t * 0.6, t * 0.6, col.r * DR.dim, col.g * DR.dim, col.b * DR.dim);
+    }
     // ukośne pasy ostrzegawcze w dolnej części lica
     for (let u = -L + DR.stripe.gap; u + DR.stripe.run <= L - DR.stripe.gap * 0.5; u += DR.stripe.gap) {
       end(u, v * (T + DR.trimOff), _wa); end(u + DR.stripe.run, v * (T + DR.trimOff), _wb);
@@ -434,7 +441,8 @@ function ringBars(buf, cx, y, cz, r, n, size, col) {
 }
 /** beczka / stos opon: korpus w buforze gumy (ciemny), obręcze neonowe w buforze listew */
 function addProp(bodyBuf, trimBuf, s, col, accentCol) {
-  const PR = A.props, n = PR.segments, r = s.radius, h = s.y1, t = A.trimSize * PR.trimScale;
+  // r wizualny < promień kolizji: bryły sąsiednich beczek muszą nachodzić (bez szczeliny), a korpusy nie mogą się przenikać
+  const PR = A.props, n = PR.segments, r = s.radius * (s.prop === 'barrel' ? PR.barrelVisual : 1), h = s.y1, t = A.trimSize * PR.trimScale;
   const kc = PR.ringK;   // obręcze jaśniejsze od listew ścian (małe obiekty giną na tle)
   const bright = { r: col.r * kc, g: col.g * kc, b: col.b * kc };
   if (s.prop === 'barrel') {
