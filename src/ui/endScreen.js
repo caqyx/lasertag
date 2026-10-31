@@ -1,5 +1,6 @@
 // Ekran końca meczu (PLAN §9.2): wynik z perspektywy gracza, zwycięzca, tabela końcowa,
 // „Jeszcze raz" (Enter / R) i „Menu" (M / Backspace). Strzałki ←/→ przełączają przycisk.
+import { CONFIG } from '../config.js';
 import { el } from './dom.js';
 import { createStandingsTable, formatTime } from './scoreboard.js';
 import { getMode, teamName, teamColor } from '../game/modes.js';
@@ -22,6 +23,8 @@ export function createEndScreen(rootEl, onRestart, onMenu) {
   bMenu.type = 'button';
 
   let visible = false;
+
+  let shownAt = 0;
   let focus = 0;
 
   function setFocus(i) {
@@ -37,7 +40,8 @@ export function createEndScreen(rootEl, onRestart, onMenu) {
   }
 
   function onKey(e) {
-    if (!visible) return;
+    // autorepeat trzymanego klawisza (skok, strafe) i klawisze tuż po pokazaniu nie mogą restartować meczu
+    if (!visible || e.repeat || performance.now() - shownAt < CONFIG.match.endInputDelay * 1000) return;
     switch (e.code) {
       case 'ArrowLeft': case 'ArrowRight': case 'KeyA': case 'KeyD':
         setFocus(focus === 0 ? 1 : 0); e.preventDefault(); break;
@@ -83,6 +87,7 @@ export function createEndScreen(rootEl, onRestart, onMenu) {
 
     table.render(M, sim);
     visible = true;
+    shownAt = performance.now();
     root.classList.add('show');
     setFocus(0);
   }

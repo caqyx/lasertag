@@ -19,7 +19,7 @@ function keyIndex(code) {
     case 'ShiftLeft': case 'ShiftRight': return K_SPRINT;
     case 'Space': return K_JUMP;
     case 'Tab': return K_SCORE;
-    case 'KeyC': case 'ControlLeft': return K_CROUCH; // kucanie (przytrzymaj)
+    case 'KeyC': return K_CROUCH; // kucanie (przytrzymaj); bez Ctrl — Ctrl+W zamyka kartę i nie da się tego zablokować
     default: return -1;
   }
 }
@@ -57,15 +57,15 @@ export function createKeyboardMouse(canvas, opts = {}) {
   function onKeyDown(e) {
     const i = keyIndex(e.code);
     if (i < 0 || !capturing()) return;
-    // Tab nie przenosi fokusu, Spacja/strzałki nie przewijają strony; Ctrl blokowany tylko przy locku (skróty przeglądarki)
-    if (e.code !== 'ControlLeft' || locked) e.preventDefault();
+    // Tab nie przenosi fokusu, Spacja/strzałki nie przewijają strony
+    e.preventDefault();
     keys[i] = 1;
   }
 
   function onKeyUp(e) {
     const i = keyIndex(e.code);
     if (i < 0) return;
-    if (capturing() && (e.code !== 'ControlLeft' || locked)) e.preventDefault();
+    if (capturing()) e.preventDefault();
     keys[i] = 0;
   }
 

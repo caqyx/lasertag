@@ -186,7 +186,7 @@ export function createMenu(rootEl, opts, onStart) {
   }
 
   function onKey(e) {
-    if (!visible) return;
+    if (!visible || e.repeat) return;
     switch (e.code) {
       case 'ArrowUp': case 'KeyW': setRow(rowIdx - 1); e.preventDefault(); break;
       case 'ArrowDown': case 'KeyS': case 'Tab': setRow(rowIdx + 1); e.preventDefault(); break;
