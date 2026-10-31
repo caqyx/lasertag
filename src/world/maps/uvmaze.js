@@ -92,8 +92,8 @@ export default {
     { name: 'corridor', pos: [7, 1.65, -13], look: [-15, 1.4, -13] },
     // róg NW placu centralnego, widok po przekątnej na osłony i filary
     { name: 'plaza', pos: [-5, 1.65, -5], look: [6, 1.0, -1] },
-    // spawn zachodni przy placu SW: filar po prawej, widok wzdłuż pasma S (wiersz 13) na wschód
-    { name: 'spawn', pos: [-17, 1.65, 10], look: [-3, 1.4, 8] },
+    // spawn zachodni przy placu SW: filar z boku kadru, widok ukośnie przez plac SW na wschód
+    { name: 'spawn', pos: [-17, 1.65, 7], look: [-3, 1.4, 11] },
     // róg korytarza SE, długa perspektywa na północ (kolumna 15, przecięta osłoną) w mgłę
     { name: 'corner', pos: [13, 1.65, 13], look: [13, 1.5, -9] },
   ],

@@ -75,7 +75,9 @@ Jednostka = 1 m. Oś Y w górę. Oko gracza 1.65 m.
 ### 3.1 UV Maze (M0)
 - 36 × 36 m, jeden poziom, sufit 4.5 m (kratownica techniczna).
 - Labirynt na siatce 2 m: ściany pełne 2.4 m, osłony połówkowe 1.1 m, filary.
-- Korytarze 2–4 m, 2–3 małe „place", centralny plac z osłonami.
+- Układ „trzy linie” (od 2026-10-31, D-023): lane W, lane środkowy (przez okna 'hh' i plac), lane E; pasma poprzeczne N/S.
+- Korytarze 2–4 m, plac centralny 16×12 m z osłonami i 2 filarami, 2 małe place (NE/SW, z filarem) przy spawnach E/W.
+- Zero ślepych zaułków; filary bez brył w sąsiedztwie 8 komórek (inaczej szczelina 0.7 m).
 - 8 spawnów po obwodzie (2 na stronę), drużynowe wg stron świata.
 - Paleta: magenta `#ff2bd6`, cyjan `#22e8ff`, fiolet UV `#7a3cff`, akcent kwaśna zieleń `#a6ff00`.
 
@@ -237,3 +239,5 @@ tests/                unit/*.test.mjs (node --test), smoke/*.mjs (Playwright), t
 | D-020 | 2026-10-31 | NaN/Inf guard (ShaderPass) przed bloomem + clamp HDR 64 na High/Ultra. | Feedback: „czarne klocki" tylko na High/Ultra — pojedynczy NaN rozlewany przez mip-chain bloomu. |
 | D-021 | 2026-10-31 | Farba UV: rozmyta maska + wyostrzanie smoothstep/fwidth w shaderze zamiast większych tekstur. | Feedback: pikseloza z bliska; bez wzrostu pamięci. |
 | D-022 | 2026-10-31 | Pętla wizualna M4 zamknięta po 4 iteracjach (Hive 9–10/12, Reactor 10/12); otwarte punkty w REPORT-FINAL. | Brief: max ~3 próby na problem; oceny recenzentów oscylują ±1. |
+| D-023 | 2026-10-31 | UV Maze: przebudowa układu przy 36×36 m („trzy linie”, 58 brył, 904 węzły nav); test liczby brył 70 → 58. | Decyzja użytkownika: nowy układ, ten sam rozmiar; usunięcie 12 kieszeni, czytelny flow między placami. |
+| D-024 | 2026-10-31 | `halfCoverNear` w ai.js dostaje punkt przez bufor `HC` (`halfCoverAt`), nie 3 double w argumentach. | Boxing V8 (jak D-012) ~0.6 B/krok w startHold/startHoldNear; test noalloc „gracz + 8 botów” był na granicy progu także na starej mapie. Resztkowe drobne alokacje (enterCover, headroomOk) poniżej progu — do zbadania. |
