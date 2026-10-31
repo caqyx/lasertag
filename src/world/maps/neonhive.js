@@ -6,9 +6,12 @@
 //   • 6 komór pierścienia: heksy równokątne (wszystkie kąty 120°) o bokach 6.0/3.0/4.5/4.5/4.5/3.0 m —
 //     wewnętrzny bok = cały bok komory centralnej, boki 3.0 m to wspólne ściany „szprych” z sąsiadami,
 //   • reszta hali: foremne heksy R = 4.5 m (siatka plastra), na obwodzie przycięte prostokątem hali
-//     (połówki przy ścianach E/W i N/S — tam spawny; ćwiartki w narożnikach scalone z komorą narożną).
+//     (połówki przy ścianach N/S — spawny N/S; dwie połówki przy ścianie E (W) scalone w komorę spawnu E (W);
+//     ćwiartki w narożnikach scalone z komorą narożną).
 // Komórki indeksowane (a, r): środek x = 6.75·a, z = 3.897·r (a + r parzyste); sąsiedzi (a, r±2), (a±1, r±1).
-// Przejścia (doorways) 2.4 m (komora centralna, pierścień) / 2.2 m (pas zewnętrzny) w środku wspólnego boku; tabela DOORS niżej (każde przejście dodawane z obrazem 180°).
+// Przejścia (doorways) 2.4 m (komora centralna, pierścień) / 2.2 m (pas zewnętrzny) w środku wspólnego boku
+// (kilka przesuniętych, by nie tworzyły długich linii wzroku wzdłuż obwodu); tabela DOORS (każde z obrazem 180°).
+// Każda komora ma 2–4 przejścia, więc z wnętrza widać 2–4 pełne skośne ściany + krótkie węgary pozostałych boków.
 // Symetria obrotowa 180° — strony N↔S, E↔W są uczciwe.
 
 const CEILING = 4.5;
@@ -42,6 +45,8 @@ const RING0 = [[0, 4], [4, 0], [6, 0], [6, 3], [3, 6], [0, 6]];
 const RING_K = { '1,1': 0, '0,2': 1, '-1,1': 2, '-1,-1': 3, '0,-2': 4, '1,-1': 5 };
 
 const key = (a, r) => `${a},${r}`;
+const cx = (a) => 4.5 * U * a;          // środek komórki (a, r) w metrach
+const cz = (r) => 1.5 * SQ3 * U * r;
 
 /** Wierzchołki komórki (a, r) w metrach (CCW). */
 function cellPoly(a, r) {
@@ -64,7 +69,7 @@ function cells() {
   for (let a = -3; a <= 3; a++) {
     for (let r = -5; r <= 5; r++) {
       if ((a + r) & 1) continue;
-      if (Math.abs(6.75 * a) > HW + 1e-6 || Math.abs(3.897 * r) > HD + 0.01) continue;
+      if (Math.abs(cx(a)) > HW + 1e-6 || Math.abs(cz(r)) > HD + 1e-6) continue;
       out.push([a, r]);
     }
   }
@@ -219,9 +224,6 @@ function sym(list, items) {
   }
 }
 
-const cx = (a) => 6.75 * a;
-const cz = (r) => 3.897 * r;
-
 function buildWalls() {
   const walls = hiveWalls();
 
@@ -301,11 +303,10 @@ export default {
   ],
   cams: [
     { name: 'overview', pos: [-2.5, 4.2, -11], look: [0, 0, -3.7] },
-    { name: 'corridor', pos: [18.6, 1.65, -2.9], look: [10.1, 1.4, 1.95] },
+    { name: 'corridor', pos: [16.9, 1.65, -2.4], look: [9.6, 1.3, 1.2] },
     { name: 'plaza', pos: [0, 1.65, -4.3], look: [4.5, 1.3, 2.6] },
     { name: 'spawn', pos: [-18.9, 1.65, 3.9], look: [-13.5, 1.4, 0] },
-    { name: 'corner', pos: [19.6, 1.65, -18.9], look: [10.1, 1.4, -17.5] },
+    { name: 'corner', pos: [19.4, 1.65, -18.7], look: [11, 1.3, -12.5] },
   ],
 };
 
-export const _debug = { cells, cellPoly, doorTable, pairKey, W, D };
