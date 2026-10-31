@@ -125,7 +125,7 @@ export default {
     secondary: '#00e5ff', // cyjan
     uv: '#5a2bff',        // fiolet UV (lampy sufitowe)
     accent: '#ff2a2a',    // czerwień ostrzegawcza (barierki)
-    fog: '#04100a',
+    fog: '#030608',     // prawie czarna, chłodna (#04100a podnosił czernie w turkus)
     ambient: '#0b1f16',
   },
   walls: buildWalls(),

@@ -304,7 +304,7 @@ export const CONFIG = Object.freeze({
       ceilingGlow: 1.8,             // emisja paneli sufitu (tekstura × palette.uv)
       ceilingRoughness: 0.95,
       trussColor: '#2a2638',
-      trussGlowMap: { reactor: 3 },   // jaśniejsza sylwetka kratownicy (oprawy na czym wiszą)
+      trussGlowMap: { reactor: 1.6 },   // jaśniejsza sylwetka kratownicy (oprawy na czym wiszą)
       trussGlow: 0.035,             // emisja kratownicy (palette.uv × darkNorm) — sylwetki belek czytelne w ciemności
       trussRoughness: 0.5,
       trussMetalness: 0.6,
