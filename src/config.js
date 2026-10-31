@@ -194,10 +194,10 @@ export const CONFIG = Object.freeze({
     lights: {
       hemiIntensity: 0.3,     // HemisphereLight w kolorze palette.ambient
       hemiGround: 0.35,       // ziemia = ambient × to
-      hemiMap: { reactor: 0.5 },   // mnożnik HemisphereLight per mapa (Reactor: niższe czernie)
+      hemiMap: { reactor: 0.5, neonhive: 0.4 },   // mnożnik HemisphereLight per mapa (Reactor: niższe czernie)
       defaultRange: 12,       // zasięg światła, gdy dane mapy go nie podają (graphics + smoke)
       pointScale: 0.65,       // intensywność PointLight = light.intensity × to (decay 2)
-      pointScaleMap: { neonhive: 0.35 },   // dodatkowy mnożnik PointLight per mapa
+      pointScaleMap: { neonhive: 0.2 },   // dodatkowy mnożnik PointLight per mapa
       rangeScale: 1.0,
       drop: 0.9,              // PointLight pod oprawą lampy (m) — niżej: mniejsza plama na stropie
     },
@@ -231,7 +231,7 @@ export const CONFIG = Object.freeze({
         ringIntensity: 1.6,
         warnIntensity: 1.4,
         bandWhite: 0.6,
-        rodWhite: 0.08, rodK: 0.9, bandK: 0.9,   // pręt/pasma jądra: nasycona zieleń (bez białej plamy)             // wędrujące pasmo płaszcza rdzenia: zieleń → biel (zamiast czerwieni → pomarańcz)
+        rodWhite: 0.0, rodK: 0.6, bandK: 0.65,   // pręt/pasma jądra: nasycona zieleń (bez białej plamy)             // wędrujące pasmo płaszcza rdzenia: zieleń → biel (zamiast czerwieni → pomarańcz)
         steelGlow: 0.015,
         glassOpacity: 0.12,
         collarIntensity: 1.1,
@@ -258,6 +258,9 @@ export const CONFIG = Object.freeze({
       boundaryCycle: ['reactor'],   // mapy, w których ściany obwodowe dostają różne style farby per strona
       topLine: { maps: ['neonhive'], width: 0.06, height: 0.012, k: 0.8, post: 0.045, postK: 1.2, postKey: 'uv' },   // neon na wierzchu ścian (plaster czytelny z góry)
       boundaryPanel: 9,             // szerokość panelu farby na ścianie obwodowej (m) przy boundaryCycle
+      washMap: { neonhive: 0.45 },   // mnożnik poświaty lica od listew per mapa (Hive: bez pomarańczowej łuny)
+      trimClip: ['neonhive'],       // listwy przycinane do zewnętrznego obrysu nachodzących brył
+      doorFrame: { maps: ['neonhive'], gap: [1.8, 2.8], size: 0.05, k: 0.9 },   // listwa nad przejściem
       accentWash: 0.12,             // poświata lica bryły z listwą akcentu (czerwień) — czarna bryła z czerwoną krawędzią
       // kolory lamp (klucz palety → klucz palety): bez czerwonych/różowych stożków, plam i nalotu na podłodze
       lampRemap: { reactor: { accent: 'primary' }, neonhive: { accent: 'uv', secondary: 'primary' } },
@@ -291,19 +294,20 @@ export const CONFIG = Object.freeze({
       floorRoughness: 0.75,         // × roughnessMap (≈0.6) → ~0.45 (półpołysk)
       floorMetalness: 0.2,
       floorEmissiveIntensity: 0.16,
+      floorEmissiveMap: { reactor: 0 },   // Reactor: fugi bez własnej emisji
       floorGrid: { neonhive: '#2a6670', reactor: '#2f7a78' },   // kolor siatki podłogi (domyślnie palette.uv)
       floorEnvIntensity: 0.25,      // PMREM (ogólny połysk); odbicia neonów robi RT (reflect)
       // odbicie planarne podłogi (preset.envReflections): RT w skali rozdz., rozmycie mipmapą + smuga pionowa (taps),
       // zanik z odległością od podłogi (głębia RT), farba przygaszona w odbiciu (odbijają się głównie listwy)
       // odbicie podłogi: smuga rośnie z drogą za lustrem (blurGrow/m, mipGrow/m ≤ mipMax), zanik fadeLen (m) per próbka
       reflect: { scale: 0.5, mipBias: 2.4, streak: 7, taps: 9, strength: 0.24, f0: 0.25, maskSoft: 0.9,
-        strengthMap: { reactor: 0.52, neonhive: 0.17 }, redDampMap: { reactor: 0.7 }, fadeLenMap: { reactor: 4.0 },
+        strengthMap: { reactor: 0.52, neonhive: 0.17 }, redDampMap: { reactor: 1.0 }, fadeLenMap: { reactor: 4.0 },
         fadeLen: 2.2, blurGrow: 0.7, mipGrow: 0.6, mipMax: 2.5, sideSpread: 0.7, paintInReflection: 0.25, maxValue: 16 },
       accentPolicy: { default: 'full', uvmaze: 'paint' },   // 'paint' = akcent tylko w farbie; 'full' = też listwy/światła
       darkNormRef: 0.15,            // emisja tła w kolorze uv × min(1, ref / luminancja uv) (jasny uv → ciemniej)
       darkNormMin: 0.25,
       steelMinY: 1.5,               // bryły z y0 > tego (galerie, barierki na galerii) → stalowa konstrukcja
-      steelMap: { reactor: { color: '#34343e', metalness: 0.55, roughness: 0.42, glow: 0.05, farFade: [5, 14] } },   // Reactor: ciemna stal z połyskiem
+      steelMap: { reactor: { color: '#34343e', metalness: 0.55, roughness: 0.42, glow: 0.05, farFade: [2, 7] } },   // Reactor: ciemna stal z połyskiem
       steel: { color: '#5a5a68', metalness: 0.3, roughness: 0.62, glow: 0.12, tile: 1.0,
         beam: { spacing: 1.6, width: 0.1, depth: 0.16 } },
       envBakeHeight: 1.6,
@@ -317,7 +321,8 @@ export const CONFIG = Object.freeze({
       ceilingGlow: 1.8,             // emisja paneli sufitu (tekstura × palette.uv)
       ceilingRoughness: 0.95,
       trussColor: '#2a2638',
-      trussGlowMap: { reactor: 1.6 },   // jaśniejsza sylwetka kratownicy (oprawy na czym wiszą)
+      trussGlowMap: { reactor: 0.3 },
+      trussColorMap: { reactor: '#15151c' },   // Reactor: ciemny metal kratownicy
       trussGlow: 0.035,             // emisja kratownicy (palette.uv × darkNorm) — sylwetki belek czytelne w ciemności
       trussRoughness: 0.5,
       trussMetalness: 0.6,
@@ -334,11 +339,12 @@ export const CONFIG = Object.freeze({
       lampSize: [0.9, 0.14, 0.05],  // długość, szerokość, grubość (m)
       lampIntensity: 1.7,
       lampIntensityMap: { reactor: 0.7 },
+      lampMountMap: { neonhive: { housingHeight: 0.04, housingPad: 0.01 } },   // Hive: płaska oprawa (bez ciemnego bloku w poświacie)
       lampMount: { minSpan: 0.5, crossbar: 0.08, housingHeight: 0.12, housingPad: 0.06 },
       // świetlówki UV pod osią dźwigara: oprawa na 2 wspornikach, regularny rytm
       uvTube: { length: 1.2, thickness: 0.035, spacing: 4, housing: 0.06, housingWidth: 0.1, housingPad: 0.05,
         drop: 0.12, bracket: 0.03, bracketInset: 0.15, intensity: 1.5, lampClear: [1.5, 2.5] },
-      uvTubeMap: { reactor: { spacing: 8, length: 0.7, intensity: 0.8, skipTall: true } },   // Reactor: mniej „deszczu kresek” w mgle
+      uvTubeMap: { reactor: { spacing: 8, length: 0.7, intensity: 0.8, skipTall: true }, neonhive: { drop: 0.0 } },   // Hive: tuba tuż pod pasem dźwigara   // Reactor: mniej „deszczu kresek” w mgle
       conesMinSmoke: 48,            // stożki światła tylko gdy preset.smoke ≥ (High/Ultra)
       coneSegments: 24,
       coneTopRadius: 0.22,

@@ -183,7 +183,48 @@ function loop(buf, s, y, tw, th, off, col, ext = tw / 2) {
     toWorld(s, e[0], e[1], _wa); toWorld(s, e[2], e[3], _wb);
     const dx = _wb[0] - _wa[0], dz = _wb[1] - _wa[1], l = Math.hypot(dx, dz) || 1;
     const kx = dx / l * ext, kz = dz / l * ext;
-    addBar(buf, _wa[0] - kx, y, _wa[1] - kz, _wb[0] + kx, y, _wb[1] + kz, tw, th, col.r, col.g, col.b);
+    clipBar(buf, s, _wa[0] - kx, y, _wa[1] - kz, _wb[0] + kx, y, _wb[1] + kz, tw, th, col);
+  }
+}
+
+// --- przycinanie listew do zewnętrznego obrysu grup nachodzących brył (mapy z A.trimClip)
+let clipSolids = null;
+const clipCache = new Map();
+function clipCands(s) {
+  if (!clipSolids || !s) return null;
+  let c = clipCache.get(s);
+  if (!c) {
+    const r = Math.hypot(s.hx, s.hz) + 0.3;
+    c = clipSolids.filter((o) => o !== s && Math.hypot(o.cx - s.cx, o.cz - s.cz) < r + Math.hypot(o.hx, o.hz));
+    clipCache.set(s, c);
+  }
+  return c;
+}
+function insideAny(c, x, y, z) {
+  for (const o of c) {
+    if (y > o.y1 + 0.03 || y < o.y0 - 0.03) continue;
+    const dx = x - o.cx, dz = z - o.cz;
+    if (Math.abs(dx * o.cos - dz * o.sin) < o.hx && Math.abs(dx * o.sin + dz * o.cos) < o.hz) return true;
+  }
+  return false;
+}
+// listwa a→b bez fragmentów leżących wewnątrz innych brył (bez klipu: zwykły addBar)
+function clipBar(buf, s, ax, ay, az, bx, by, bz, tw, th, col) {
+  const c = clipCands(s);
+  if (!c || !c.length) { addBar(buf, ax, ay, az, bx, by, bz, tw, th, col.r, col.g, col.b); return; }
+  const len = Math.hypot(bx - ax, by - ay, bz - az);
+  const n = Math.max(2, Math.ceil(len / 0.04));
+  let run = -1;
+  for (let k = 0; k <= n + 1; k++) {
+    const t = k / n;
+    const inside = k > n || insideAny(c, ax + (bx - ax) * t, ay + (by - ay) * t, az + (bz - az) * t);
+    if (!inside && run < 0) run = k;
+    if (inside && run >= 0) {
+      const t0 = run / n, t1 = Math.min(1, (k - 1) / n);
+      if (t1 > t0) addBar(buf, ax + (bx - ax) * t0, ay + (by - ay) * t0, az + (bz - az) * t0,
+        ax + (bx - ax) * t1, ay + (by - ay) * t1, az + (bz - az) * t1, tw, th, col.r, col.g, col.b);
+      run = -1;
+    }
   }
 }
 
@@ -888,6 +929,9 @@ export function buildArena(world, preset, textures, opts = {}) {
   const cycle = A.boundaryCycle.includes(world.id);
   const topLine = A.topLine.maps.includes(world.id);
   const vJit = TX.paintVJitter.includes(world.id);
+  clipSolids = A.trimClip.includes(world.id) ? world.solids : null;   // listwy tylko po zewnętrznym obrysie nachodzących brył
+  clipCache.clear();
+  const washK = A.washMap[world.id] ?? 1;
   let boundaryIdx = 0;
   let signIdx = 0;
   const signBuf = new GeoBuf();
@@ -899,7 +943,7 @@ export function buildArena(world, preset, textures, opts = {}) {
     const ka = pk * boost(aKey), kb = pk * boost(bKey);
     c.pa[0] = palLin[aKey].r * ka; c.pa[1] = palLin[aKey].g * ka; c.pa[2] = palLin[aKey].b * ka;
     c.pb[0] = palLin[bKey].r * kb; c.pb[1] = palLin[bKey].g * kb; c.pb[2] = palLin[bKey].b * kb;
-    const w = washKey ? palLin[washKey] : null, kw = boost(washKey) * (washKey === 'accent' ? A.accentWash : 1);
+    const w = washKey ? palLin[washKey] : null, kw = boost(washKey) * (washKey === 'accent' ? A.accentWash : 1) * washK;
     c.wash[0] = w ? w.r * kw : 0; c.wash[1] = w ? w.g * kw : 0; c.wash[2] = w ? w.b * kw : 0;
     c.top = top; c.bot = bot;
   };
@@ -954,19 +998,45 @@ export function buildArena(world, preset, textures, opts = {}) {
       // linia na wierzchu ściany (wzdłuż osi) — kontur komór czytelny z góry
       const TL = A.topLine, longX = s.hx >= s.hz;
       if (longX) { toWorld(s, -s.hx, 0, _wa); toWorld(s, s.hx, 0, _wb); } else { toWorld(s, 0, -s.hz, _wa); toWorld(s, 0, s.hz, _wb); }
-      addBar(trimBuf, _wa[0], s.y1 + TL.height / 2, _wa[1], _wb[0], s.y1 + TL.height / 2, _wb[1], TL.width, TL.height,
-        col.r * TL.k, col.g * TL.k, col.b * TL.k);
+      clipBar(trimBuf, s, _wa[0], s.y1 + TL.height / 2, _wa[1], _wb[0], s.y1 + TL.height / 2, _wb[1], TL.width, TL.height,
+        { r: col.r * TL.k, g: col.g * TL.k, b: col.b * TL.k });
       // pionowe listwy na krawędziach czół segmentu → narożniki komór (styki pod 120°) i ościeża przejść czytelne
       const pk = TL.postK, pw = TL.post, e = TL.post / 2 - 0.005;
       const pc = TL.postKey ? palLin[TL.postKey] : col;   // inny kolor niż listwa → naroża 120° czytelne z poziomu oka
       for (const su of [-1, 1]) for (const sv of [-1, 1]) {
         const lx = longX ? su * (s.hx + e) : sv * (s.hx + e), lz = longX ? sv * (s.hz + e) : su * (s.hz + e);
         toWorld(s, lx, lz, _wa);
+        const cc = clipCands(s);
+        if (cc && insideAny(cc, _wa[0], (s.y0 + s.y1) / 2, _wa[1])) continue;   // naroże schowane w sąsiedniej bryle
         addBar(trimBuf, _wa[0], s.y0 + A.trimSize, _wa[1], _wa[0], s.y1 - A.trimSize, _wa[1], pw, pw, pc.r * pk, pc.g * pk, pc.b * pk);
       }
     }
     if (s.trimBottom) trimLoop(trimBuf, s, s.y0 + A.trimSize / 2 + A.trimBottomLift, col);
   });
+  // ramy przejść: listwa nad otworem między współliniowymi segmentami ścian (przerwa doorFrame.gap) — heks czytelny z oczu gracza
+  if (A.doorFrame.maps.includes(world.id)) {
+    const DF = A.doorFrame, walls = world.solids.filter((s) => s.kind === 'wall' && !s.boundary);
+    for (let i = 0; i < walls.length; i++) {
+      const a = walls[i], la = a.hx >= a.hz;
+      const ax = la ? a.cos : a.sin, az = la ? -a.sin : a.cos;   // kierunek osi długiej (świat)
+      for (let j = i + 1; j < walls.length; j++) {
+        const b = walls[j], lb = b.hx >= b.hz;
+        const bx = lb ? b.cos : b.sin, bz = lb ? -b.sin : b.cos;
+        if (Math.abs(ax * bz - az * bx) > 0.02) continue;                 // nierównoległe
+        const dx = b.cx - a.cx, dz = b.cz - a.cz;
+        if (Math.abs(dx * az - dz * ax) > 0.06) continue;                 // nie na jednej linii
+        const along = dx * ax + dz * az;
+        const La = la ? a.hx : a.hz, Lb = lb ? b.hx : b.hz;
+        const gap = Math.abs(along) - La - Lb;
+        if (gap < DF.gap[0] || gap > DF.gap[1]) continue;
+        const sg = Math.sign(along), y = Math.min(a.y1, b.y1) - A.trimSize / 2;
+        const tk = mainKey(a.trim, i) || mainKey(b.trim, j);
+        const c = tk ? trimCol[tk] : trimCol.primary;
+        addBar(trimBuf, a.cx + ax * sg * La, y, a.cz + az * sg * La, b.cx - ax * sg * Lb, y, b.cz - az * sg * Lb,
+          DF.size, DF.size, c.r * DF.k, c.g * DF.k, c.b * DF.k);
+      }
+    }
+  }
   (world.ramps || []).forEach((r) => {
     setCur(paintBufs.stripes, 'secondary', 'primary', 'secondary', r.y1, -1);
     addSteelRamp(steelBuf, paintBufs.stripes, trimBuf, r, trimCol[warnKey], trimCol.secondary);
@@ -1103,7 +1173,7 @@ export function buildArena(world, preset, textures, opts = {}) {
     let z0 = -Infinity, z1 = Infinity;
     for (const z of trussZ) { if (z <= L.z && z > z0) z0 = z; if (z >= L.z && z < z1) z1 = z; }
     if (!isFinite(z0)) z0 = b.minZ; if (!isFinite(z1)) z1 = b.maxZ;
-    const LM = A.lampMount;
+    const LM = { ...A.lampMount, ...(A.lampMountMap[world.id] || {}) };
     if (z1 - z0 < LM.minSpan) { z0 -= A.trussSpacing / 2; z1 += A.trussSpacing / 2; }
     const yb = yBot - A.trussChord;
     addBar(trussBuf, L.x, yb, z0 - A.trussWidth / 2, L.x, yb, z1 + A.trussWidth / 2, LM.crossbar, LM.crossbar);
@@ -1122,7 +1192,7 @@ export function buildArena(world, preset, textures, opts = {}) {
     if (geo) {
       geo.deleteAttribute('uv');
       const mat = own(new THREE.MeshStandardMaterial({
-        color: A.trussColor, roughness: A.trussRoughness, metalness: A.trussMetalness,
+        color: A.trussColorMap[world.id] || A.trussColor, roughness: A.trussRoughness, metalness: A.trussMetalness,
         emissive: new THREE.Color(pal.uv), emissiveIntensity: A.trussGlow * (A.trussGlowMap[world.id] ?? 1) * darkNorm,
       }));
       const m = new THREE.Mesh(own(geo), mat);
@@ -1250,7 +1320,7 @@ export function buildArena(world, preset, textures, opts = {}) {
       metalness: A.floorMetalness,
       // siatka: tekstura biała × kolor siatki mapy (domyślnie uv palety)
       emissive: new THREE.Color(A.floorGrid[world.id] || world.palette.uv), emissiveMap: textures.get('floor:emissive'),
-      emissiveIntensity: A.floorEmissiveIntensity * darkNorm,
+      emissiveIntensity: A.floorEmissiveIntensity * (A.floorEmissiveMap[world.id] ?? 1) * darkNorm,
     }));
     patchFloorMaterial(floorMat, floorUniforms);
     floorMesh = new THREE.Mesh(geo, floorMat);
