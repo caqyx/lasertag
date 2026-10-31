@@ -91,6 +91,13 @@ Jednostka = 1 m. Oś Y w górę. Oko gracza 1.65 m.
   (świecący walec), 4 rampy, sufit 8 m.
 - Paleta: toksyczna zieleń `#39ff14`, cyjan `#00e5ff`, akcent czerwony ostrzegawczy `#ff2a2a`.
 
+### 3.4 Orbita
+- 40 × 40 m, jeden poziom, sufit 5 m. Trzy koncentryczne ośmiokąty (apotemy 15 / 9.5 / 4.5 m), ściany pod 0/45°.
+- Przejścia 3 m obrócone o 45° między pierścieniami (zewnętrzny: przekątne, środkowy: N/E/S/W, rdzeń: otwarte przekątne)
+  — do środka idzie się spiralą, bez linii wzroku na wylot. Rdzeń: 4 osłony połówkowe + filar-romb.
+- 8 spawnów w pasie między pierścieniem zewnętrznym a obwodem (osłona pośrodku każdej strony).
+- Paleta: lodowy błękit `#6fd8ff`, fiolet `#b04bff`, indygo UV `#4b3cff`, akcent pomarańcz `#ff8a00` (tylko farba/listwy osłon rdzenia).
+
 ## 4. Wygląd
 
 - Ciemność dominuje: ściany czarne/granatowe, matowe, z **farbą UV** (proceduralne wzory: pasy, geometria,
@@ -241,3 +248,4 @@ tests/                unit/*.test.mjs (node --test), smoke/*.mjs (Playwright), t
 | D-022 | 2026-10-31 | Pętla wizualna M4 zamknięta po 4 iteracjach (Hive 9–10/12, Reactor 10/12); otwarte punkty w REPORT-FINAL. | Brief: max ~3 próby na problem; oceny recenzentów oscylują ±1. |
 | D-023 | 2026-10-31 | UV Maze: przebudowa układu przy 36×36 m („trzy linie”, 58 brył, 904 węzły nav); test liczby brył 70 → 58. | Decyzja użytkownika: nowy układ, ten sam rozmiar; usunięcie 12 kieszeni, czytelny flow między placami. |
 | D-024 | 2026-10-31 | `halfCoverNear` w ai.js dostaje punkt przez bufor `HC` (`halfCoverAt`), nie 3 double w argumentach. | Boxing V8 (jak D-012) ~0.6 B/krok w startHold/startHoldNear; test noalloc „gracz + 8 botów” był na granicy progu także na starej mapie. Resztkowe drobne alokacje (enterCover, headroomOk) poniżej progu — do zbadania. |
+| D-025 | 2026-10-31 | Nowa mapa Orbita (koncepcja B z 3 propozycji); lampy bez koloru akcentu. | Wybór użytkownika; mechanika spiralnego dostępu do środka odrębna od UV Maze/Hive/Reactor; akcent w lampach dawał brązowe plamy na stropie (jak D-008). |
