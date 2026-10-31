@@ -508,24 +508,30 @@ export const CONFIG = Object.freeze({
   // Ciało gracza w FPP (render/avatars.js, instancja lokalna): tors + nogi widoczne przy patrzeniu w dół.
   // Ten sam model co awatary bez hełmu, ramion i broni (te rysuje viewModel); przesunięte do tyłu względem oka.
   fpBody: {
-    back: 0.24,               // m — przesunięcie ciała do tyłu (stojąc): kamera przed torsem, nie w nim
-    crouchBack: 0.34,         // m — w pełnym kucu (tors wyżej względem oka)
-    sensors: ['front'],       // sensory kamizelki widoczne w FPP (reszta poza kadrem / przy kamerze)
+    back: 0.29,               // m — przesunięcie ciała do tyłu (stojąc): kamera przed torsem, nie w nim
+    crouchBack: 0.36,         // m — w pełnym kucu (tors wyżej względem oka)
+    lean: 0.3,                // m/m — tors odchylony do tyłu (ścięcie z ∝ wysokość nad hip − leanBase): przy patrzeniu
+                              //        w dół widać dół kamizelki, pas i nogi, a nie samą górę torsu tuż pod okiem
+    leanBase: 0.2,            // m — ścięcie zaczyna się tyle poniżej bioder (pas i biodra też cofnięte)
+    legForward: 0.3,          // m — stopy wysunięte do przodu (ścięcie nóg: 0 w biodrze → to przy podłodze); inaczej z oka zasłania je pas
+    emit: 0.45,               // mnożnik emisji (pas, listwy) — z bliska pełna jasność przepala kadr
+    rim: 0.5,                 // mnożnik poświaty krawędzi
+    sensors: ['front'],      // sensory kamizelki widoczne w FPP (reszta poza kadrem / przy kamerze)
   },
 
   // Broń FPP + ręce (render/viewModel.js). Lufa kończy się w CONFIG.weapon.muzzleOffset.
   viewModel: {
-    scale: 0.62,              // skala względem wylotu lufy (było 0.42)
-    offset: [0.03, -0.045, 0.02], // przesunięcie broni względem CONFIG.weapon.muzzleOffset (niżej w kadrze); viewModel.muzzleWorld() zwraca faktyczny wylot
+    scale: 0.72,              // skala względem wylotu lufy (było 0.42; wylot dalej od oka → broń większa w kadrze o ~1.5×)
+    offset: [0.017, -0.02, -0.1], // przesunięcie broni względem CONFIG.weapon.muzzleOffset (niżej w kadrze); viewModel.muzzleWorld() zwraca faktyczny wylot
     bodyColor: '#0e0c16',
     roughness: 0.75,
     metalness: 0.1,
     darkColor: '#07060c',     // ciemne części metalowe (lufa, szyna, chwyt)
     gloveColor: '#141119',    // rękawice / rękawy (ciemny strój)
     gloveAccent: 0.35,        // jasność akcentów rękawic/mankietów (× kolor gracza)
-    trimIntensity: 0.45,      // cienkie akcenty — nasycone, nie białe
-    rimIntensity: 0.06,       // fresnel w kolorze gracza
-    fillColor: '#0b0816',     // sztuczne światło wypełniające (emisja, układ kamery) — liniowe ≈ 0.01–0.03
+    trimIntensity: 0.6,       // cienkie akcenty — nasycone, nie białe
+    rimIntensity: 0.08,       // fresnel w kolorze gracza
+    fillColor: '#110b20',     // sztuczne światło wypełniające (emisja, układ kamery) — liniowe ≈ 0.01–0.03
     heatIntensity: 0.9,
     hotColor: '#ff2a12',
     flashIntensity: 2.0,

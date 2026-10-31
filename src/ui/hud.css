@@ -120,6 +120,27 @@
   box-shadow: 0 0 10px #fff, 0 0 22px var(--pc);
   transition: none;
 }
+/* stamina: cienki pasek pod segmentami HP (zanika, gdy pełna) */
+.lt-stam { margin: -4px 0 10px; transition: opacity 400ms ease-out; }
+.lt-stam.hide { opacity: 0; }
+.lt-stam-track {
+  height: 4px;
+  background: var(--dim);
+  border-radius: 1px;
+  overflow: hidden;
+  transform: skewX(-18deg);
+}
+.lt-stam-fill {
+  height: 100%;
+  transform: scaleX(1);
+  transform-origin: left center;
+  background: var(--pc);
+  box-shadow: 0 0 6px var(--pc-glow);
+  transition: transform 80ms linear;
+}
+.lt-stam.low .lt-stam-fill { background: #ffb000; box-shadow: 0 0 6px rgba(255, 176, 0, 0.7); }
+.lt-stam.exh .lt-stam-fill { background: #8a8698; box-shadow: none; }
+.lt-stam.exh .lt-stam-track { animation: lt-blink 0.5s steps(2, jump-none) infinite; box-shadow: 0 0 6px rgba(255, 42, 18, 0.5); }
 .lt-score { display: flex; align-items: baseline; gap: 10px; }
 .lt-score-val {
   font-size: 22px;
