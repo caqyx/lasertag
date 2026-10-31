@@ -126,7 +126,7 @@ export function createGraphics({ canvas, presetName = CONFIG.defaults.preset }) 
     const n = Math.min(preset.pointLights, (world.lights || []).length);
     for (let i = 0; i < n; i++) {
       const L = world.lights[i];
-      const pl = new THREE.PointLight(lightColorHex(world, L.color), L.intensity * R.lights.pointScale, (L.range || R.lights.defaultRange) * R.lights.rangeScale, 2);
+      const pl = new THREE.PointLight(lightColorHex(world, L.color), L.intensity * R.lights.pointScale * (R.lights.pointScaleMap[world.id] ?? 1), (L.range || R.lights.defaultRange) * R.lights.rangeScale, 2);
       const lp = lampPosition(world, L);
       pl.position.set(lp.x, L.y - R.lights.drop, lp.z);
       pl.castShadow = false;

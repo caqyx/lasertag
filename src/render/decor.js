@@ -270,10 +270,13 @@ function buildReactorCore(d, world, own) {
   const rk = D.core.warnIntensity;
   for (let i = 0; i < 8; i++) {
     const [x0, z0] = baseOct[i], [x1, z1] = baseOct[(i + 1) % 8];
+    // krawędź cokołu cyjan; czerwone skosy ostrzegawcze tylko na co drugim boku (krótkie odcinki, nie cały cokół)
+    const cy = new THREE.Color(pal.secondary), ck = D.core.collarIntensity;
     const ge = stripForMerge(bar(x0, D.core.plinth - 0.04, z0, x1, D.core.plinth - 0.04, z1, 0.06, 0.06), ['position']);
-    withAttr(ge, 'color', 3, [red.r * rk, red.g * rk, red.b * rk]);
+    withAttr(ge, 'color', 3, [cy.r * ck, cy.g * ck, cy.b * ck]);
     withAttr(ge, 'aPhase', 1, [-1]);
     neon.push(ge);
+    if (i % 2) continue;
     for (let k = 1; k <= 3; k++) {
       const t0 = k / 4 - 0.07, t1 = k / 4 + 0.07;
       const ax = x0 + (x1 - x0) * t0, az = z0 + (z1 - z0) * t0, bx = x0 + (x1 - x0) * t1, bz = z0 + (z1 - z0) * t1;

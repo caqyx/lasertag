@@ -609,6 +609,7 @@ uniform float camNear;
 uniform float camFar;
 uniform vec2 reflRes;
 uniform float reflOn;
+uniform float reflStrength;
 uniform vec4 maskRect[ ${MAX_MASK} ];   // cx, cz, hx, hz
 uniform vec2 maskRot[ ${MAX_MASK} ];    // cos, sin
 varying vec2 vFW;
@@ -653,7 +654,7 @@ float floorMask() {
     vec3 fN = normalize( ( viewMatrix * vec4( 0.0, 1.0, 0.0, 0.0 ) ).xyz );
     float ndv = clamp( abs( dot( fN, vViewPosition ) ) * inversesqrt( max( dot( vViewPosition, vViewPosition ), 1e-12 ) ), 0.0, 1.0 );
     float fres = ${A.reflect.f0.toFixed(3)} + ( 1.0 - ${A.reflect.f0.toFixed(3)} ) * pow( 1.0 - ndv, 5.0 );
-    totalEmissiveRadiance += rc * ${A.reflect.strength.toFixed(3)} * fres * ( 1.0 - floorMask() );
+    totalEmissiveRadiance += rc * reflStrength * fres * ( 1.0 - floorMask() );
   }
 `);
   };
@@ -723,14 +724,17 @@ const MAX_MASK = 16;
 
 const CONE_VERT = /* glsl */`
 attribute vec3 color;
+attribute float aTop;
 varying vec3 vColor;
 varying vec3 vNormalV;
 varying vec3 vViewV;
 varying float vH;
+varying vec3 vWP;
 varying float vFogDepth;
 void main() {
   vColor = color;
-  vH = uv.y;
+  vWP = (modelMatrix * vec4(position, 1.0)).xyz;
+  vH = clamp(vWP.y / max(aTop, 0.1), 0.0, 1.0);   // 1 przy lampie, 0 na podłodze (niezależnie od skrócenia nad bryłą)
   vec4 mv = modelViewMatrix * vec4(position, 1.0);
   vNormalV = normalize(normalMatrix * normal);
   vViewV = normalize(-mv.xyz);
@@ -747,14 +751,19 @@ varying vec3 vColor;
 varying vec3 vNormalV;
 varying vec3 vViewV;
 varying float vH;
+varying vec3 vWP;
 varying float vFogDepth;
 void main() {
   float facing = clamp(abs(dot(vNormalV, vViewV)) * inversesqrt(max(dot(vNormalV, vNormalV) * dot(vViewV, vViewV), 1e-12)), 0.0, 1.0);
-  float edge = smoothstep(0.15, 0.9, facing); edge *= edge;  // krawędzie stożka znikają miękko (fresnel)
-  float fall = pow(clamp(vH, 0.0, 1.0), 2.2) * smoothstep(0.0, 0.45, vH);  // jasno pod lampą, wygasa długo przed podłogą
+  float edge = smoothstep(${A.coneEdge[0].toFixed(2)}, ${A.coneEdge[1].toFixed(2)}, facing); edge *= edge;  // szeroki fresnel: miękkie boki
+  // jasno pod lampą, zero przy ${(A.coneFadeTo * 100).toFixed(0)}% drogi do podłogi (nie „lita kolumna")
+  float fall = smoothstep(${(1 - A.coneFadeTo).toFixed(2)}, 1.0, vH); fall *= fall;
+  // lekki szum dymu: wolno płynące pasma
+  float n = sin(vWP.y * 3.1 - time * 0.55 + sin(vWP.x * 2.3 + vWP.z * 1.7 + time * 0.35) * 2.0);
+  n = 0.72 + 0.28 * n * sin(vWP.y * 1.3 + vWP.x * 0.9 - time * 0.25);
   float near = smoothstep(0.4, 2.2, vFogDepth);          // nie oślepia przy kamerze
   float fogF = exp(-fogDensity * fogDensity * vFogDepth * vFogDepth * 0.6);
-  float a = opacity * edge * fall * near * fogF * (0.92 + 0.08 * sin(time * 1.7 + vH * 6.0));
+  float a = opacity * edge * fall * near * fogF * n;
   gl_FragColor = vec4(vColor * a, 1.0);
 }`;
 
@@ -764,9 +773,9 @@ void main() {
 export function lightColorHex(world, hex) {
   const p = world.palette;
   if (hex && A.uvRemap[world.id] && hex.toLowerCase() === p.uv.toLowerCase()) return paletteFor(world).uv;
-  // lampy w kolorze akcentu (np. czerwień Reactora) → klucz palety (czerwone tylko listwy/pasy ostrzegawcze)
-  const lr = A.lampAccentRemap[world.id];
-  if (lr && hex && p.accent && hex.toLowerCase() === p.accent.toLowerCase()) return p[lr];
+  // lampy w wybranych kolorach palety (np. czerwień Reactora, róż/pomarańcz Hive) → inny klucz palety
+  const lr = A.lampRemap[world.id];
+  if (lr && hex) for (const k in lr) if (p[k] && hex.toLowerCase() === p[k].toLowerCase()) return p[lr[k]];
   if (accentMode(world) === 'full') return hex;
   return hex && p.accent && hex.toLowerCase() === p.accent.toLowerCase() ? p.uv : hex;
 }
@@ -935,6 +944,13 @@ export function buildArena(world, preset, textures, opts = {}) {
       if (longX) { toWorld(s, -s.hx, 0, _wa); toWorld(s, s.hx, 0, _wb); } else { toWorld(s, 0, -s.hz, _wa); toWorld(s, 0, s.hz, _wb); }
       addBar(trimBuf, _wa[0], s.y1 + TL.height / 2, _wa[1], _wb[0], s.y1 + TL.height / 2, _wb[1], TL.width, TL.height,
         col.r * TL.k, col.g * TL.k, col.b * TL.k);
+      // pionowe listwy na krawędziach czół segmentu → narożniki komór (styki pod 120°) i ościeża przejść czytelne
+      const pk = TL.postK, pw = TL.post, e = TL.post / 2 - 0.005;
+      for (const su of [-1, 1]) for (const sv of [-1, 1]) {
+        const lx = longX ? su * (s.hx + e) : sv * (s.hx + e), lz = longX ? sv * (s.hz + e) : su * (s.hz + e);
+        toWorld(s, lx, lz, _wa);
+        addBar(trimBuf, _wa[0], s.y0 + A.trimSize, _wa[1], _wa[0], s.y1 - A.trimSize, _wa[1], pw, pw, col.r * pk, col.g * pk, col.b * pk);
+      }
     }
     if (s.trimBottom) trimLoop(trimBuf, s, s.y0 + A.trimSize / 2 + A.trimBottomLift, col);
   });
@@ -1039,7 +1055,7 @@ export function buildArena(world, preset, textures, opts = {}) {
   }
   // świetlówki UV: w oprawach przykręconych pod pasem dolnym dźwigara
   {
-    const U = A.uvTube;
+    const U = { ...A.uvTube, ...(A.uvTubeMap[world.id] || {}) };   // per mapa: rzadsze/krótsze/ciemniejsze tuby
     const hy = yBot - A.trussChord / 2 - U.housing / 2 - U.drop;  // oprawa pod pasem dolnym (na wspornikach)
     const yT = hy - U.housing / 2 - U.thickness / 2;
     const c = lin(pal.uv, U.intensity * Math.sqrt(darkNorm));
@@ -1084,7 +1100,7 @@ export function buildArena(world, preset, textures, opts = {}) {
       geo.deleteAttribute('uv');
       const mat = own(new THREE.MeshStandardMaterial({
         color: A.trussColor, roughness: A.trussRoughness, metalness: A.trussMetalness,
-        emissive: new THREE.Color(pal.uv), emissiveIntensity: A.trussGlow * darkNorm,
+        emissive: new THREE.Color(pal.uv), emissiveIntensity: A.trussGlow * (A.trussGlowMap[world.id] ?? 1) * darkNorm,
       }));
       const m = new THREE.Mesh(own(geo), mat);
       m.name = 'truss';
@@ -1172,6 +1188,7 @@ export function buildArena(world, preset, textures, opts = {}) {
     tReflect: { value: null }, tReflectDepth: { value: null }, camNear: { value: 0.1 }, camFar: { value: 100 },
     reflRes: { value: new THREE.Vector2(1, 1) }, reflOn: { value: 0 },
     maskRect: { value: [] }, maskRot: { value: [] },
+    reflStrength: { value: A.reflect.strengthMap[world.id] ?? A.reflect.strength },
   };
   {
     const plats = world.solids.filter((sd) => sd.y0 > A.steelMinY && sd.kind === 'platform');
@@ -1229,6 +1246,7 @@ export function buildArena(world, preset, textures, opts = {}) {
       const col = new Float32Array(n * 3);
       for (let k = 0; k < n; k++) { col[k * 3] = c.r; col[k * 3 + 1] = c.g; col[k * 3 + 2] = c.b; }
       g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+      g.setAttribute('aTop', new THREE.BufferAttribute(new Float32Array(n).fill(top), 1));
       list.push(g);
     });
     const geo = list.length ? own(mergeGeometries(list)) : null;

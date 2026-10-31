@@ -194,6 +194,7 @@ export const CONFIG = Object.freeze({
       hemiGround: 0.35,       // ziemia = ambient × to
       defaultRange: 12,       // zasięg światła, gdy dane mapy go nie podają (graphics + smoke)
       pointScale: 0.65,       // intensywność PointLight = light.intensity × to (decay 2)
+      pointScaleMap: { neonhive: 0.5 },   // dodatkowy mnożnik PointLight per mapa
       rangeScale: 1.0,
       drop: 0.9,              // PointLight pod oprawą lampy (m) — niżej: mniejsza plama na stropie
     },
@@ -246,10 +247,11 @@ export const CONFIG = Object.freeze({
       boundaryPaintIntensity: 0.6,  // farba na ścianach obwodowych przygaszona (nie dominuje kadru)
       wallUScale: [0.85, 1.2],      // losowa skala farby wzdłuż ściany per bryła (mniej powtórzeń)
       boundaryCycle: ['reactor'],   // mapy, w których ściany obwodowe dostają różne style farby per strona
-      topLine: { maps: ['neonhive'], width: 0.06, height: 0.012, k: 0.8 },   // neon na wierzchu ścian (plaster czytelny z góry)
+      topLine: { maps: ['neonhive'], width: 0.06, height: 0.012, k: 0.8, post: 0.05, postK: 1.1 },   // neon na wierzchu ścian (plaster czytelny z góry)
       boundaryPanel: 9,             // szerokość panelu farby na ścianie obwodowej (m) przy boundaryCycle
       accentWash: 0.12,             // poświata lica bryły z listwą akcentu (czerwień) — czarna bryła z czerwoną krawędzią
-      lampAccentRemap: { reactor: 'primary' },   // lampy w kolorze akcentu → ten klucz palety (bez czerwonych stożków/plam)
+      // kolory lamp (klucz palety → klucz palety): bez czerwonych/różowych stożków, plam i nalotu na podłodze
+      lampRemap: { reactor: { accent: 'primary' }, neonhive: { accent: 'uv', secondary: 'primary' } },
       uvRemap: { reactor: 'secondary' },   // mapy bez fioletu w palecie: kolor 'uv' (listwy, lampy, stożki, sufit) → ten klucz
       coneTint: { neonhive: { key: 'primary', mix: 0.55 } }, // stożki światła podbarwione kolorem przewodnim mapy
       // poświata UV/neonu na licu ściany (× kolor listwy bryły × faktura): mocna przy listwie, gaśnie w dół
@@ -285,6 +287,7 @@ export const CONFIG = Object.freeze({
       // zanik z odległością od podłogi (głębia RT), farba przygaszona w odbiciu (odbijają się głównie listwy)
       // odbicie podłogi: smuga rośnie z drogą za lustrem (blurGrow/m, mipGrow/m ≤ mipMax), zanik fadeLen (m) per próbka
       reflect: { scale: 0.5, mipBias: 2.4, streak: 7, taps: 9, strength: 0.24, f0: 0.25, maskSoft: 0.9,
+        strengthMap: { reactor: 0.34 },
         fadeLen: 2.2, blurGrow: 0.7, mipGrow: 0.6, mipMax: 2.5, sideSpread: 0.7, paintInReflection: 0.25, maxValue: 16 },
       accentPolicy: { default: 'full', uvmaze: 'paint' },   // 'paint' = akcent tylko w farbie; 'full' = też listwy/światła
       darkNormRef: 0.15,            // emisja tła w kolorze uv × min(1, ref / luminancja uv) (jasny uv → ciemniej)
@@ -301,6 +304,7 @@ export const CONFIG = Object.freeze({
       ceilingGlow: 1.8,             // emisja paneli sufitu (tekstura × palette.uv)
       ceilingRoughness: 0.95,
       trussColor: '#2a2638',
+      trussGlowMap: { reactor: 3 },   // jaśniejsza sylwetka kratownicy (oprawy na czym wiszą)
       trussGlow: 0.035,             // emisja kratownicy (palette.uv × darkNorm) — sylwetki belek czytelne w ciemności
       trussRoughness: 0.5,
       trussMetalness: 0.6,
@@ -320,13 +324,16 @@ export const CONFIG = Object.freeze({
       // świetlówki UV pod osią dźwigara: oprawa na 2 wspornikach, regularny rytm
       uvTube: { length: 1.2, thickness: 0.035, spacing: 4, housing: 0.06, housingWidth: 0.1, housingPad: 0.05,
         drop: 0.12, bracket: 0.03, bracketInset: 0.15, intensity: 1.5, lampClear: [1.5, 2.5] },
+      uvTubeMap: { reactor: { spacing: 8, length: 0.7, intensity: 0.8 } },   // Reactor: mniej „deszczu kresek” w mgle
       conesMinSmoke: 48,            // stożki światła tylko gdy preset.smoke ≥ (High/Ultra)
       coneSegments: 24,
       coneTopRadius: 0.22,
       coneBottomRadius: 1.7,
       coneBottom: 0.0,
       coneOpacity: 0.45,
-      coneOpacityMap: { neonhive: 0.7, reactor: 0.55 },   // mnożnik krycia stożków per mapa
+      coneOpacityMap: { neonhive: 0.42, reactor: 0.33 },   // mnożnik krycia stożków per mapa
+      coneFadeTo: 0.6,              // stożek gaśnie do zera na tej części drogi lampa → podłoga
+      coneEdge: [0.3, 1.0],         // fresnel boków stożka (smoothstep facing)
       coneMargin: 0.15,             // stożek ≥ tyle od brył (brak twardych przecięć)
       coneMinHeight: 0.8,
       coneCheckRadius: 1.0,         // promień sprawdzania kolizji stożka z bryłami (m)
