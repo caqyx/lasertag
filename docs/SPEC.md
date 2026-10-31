@@ -207,6 +207,9 @@ tests/                unit/*.test.mjs (node --test), smoke/*.mjs (Playwright), t
 
 ## 13. Otwarte kwestie
 - Oryginalne zdjęcia referencyjne (`reference/ref1..4.png`) — brak; pętla wizualna opiera się na opisie z sekcji 4.
+- M4: Neon Hive (snopy światła, czytelność heksów w bryle) i Reactor (pojedyncze elementy bez mocowań) nie mają 12/12 — patrz `docs/REPORT-FINAL.md` §2.
+- FPS na prawdziwym GPU niezmierzony (headless = render programowy); odbicie planarne to największy koszt High/Ultra.
+- Pod M5: walidacja nazw/kolorów z sieci, `window.__lt` tylko w trybie debug, wejście z numerem ticku, model server-authoritative.
 
 ## 14. Dziennik decyzji
 
@@ -230,3 +233,7 @@ tests/                unit/*.test.mjs (node --test), smoke/*.mjs (Playwright), t
 | D-016 | 2026-10-30 | Hit stun 0.45 s + boty w stylu zasadzkowym (HOLD przy osłonie, flankowanie na dźwięk, patrol chodem, krótszy dystans ognia). Percepcja bota w HOLD-kucu liczona z wysokości oka stojącego — celowo („wyglądanie” zza osłony połówkowej). | Feedback: „chodzi o atakowanie nagle zamiast nawalania się”. |
 | D-017 | 2026-10-30 | Kolizje uczestnik–uczestnik (koło vs koło) + ukrywanie awatara przy kamerze; kucanie (C). | Feedback: „czarny klocek” = kamera w korpusie bota; brak kucania. |
 | D-018 | 2026-10-31 | Ciała wyeliminowanych nie blokują żywych (separacja tylko żywy–żywy). | Unika blokowania przejść i rozpychania przy respawnie. |
+| D-019 | 2026-10-31 | Kucanie tylko pod C (bez Ctrl); ekran końca ignoruje autorepeat i klawisze przez 0.5 s po pokazaniu. | QA: Ctrl+W zamyka kartę w trakcie gry (nie da się zablokować); trzymany skok/strafe restartował mecz. |
+| D-020 | 2026-10-31 | NaN/Inf guard (ShaderPass) przed bloomem + clamp HDR 64 na High/Ultra. | Feedback: „czarne klocki" tylko na High/Ultra — pojedynczy NaN rozlewany przez mip-chain bloomu. |
+| D-021 | 2026-10-31 | Farba UV: rozmyta maska + wyostrzanie smoothstep/fwidth w shaderze zamiast większych tekstur. | Feedback: pikseloza z bliska; bez wzrostu pamięci. |
+| D-022 | 2026-10-31 | Pętla wizualna M4 zamknięta po 4 iteracjach (Hive 9–10/12, Reactor 10/12); otwarte punkty w REPORT-FINAL. | Brief: max ~3 próby na problem; oceny recenzentów oscylują ±1. |

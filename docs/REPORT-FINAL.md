@@ -17,7 +17,7 @@ W repo **nie było `docs/SPEC.md` ani `reference/ref1–4.png`**.
 | **M1 Strzelanie** | Testy walki zielone; da się wyeliminować manekina; HUD z HP i ciepłem; zero alokacji | ✅ Zrobione: wiązka hitscan, 4 HP, kamizelka z 4 sensorami, eliminacja 3 s, respawn, ochrona 2 s, przegrzewanie, hit stun 0.45 s, HUD (HP, ciepło, hitmarker, kierunek trafienia, feed, „FAZER OFF"). Logika walki nie alokuje. |
 | **M2 Boty** | Boty patrolują bez utykania, walczą, szukają osłon; testy adaptacji | ✅ Graf nawigacji budowany z danych mapy (A* bez alokacji, rampy i 2 poziomy). FSM: patrol, zasadzka (HOLD, kucanie za osłoną), namierzanie, osłona i wycofanie, pościg, słuch i flankowanie. 3 poziomy: hard > normal > easy w każdym seedzie. Adaptacja ±0.25. Maks. czas bez postępu 0.7–3.3 s (limit 3.6 s). |
 | **M3 Tryby** | Pełny mecz od menu do ekranu końca w każdym trybie | ✅ ffa, tdm2, tdm4; odliczanie, timer, limity eliminacji, Tab, ekran końca (restart / menu), pauza na Esc. Smoke przechodzi pełny przepływ w 3 trybach i na 3 mapach. |
-| **M4 Mapy** | Neon Hive i Reactor przechodzą pętlę wizualną; boty nawigują na obu poziomach | ⚠️ **częściowo.** Boty nawigują na obu poziomach (100% osiągalności, przejścia przez rampy). Pętla wizualna: Neon Hive 9/12 → **10/12**, Reactor 7/12 → **9/12** (iteracja 2). Iteracja 3 (iter6/iter7) czeka na ocenę — wynik w sekcji 2. |
+| **M4 Mapy** | Neon Hive i Reactor przechodzą pętlę wizualną; boty nawigują na obu poziomach | ⚠️ **częściowo.** Nawigacja ✅: boty chodzą po obu poziomach (100% osiągalności, przejścia przez rampy). Pętla wizualna po 4 iteracjach: Neon Hive 9 → 10 → 10 → 9/12, Reactor 7 → 9 → 10 → **10/12**. Zgodnie z briefem (limit ~3 prób) zamykam M4 i opisuję otwarte punkty w sekcji 2. |
 
 **Testy:**
 - `npm test`: **264 pass, 0 fail, 1 todo**. Todo to tunelowanie przy dt = 1 s i v = 15 m/s — nieosiągalne przy 60 Hz, świadomie pominięte.
@@ -28,12 +28,23 @@ W repo **nie było `docs/SPEC.md` ani `reference/ref1–4.png`**.
 | Mapa | Iteracje (wynik recenzenta) | Ostatnie zrzuty |
 |---|---|---|
 | UV Maze | 4/12 → 4/12 → **12/12** | `screenshots/review3/`, `screenshots/iter6/` |
-| Neon Hive | 9/12 → **10/12** → (iter7: patrz niżej) | `screenshots/iter7/` |
-| Reactor | 7/12 → **9/12** → (iter7: patrz niżej) | `screenshots/iter7/` |
+| Neon Hive | 9 → 10 → 10 → 9/12 | `screenshots/iter8/` |
+| Reactor | 7 → 9 → 10 → 10/12 (+ poprawka mgły po ocenie) | `screenshots/iter8b/` |
 
-Finalne zrzuty wszystkich map na Ultra: `screenshots/final/`.
+Finalne zrzuty wszystkich map na Ultra: `screenshots/final/` (UV Maze z iter6, Neon Hive z iter8, Reactor z iter8b).
 
-**Ostatnie zastrzeżenia recenzentów do map M4 i stan poprawek w iteracji 3:**
+**Otwarte punkty M4 (ostatnie oceny):**
+- Neon Hive (NIE: mgła/dym, czytelność heksów, artefakty):
+  - stożki światła wciąż odbierane jako bryły z krawędzią;
+  - owalne plamy światła na podłodze;
+  - motyw heksagonalny czytelny głównie z farby, nie z brył (komory wyglądają jak boksy);
+  - za duża i za jasna farba na pojedynczych ścianach.
+- Reactor (NIE: ciemność, artefakty):
+  - turkusowy welon mgły — poprawione po ocenie (mgła prawie czarna, słabsza poświata kratownicy); nowa wersja nie była już oceniana;
+  - pojedyncze czerwone kreski i pręt cyjanu bez mocowania.
+- Oceny różnych recenzentów wahają się o ±1 punkt, a kolejne rundy poprawiały jedno kosztem drugiego (np. odbicia za mocne, potem za słabe). Dalszy postęp wymaga zdjęć referencyjnych albo decyzji art directora (Twojej).
+
+**Zmiany w kolejnych iteracjach M4:**
 - **Odbicia w podłodze** były za ostre i miały schodkowe brzegi. Teraz są rozmyte proporcjonalnie do odległości, ~50% słabsze, z miękkim brzegiem.
 - **Dym** układał się w kule i plamy. Teraz jest przyziemna warstwa bez kul, a stożki światła są słabsze.
 - **Kolory spoza palety** zostały usunięte: siatka podłogi, pomarańczowy pas rdzenia, duża czerwona skrzynia, czerwona mgła w Hive (kolor mgły w danych mapy).
@@ -43,12 +54,13 @@ Finalne zrzuty wszystkich map na Ultra: `screenshots/final/`.
 
 | Mapa (Ultra, gra) | calls | trójkąty | tekstury | geometrie |
 |---|---|---|---|---|
-| UV Maze | 38 | 48k | 26 | 17 |
-| Neon Hive | 40 | 69k | 27 | 18 |
-| Reactor | 52 | 52k | 28 | 24 |
+| UV Maze | 43 | 69k | 26 | 18 |
+| Neon Hive | 45 | 98k | 27 | 19 |
+| Reactor | 57 | 71k | 28 | 25 |
 | **Budżet Ultra** | 160 | 600k | 44 | 100 |
 
-- **Low:** ok. 16–18 calli przy budżecie 60.
+- **Low:** 16–23 calli przy budżecie 60. Najbliżej limitu jest Medium: 25 z 28 tekstur na Reactorze.
+- Pomiar ze smoke (8 uczestników, wszystkie efekty).
 - **Symulacja:** 8 botów zajmuje 8–11 µs na krok. Pełny mecz (sim + mecz + adaptacja, 8 botów) daje 0 GC na 100k kroków.
 - **Wycieki:** brak. Geometrie i tekstury wracają do wartości startowych po zmianach map i presetów.
 

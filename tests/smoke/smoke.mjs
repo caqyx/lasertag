@@ -428,6 +428,9 @@ async function flowStep(page, L, [map, mode, full], k) {
     // „Jeszcze raz" (Enter) → nowy mecz w tym samym trybie i mapie
     const simBefore = await page.evaluate(() => { window.__oldSim = window.__lt.sim; return true; });
     void simBefore;
+    // ekran końca ignoruje klawisze przez CONFIG.match.endInputDelay (ochrona przed autorepeat) — odczekaj z zapasem
+    const endDelay = await page.evaluate(async () => (await import('/src/config.js')).CONFIG.match.endInputDelay || 0);
+    await page.waitForTimeout(endDelay * 1000 + 400);
     await page.keyboard.press('Enter');
     await waitApp(page, 'match');
     const lk2 = await waitLock(page);

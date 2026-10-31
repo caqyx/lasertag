@@ -48,3 +48,16 @@ Po iteracji 3 + render M4 (Ultra, gra, `npm run screens`): uvmaze 39 / 61.5k / 2
 
 Wycieki: 6 zmian map (menu → mecz) i 2 cykle presetów → textures/geometries wracają do wartości startowych.
 Symulacja: 8 botów 8–11 µs/krok; `stepSim` z 8 botami na 3 mapach: 0 GC / 100k kroków (noalloc.test.mjs).
+
+## Finał (2026-10-31, smoke po ostatniej rundzie grafiki, 8 uczestników, viewport 640×360 — liczby nie zależą od rozdzielczości)
+
+| Mapa | low | medium | high | ultra | budżet ultra |
+|---|---|---|---|---|---|
+| uvmaze | 16 / 42.5k / 11 / 16 | 32 / 42.6k / 23 / 17 | 43 / 69.3k / 26 / 18 | 43 / 69.4k / 26 / 18 | 160 / 600k / 44 / 100 |
+| neonhive | 17 / 60.3k / 12 / 17 | 33 / 60.4k / 24 / 18 | 45 / 97.4k / 27 / 19 | 45 / 97.5k / 27 / 19 | |
+| reactor | 23 / 42.5k / 13 / 23 | 39 / 42.5k / 25 / 24 | 57 / 70.5k / 28 / 25 | 57 / 70.6k / 28 / 25 | |
+
+(calls / triangles / textures / geometries.) Najbliżej limitu: Medium — tekstury 25/28 na Reactor (RT bloom/odbicia/env + farba).
+High/Ultra: +1 pełnoekranowy pass NaN-guard przed bloomem; odbicie planarne ≈ +12 calli i ~+40% trójkątów (największy koszt GPU).
+Programy shaderów: 12–36 (Reactor ultra 36).
+Wycieki: po powrocie na mapę geometrie/tekstury = wartości startowe (g16→16, t11→11).
