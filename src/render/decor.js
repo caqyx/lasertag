@@ -277,14 +277,12 @@ function buildReactorCore(d, world, own) {
     withAttr(ge, 'aPhase', 1, [-1]);
     neon.push(ge);
     if (i % 2) continue;
-    for (let k = 1; k <= 3; k++) {
-      const t0 = k / 4 - 0.07, t1 = k / 4 + 0.07;
-      const ax = x0 + (x1 - x0) * t0, az = z0 + (z1 - z0) * t0, bx = x0 + (x1 - x0) * t1, bz = z0 + (z1 - z0) * t1;
-      const gs = stripForMerge(bar(ax, 0.15, az, bx, D.core.plinth - 0.18, bz, 0.05, 0.03), ['position']);
-      withAttr(gs, 'color', 3, [red.r * rk * 0.7, red.g * rk * 0.7, red.b * rk * 0.7]);
-      withAttr(gs, 'aPhase', 1, [-1]);
-      neon.push(gs);
-    }
+    // krótki czerwony odcinek ostrzegawczy na krawędzi (środek boku), przyklejony do cokołu — nie „wiszące” skosy
+    const ax = x0 + (x1 - x0) * 0.35, az = z0 + (z1 - z0) * 0.35, bx = x0 + (x1 - x0) * 0.65, bz = z0 + (z1 - z0) * 0.65;
+    const gs = stripForMerge(bar(ax, D.core.plinth - 0.04, az, bx, D.core.plinth - 0.04, bz, 0.075, 0.075), ['position']);
+    withAttr(gs, 'color', 3, [red.r * rk, red.g * rk, red.b * rk]);
+    withAttr(gs, 'aPhase', 1, [-1]);
+    neon.push(gs);
   }
   const neonGeo = own(mergeGeometries(neon));
   for (const g of neon) g.dispose();

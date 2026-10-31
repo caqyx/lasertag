@@ -149,10 +149,11 @@ function addCap(buf, s, y, up) {
   buf.quad(i, i + 1, i + 2, i + 3);
 }
 
+let paintK = 1;   // skala motywów farby dla budowanej mapy (A.paintScaleMap)
 function addSolid(paintBuf, plainBuf, s, rng, vJit = false) {
   const uScale = A.wallUScale[0] + (A.wallUScale[1] - A.wallUScale[0]) * rng();
-  const tileW = s.boundary ? TX.paintMeters[0] * A.boundaryPaintScale : TX.paintMeters[0] * uScale;
-  const tileH = s.boundary ? TX.paintMeters[1] * A.boundaryPaintScale : TX.paintMeters[1];
+  const tileW = paintK * (s.boundary ? TX.paintMeters[0] * A.boundaryPaintScale : TX.paintMeters[0] * uScale);
+  const tileH = paintK * (s.boundary ? TX.paintMeters[1] * A.boundaryPaintScale : TX.paintMeters[1]);
   const { hx, hz, y0, y1 } = s;
   const base = rng() * tileW * 4;
   const off = [base, base + 2 * hz + rng() * tileW, base + rng() * tileW * 2, base + rng() * tileW * 3];
@@ -730,11 +731,13 @@ varying vec3 vNormalV;
 varying vec3 vViewV;
 varying float vH;
 varying vec3 vWP;
+varying float vC;
 varying float vFogDepth;
 void main() {
   vColor = color;
   vWP = (modelMatrix * vec4(position, 1.0)).xyz;
   vH = clamp(vWP.y / max(aTop, 0.1), 0.0, 1.0);   // 1 przy lampie, 0 na podłodze (niezależnie od skrócenia nad bryłą)
+  vC = uv.y;                                       // 0 na dolnej krawędzi stożka (też gdy skrócony nad bryłą), 1 przy lampie
   vec4 mv = modelViewMatrix * vec4(position, 1.0);
   vNormalV = normalize(normalMatrix * normal);
   vViewV = normalize(-mv.xyz);
@@ -752,12 +755,13 @@ varying vec3 vNormalV;
 varying vec3 vViewV;
 varying float vH;
 varying vec3 vWP;
+varying float vC;
 varying float vFogDepth;
 void main() {
   float facing = clamp(abs(dot(vNormalV, vViewV)) * inversesqrt(max(dot(vNormalV, vNormalV) * dot(vViewV, vViewV), 1e-12)), 0.0, 1.0);
-  float edge = smoothstep(${A.coneEdge[0].toFixed(2)}, ${A.coneEdge[1].toFixed(2)}, facing); edge *= edge;  // szeroki fresnel: miękkie boki
+  float edge = smoothstep(${A.coneEdge[0].toFixed(2)}, ${A.coneEdge[1].toFixed(2)}, facing); edge *= edge * edge;  // szeroki fresnel: miękkie boki
   // jasno pod lampą, zero przy ${(A.coneFadeTo * 100).toFixed(0)}% drogi do podłogi (nie „lita kolumna")
-  float fall = smoothstep(${(1 - A.coneFadeTo).toFixed(2)}, 1.0, vH); fall *= fall;
+  float fall = smoothstep(${(1 - A.coneFadeTo).toFixed(2)}, 1.0, vH) * smoothstep(0.0, 0.7, vC); fall *= fall;   // brak krawędzi podstawy
   // lekki szum dymu: wolno płynące pasma
   float n = sin(vWP.y * 3.1 - time * 0.55 + sin(vWP.x * 2.3 + vWP.z * 1.7 + time * 0.35) * 2.0);
   n = 0.72 + 0.28 * n * sin(vWP.y * 1.3 + vWP.x * 0.9 - time * 0.25);
@@ -831,6 +835,8 @@ export function buildArena(world, preset, textures, opts = {}) {
   const own = (x) => { disposables.push(x); return x; };
   const rng = createRng((world.seed ^ A.seedSalt) >>> 0).next;
   const pal = paletteFor(world);
+  paintK = A.paintScaleMap[world.id] ?? 1;
+  const paintI = A.paintIntensity * (A.paintIntensityMap[world.id] ?? 1);
   const lin = (hex, k = 1) => new THREE.Color(hex).multiplyScalar(k);
   const palLin = { primary: lin(pal.primary), secondary: lin(pal.secondary), uv: lin(pal.uv), accent: lin(pal.accent) };
   const fullAccent = accentMode(world) === 'full';
@@ -858,7 +864,7 @@ export function buildArena(world, preset, textures, opts = {}) {
   for (const k of MAIN_KEYS) pillarCol[k] = saturate(lin(pal[k], A.trimIntensity * A.pillar.intensity * Math.min(lumNorm(pal[k]), A.pillar.lumMax)), A.pillar.saturation);
   const dimCol = {};
   for (const k of MAIN_KEYS) dimCol[k] = lin(pal[k], A.rubber.lineIntensity * lumNorm(pal[k]));
-  const accentLin = lin(pal.accent, A.paintIntensity * A.accentPaintScale);
+  const accentLin = lin(pal.accent, paintI * A.accentPaintScale * (A.accentPaintMap[world.id] ?? 1));
   // akcent z danych → kolor główny (deterministycznie per bryła)
   const mainKey = (key, i) => (MAIN_KEYS.includes(key) ? key
     : (key === 'accent' ? (fullAccent ? 'accent' : (i % 2 ? 'secondary' : 'primary')) : null));
@@ -883,7 +889,7 @@ export function buildArena(world, preset, textures, opts = {}) {
 
   const setCur = (buf, aKey, bKey, washKey, top, bot) => {
     const c = buf.cur;
-    const pk = A.paintIntensity * (buf.curBoundary ? A.boundaryPaintIntensity : 1);
+    const pk = paintI * (buf.curBoundary ? A.boundaryPaintIntensity : 1);
     const ka = pk * boost(aKey), kb = pk * boost(bKey);
     c.pa[0] = palLin[aKey].r * ka; c.pa[1] = palLin[aKey].g * ka; c.pa[2] = palLin[aKey].b * ka;
     c.pb[0] = palLin[bKey].r * kb; c.pb[1] = palLin[bKey].g * kb; c.pb[2] = palLin[bKey].b * kb;
@@ -946,10 +952,11 @@ export function buildArena(world, preset, textures, opts = {}) {
         col.r * TL.k, col.g * TL.k, col.b * TL.k);
       // pionowe listwy na krawędziach czół segmentu → narożniki komór (styki pod 120°) i ościeża przejść czytelne
       const pk = TL.postK, pw = TL.post, e = TL.post / 2 - 0.005;
+      const pc = TL.postKey ? palLin[TL.postKey] : col;   // inny kolor niż listwa → naroża 120° czytelne z poziomu oka
       for (const su of [-1, 1]) for (const sv of [-1, 1]) {
         const lx = longX ? su * (s.hx + e) : sv * (s.hx + e), lz = longX ? sv * (s.hz + e) : su * (s.hz + e);
         toWorld(s, lx, lz, _wa);
-        addBar(trimBuf, _wa[0], s.y0 + A.trimSize, _wa[1], _wa[0], s.y1 - A.trimSize, _wa[1], pw, pw, col.r * pk, col.g * pk, col.b * pk);
+        addBar(trimBuf, _wa[0], s.y0 + A.trimSize, _wa[1], _wa[0], s.y1 - A.trimSize, _wa[1], pw, pw, pc.r * pk, pc.g * pk, pc.b * pk);
       }
     }
     if (s.trimBottom) trimLoop(trimBuf, s, s.y0 + A.trimSize / 2 + A.trimBottomLift, col);
@@ -1066,6 +1073,14 @@ export function buildArena(world, preset, textures, opts = {}) {
         let nearLamp = false;
         for (const L of world.lights || []) if (Math.abs(L.x - x) < U.lampClear[0] && Math.abs(L.z - z) < U.lampClear[1]) nearLamp = true;
         if (nearLamp) continue;
+        // nad wysoką bryłą (rdzeń do stropu) tuba wyglądałaby na zawieszoną w powietrzu → pomiń
+        let overTall = false;
+        for (const sd of world.solids) {
+          if (sd.y1 < yBot - 1.0) continue;
+          const dx = x - sd.cx, dz = z - sd.cz;
+          if (Math.abs(dx * sd.cos - dz * sd.sin) < sd.hx + 1.5 && Math.abs(dx * sd.sin + dz * sd.cos) < sd.hz + 1.5) overTall = true;
+        }
+        if (overTall) continue;
         for (const ex of [-hl + U.bracketInset, hl - U.bracketInset]) {
           addBar(trussBuf, x + ex, yBot, z - A.trussWidth / 2, x + ex, yBot, z + A.trussWidth / 2, U.bracket, U.bracket);
           addBar(trussBuf, x + ex, yBot, z, x + ex, hy, z, U.bracket, U.bracket);
@@ -1127,9 +1142,10 @@ export function buildArena(world, preset, textures, opts = {}) {
     const geo = steelBuf.toGeometry();
     if (geo) {
       const grate = textures.get('steel:grate');
+      const SM = { ...A.steel, ...(A.steelMap[world.id] || {}) };   // per mapa (Reactor: ciemniejsza, bardziej metaliczna)
       const mat = own(new THREE.MeshStandardMaterial({
-        color: A.steel.color, map: grate, metalness: A.steel.metalness, roughness: A.steel.roughness,
-        emissive: new THREE.Color(pal.uv), emissiveMap: grate, emissiveIntensity: A.steel.glow * darkNorm,
+        color: SM.color, map: grate, metalness: SM.metalness, roughness: SM.roughness,
+        emissive: new THREE.Color(pal.uv), emissiveMap: grate, emissiveIntensity: SM.glow * darkNorm,
       }));
       const m = new THREE.Mesh(own(geo), mat);
       m.name = 'steel';
@@ -1206,7 +1222,7 @@ export function buildArena(world, preset, textures, opts = {}) {
     scaleUv(geo, W / TX.floorMeters, D / TX.floorMeters);
     floorMat = own(new THREE.MeshStandardMaterial({
       color: 0xffffff, map: textures.get('floor:color'),
-      roughness: A.floorRoughness, roughnessMap: textures.get('floor:rough'),
+      roughness: A.floorRoughness * (A.floorRoughnessMap[world.id] ?? 1), roughnessMap: textures.get('floor:rough'),
       metalness: A.floorMetalness,
       // siatka: tekstura biała × kolor siatki mapy (domyślnie uv palety)
       emissive: new THREE.Color(A.floorGrid[world.id] || world.palette.uv), emissiveMap: textures.get('floor:emissive'),

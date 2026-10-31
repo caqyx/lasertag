@@ -183,6 +183,7 @@ export const CONFIG = Object.freeze({
     toneMapping: 'neutral', // 'neutral' | 'aces' (patrz graphics.js)
     toneMappingExposure: 0.95,
     fogDensity: 0.055,
+    fogDensityMap: { neonhive: 0.068 },   // gęstość mgły per mapa (głębia w dali przy ciemnej mgle)
     fogTint: 0.07,          // kolor mgły = lerp(palette.fog, palette.uv, fogTint)
     clearColor: '#05030a',
     msaaSamples: 4,
@@ -192,9 +193,10 @@ export const CONFIG = Object.freeze({
     lights: {
       hemiIntensity: 0.3,     // HemisphereLight w kolorze palette.ambient
       hemiGround: 0.35,       // ziemia = ambient × to
+      hemiMap: { reactor: 0.5 },   // mnożnik HemisphereLight per mapa (Reactor: niższe czernie)
       defaultRange: 12,       // zasięg światła, gdy dane mapy go nie podają (graphics + smoke)
       pointScale: 0.65,       // intensywność PointLight = light.intensity × to (decay 2)
-      pointScaleMap: { neonhive: 0.5 },   // dodatkowy mnożnik PointLight per mapa
+      pointScaleMap: { neonhive: 0.35 },   // dodatkowy mnożnik PointLight per mapa
       rangeScale: 1.0,
       drop: 0.9,              // PointLight pod oprawą lampy (m) — niżej: mniejsza plama na stropie
     },
@@ -242,12 +244,15 @@ export const CONFIG = Object.freeze({
       wallColor: '#090a18',         // prawie czarny granat (× faktura sklejki)
       wallRoughness: 0.85,
       paintIntensity: 0.75,         // emisja farby UV (maski × kolor bryły; HDR → bloom)
+      paintIntensityMap: { neonhive: 0.7 },   // mnożnik emisji farby per mapa
+      paintScaleMap: { neonhive: 0.75 },      // skala motywów farby per mapa (< 1 → mniejsze motywy)
+      accentPaintMap: { neonhive: 0.5 },      // róż w Hive tylko jako drobne, ciemniejsze akcenty
       accentPaintScale: 0.8,        // akcent (limonka) tylko w drobnych elementach farby
       boundaryPaintScale: 1.4,      // ściany obwodowe: kafel 8.4 × 3.36 m (duże murale, ostre z bliska)
       boundaryPaintIntensity: 0.6,  // farba na ścianach obwodowych przygaszona (nie dominuje kadru)
       wallUScale: [0.85, 1.2],      // losowa skala farby wzdłuż ściany per bryła (mniej powtórzeń)
       boundaryCycle: ['reactor'],   // mapy, w których ściany obwodowe dostają różne style farby per strona
-      topLine: { maps: ['neonhive'], width: 0.06, height: 0.012, k: 0.8, post: 0.05, postK: 1.1 },   // neon na wierzchu ścian (plaster czytelny z góry)
+      topLine: { maps: ['neonhive'], width: 0.06, height: 0.012, k: 0.8, post: 0.06, postK: 1.6, postKey: 'uv' },   // neon na wierzchu ścian (plaster czytelny z góry)
       boundaryPanel: 9,             // szerokość panelu farby na ścianie obwodowej (m) przy boundaryCycle
       accentWash: 0.12,             // poświata lica bryły z listwą akcentu (czerwień) — czarna bryła z czerwoną krawędzią
       // kolory lamp (klucz palety → klucz palety): bez czerwonych/różowych stożków, plam i nalotu na podłodze
@@ -278,6 +283,7 @@ export const CONFIG = Object.freeze({
       rampWarn: { inset: 0.08, lift: 0.01, width: 0.06, height: 0.012, k: 0.8 },   // pasy ostrzegawcze na końcach ramp
       platformWarn: { spacing: 1.8, length: 0.32, k: 0.75 },   // krótkie skośne pasy ostrzegawcze na czołach galerii
       rail: { kick: 0.25, postSpacing: 1.2, post: 0.06, rail: 0.05, midY: 0.5, meshAlphaTest: 0.35 },   // barierki: ażur
+      floorRoughnessMap: { neonhive: 1.3 },   // Hive: szersze, miękkie pobłyski PointLight (bez owalnych „decali”)
       floorRoughness: 0.75,         // × roughnessMap (≈0.6) → ~0.45 (półpołysk)
       floorMetalness: 0.2,
       floorEmissiveIntensity: 0.16,
@@ -287,12 +293,13 @@ export const CONFIG = Object.freeze({
       // zanik z odległością od podłogi (głębia RT), farba przygaszona w odbiciu (odbijają się głównie listwy)
       // odbicie podłogi: smuga rośnie z drogą za lustrem (blurGrow/m, mipGrow/m ≤ mipMax), zanik fadeLen (m) per próbka
       reflect: { scale: 0.5, mipBias: 2.4, streak: 7, taps: 9, strength: 0.24, f0: 0.25, maskSoft: 0.9,
-        strengthMap: { reactor: 0.34 },
+        strengthMap: { reactor: 0.4 },
         fadeLen: 2.2, blurGrow: 0.7, mipGrow: 0.6, mipMax: 2.5, sideSpread: 0.7, paintInReflection: 0.25, maxValue: 16 },
       accentPolicy: { default: 'full', uvmaze: 'paint' },   // 'paint' = akcent tylko w farbie; 'full' = też listwy/światła
       darkNormRef: 0.15,            // emisja tła w kolorze uv × min(1, ref / luminancja uv) (jasny uv → ciemniej)
       darkNormMin: 0.25,
       steelMinY: 1.5,               // bryły z y0 > tego (galerie, barierki na galerii) → stalowa konstrukcja
+      steelMap: { reactor: { color: '#34343e', metalness: 0.55, roughness: 0.42, glow: 0.05 } },   // Reactor: ciemna stal z połyskiem
       steel: { color: '#5a5a68', metalness: 0.3, roughness: 0.62, glow: 0.12, tile: 1.0,
         beam: { spacing: 1.6, width: 0.1, depth: 0.16 } },
       envBakeHeight: 1.6,
@@ -331,7 +338,7 @@ export const CONFIG = Object.freeze({
       coneBottomRadius: 1.7,
       coneBottom: 0.0,
       coneOpacity: 0.45,
-      coneOpacityMap: { neonhive: 0.42, reactor: 0.33 },   // mnożnik krycia stożków per mapa
+      coneOpacityMap: { neonhive: 0.3, reactor: 0.33 },   // mnożnik krycia stożków per mapa
       coneFadeTo: 0.6,              // stożek gaśnie do zera na tej części drogi lampa → podłoga
       coneEdge: [0.3, 1.0],         // fresnel boków stożka (smoothstep facing)
       coneMargin: 0.15,             // stożek ≥ tyle od brył (brak twardych przecięć)

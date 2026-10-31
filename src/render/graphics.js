@@ -122,6 +122,7 @@ export function createGraphics({ canvas, presetName = CONFIG.defaults.preset }) 
     if (!world) return;
     const pal = world.palette;
     hemi.color.set(pal.ambient);
+    hemi.intensity = R.lights.hemiIntensity * (R.lights.hemiMap[world.id] ?? 1);
     hemi.groundColor.set(pal.ambient).multiplyScalar(R.lights.hemiGround);
     const n = Math.min(preset.pointLights, (world.lights || []).length);
     for (let i = 0; i < n; i++) {
@@ -168,7 +169,7 @@ export function createGraphics({ canvas, presetName = CONFIG.defaults.preset }) 
     if (!scene.fog) scene.fog = new THREE.FogExp2(world.palette.fog, R.fogDensity);
     // mgła: kolor palety podbarwiony fioletem UV (widoczna fioletowo-granatowa głębia, nie czarna)
     scene.fog.color.set(world.palette.fog).lerp(fogTintColor.set(paletteFor(world).uv), R.fogTint * darkNormFor(world));
-    scene.fog.density = R.fogDensity;
+    scene.fog.density = R.fogDensityMap[world.id] ?? R.fogDensity;
     renderer.setClearColor(scene.fog.color, 1);
   }
 
