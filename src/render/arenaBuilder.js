@@ -525,18 +525,24 @@ function addNet(steelBuf, trimBuf, netBuf, s, col) {
   const len = 2 * L, G = NT.tile;
   const nx = longX ? -s.sin : s.cos, nz = longX ? -s.cos : -s.sin;
   const yA = s.y0 + NT.bottomGap, yB = s.y1;
-  const i = netBuf.count;
-  netBuf.vert(_wa[0], yA, _wa[1], nx, 0, nz, 0, 0);
-  netBuf.vert(_wb[0], yA, _wb[1], nx, 0, nz, len / G, 0);
-  netBuf.vert(_wb[0], yB, _wb[1], nx, 0, nz, len / G, (yB - yA) / G);
-  netBuf.vert(_wa[0], yB, _wa[1], nx, 0, nz, 0, (yB - yA) / G);
-  netBuf.quad(i, i + 1, i + 2, i + 3);
-  addBar(trimBuf, _wa[0], yB, _wa[1], _wb[0], yB, _wb[1], A.trimSize, A.trimSize, col.r, col.g, col.b);
-  addBar(steelBuf, _wa[0], yA, _wa[1], _wb[0], yA, _wb[1], NT.post * 0.6, NT.post * 0.6, 1, 1, 1);
-  // neonowa rama: dolna linka przygaszona + pionowe neony na słupkach (siatka czytelna z daleka)
+  const ax = _wa[0], az = _wa[1], bx = _wb[0], bz = _wb[1];
+  // siatka z NT.segs pasów; górna krawędź obwisa między słupkami (sinus) — tkanina, nie ogrodzenie
+  const top = (t) => yB - NT.sag * Math.sin(Math.PI * t);
+  const i0 = netBuf.count;
+  for (let k = 0; k <= NT.segs; k++) {
+    const t = k / NT.segs, x = ax + (bx - ax) * t, z = az + (bz - az) * t, yt = top(t);
+    netBuf.vert(x, yA, z, nx, 0, nz, (len * t) / G, 0);
+    netBuf.vert(x, yt, z, nx, 0, nz, (len * t) / G, (yt - yA) / G);
+  }
+  for (let k = 0; k < NT.segs; k++) { const a = i0 + 2 * k; netBuf.quad(a, a + 2, a + 3, a + 1); }
+  // linka nośna wzdłuż obwisłej krawędzi (przygaszony neon) i dolna linka stalowa
   const dk = NT.frameDim;
-  addBar(trimBuf, _wa[0], yA + A.trimSize, _wa[1], _wb[0], yA + A.trimSize, _wb[1], A.trimSize * 0.7, A.trimSize * 0.7, col.r * dk, col.g * dk, col.b * dk);
-  for (const p of [_wa, _wb]) addBar(trimBuf, p[0], yA, p[1], p[0], yB, p[1], NT.post + A.trimSize * 0.5, A.trimSize * 0.5, col.r, col.g, col.b);
+  for (let k = 0; k < NT.segs; k++) {
+    const t0 = k / NT.segs, t1 = (k + 1) / NT.segs;
+    addBar(trimBuf, ax + (bx - ax) * t0, top(t0), az + (bz - az) * t0, ax + (bx - ax) * t1, top(t1), az + (bz - az) * t1,
+      A.trimSize * 0.6, A.trimSize * 0.6, col.r * dk, col.g * dk, col.b * dk);
+  }
+  addBar(steelBuf, ax, yA, az, bx, yA, bz, NT.post * 0.6, NT.post * 0.6, 1, 1, 1);
 }
 
 // prostopadłościan bryły do bufora stali; UV w metrach / kafel kratki (góra: x/z, boki: wzdłuż/wysokość)

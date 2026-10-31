@@ -97,8 +97,8 @@ function sym(list, items) {
 
 function buildWalls() {
   const w = [];
-  w.push(...ring(R_OUT, [1, 3, 5, 7], [], WALL_H, 'wall', { paint: 'stripes', trim: 'primary' }));   // jeden kolor listwy na pierścień — ciągłość na stykach 45°
-  w.push(...ring(R_MID, [0, 2, 4, 6], [], WALL_H, 'wall', { paint: 'geo', trim: 'secondary' }, [1, 3, 5, 7]));   // okna na przekątnych
+  w.push(...ring(R_OUT, [1, 3, 5, 7], [], WALL_H, 'wall', { trim: 'primary' }));   // jeden kolor listwy na pierścień (ciągłość na stykach 45°); styl farby losowany per segment
+  w.push(...ring(R_MID, [0, 2, 4, 6], [], WALL_H, 'wall', { trim: 'secondary' }, [1, 3, 5, 7]));   // okna na przekątnych
   // rdzeń: tylko boki N/E/S/W jako osłony połówkowe (przekątne otwarte)
   for (const i of [0, 2, 4, 6]) {
     const half = R_CORE * TAN;

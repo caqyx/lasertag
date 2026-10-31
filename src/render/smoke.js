@@ -188,7 +188,7 @@ export function createSmoke(world, count, rng, opts = {}) {
     mtx.elements[0] = amp;    // amplituda dryfu w instanceMatrix[0][0] (translacja w [3])
     mtx.elements[5] = aspect; // proporcje smugi w [1][1]
     const mid = band === SM.midBand;
-    mtx.elements[10] = mid ? SM.midOpacity : 1;   // mnożnik krycia w [2][2]
+    mtx.elements[10] = mid ? SM.midOpacity : band === SM.lowBand ? SM.lowOpacity : 1;   // mnożnik krycia w [2][2]
     mtx.elements[1] = mid ? SM.midGlow : 1;       // mnożnik jasności bazowej w [0][1]
     mesh.setMatrixAt(i, mtx);
     params[i * 4 + 2] = size;

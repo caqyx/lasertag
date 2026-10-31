@@ -259,7 +259,7 @@ export const CONFIG = Object.freeze({
       wallColor: '#090a18',         // prawie czarny granat (× faktura sklejki)
       wallRoughness: 0.85,
       paintIntensity: 0.62,         // runda renderu: farba ciemniejsza od listew (hierarchia jasności; było 0.75) — emisja farby UV (maski × kolor bryły; HDR → bloom)
-      paintIntensityMap: { neonhive: 0.7 },   // mnożnik emisji farby per mapa
+      paintIntensityMap: { neonhive: 0.7, reactor: 1.21 },   // mnożnik emisji farby per mapa (Reactor: 0.62 × 1.21 ≈ 0.75 sprzed rundy renderu — farba „nie świeciła”)
       paintScale: 1.0,              // skala motywów farby dla map bez wpisu w paintScaleMap (0.8 cofnięte: moiré w dali — D-032)
       paintScaleMap: { neonhive: 0.75 },      // skala motywów farby per mapa (< 1 → mniejsze motywy)
       accentPaintMap: { neonhive: 0.5, orbita: 0.5 },      // róż w Hive tylko jako drobne, ciemniejsze akcenty
@@ -310,7 +310,7 @@ export const CONFIG = Object.freeze({
         hazard: { inset: 0.06, width: 0.26, step: 0.22, slant: 0.7, w: 0.05, k: 1.3 },   // pas ostrzegawczy przy krawędzi natarcia
         handle: { gap: 0.08, out: 0.045, y0: 0.85, y1: 1.45, size: 0.045, k: 1.4 },     // uchwyt (pionowy pręt)
         rail: { w: 0.12, h: 0.1, lift: 0.14, over: 0.1, k: 0.0, hangers: 0.6 } },   // szyna nad listwą (lift), na wieszakach co hangers m                  // szyna-prowadnica nad przejściem i kieszenią
-      net: { post: 0.07, tile: 0.9, bottomGap: 0.04, color: '#2a2648', opacity: 0.9, glow: 0.9, frameDim: 0.5 },   // siatka maskująca: słupki, kafel tekstury (m), materiał (przezroczysty, emisja uv)
+      net: { post: 0.07, tile: 0.9, bottomGap: 0.04, color: '#2a2648', opacity: 0.9, glow: 0.9, frameDim: 0.5, segs: 8, sag: 0.18 },   // segs/sag: obwisła górna krawędź (bez sztywnej ramy)   // siatka maskująca: słupki, kafel tekstury (m), materiał (przezroczysty, emisja uv)
       rail: { kick: 0.25, postSpacing: 1.2, post: 0.06, rail: 0.05, midY: 0.5, meshAlphaTest: 0.35 },   // barierki: ażur
       floorRoughnessMap: { neonhive: 1.3, reactor: 0.55 },   // Hive: szersze, miękkie pobłyski PointLight (bez owalnych „decali”)
       floorRoughness: 0.75,         // × roughnessMap (≈0.6) → ~0.45 (półpołysk)
@@ -364,9 +364,9 @@ export const CONFIG = Object.freeze({
       lampMountMap: { neonhive: { housingHeight: 0.04, housingPad: 0.01 } },   // Hive: płaska oprawa (bez ciemnego bloku w poświacie)
       lampMount: { minSpan: 0.5, crossbar: 0.08, housingHeight: 0.12, housingPad: 0.06 },
       // świetlówki UV pod osią dźwigara: oprawa na 2 wspornikach, regularny rytm
-      uvTube: { length: 1.2, thickness: 0.035, spacing: 6,   // runda renderu: rzadziej (było 4 — „deszcz kresek”)
+      uvTube: { length: 1.2, thickness: 0.035, spacing: 8,   // runda renderu: rzadziej (było 4 — „deszcz kresek” bez widocznych mocowań)
         housing: 0.06, housingWidth: 0.1, housingPad: 0.05,
-        drop: 0.12, bracket: 0.03, bracketInset: 0.15, intensity: 1.5, lampClear: [1.5, 2.5] },
+        drop: 0.12, bracket: 0.03, bracketInset: 0.15, intensity: 1.1, lampClear: [1.5, 2.5] },
       uvTubeMap: { reactor: { spacing: 8, length: 0.7, intensity: 0.8, skipTall: true }, neonhive: { drop: 0.0 }, uvmaze: { drop: 0.0 }, orbita: { drop: 0.0, spacing: 6 } },   // Hive: tuba tuż pod pasem dźwigara   // Reactor: mniej „deszczu kresek” w mgle
       conesMinSmoke: 48,            // stożki światła tylko gdy preset.smoke ≥ (High/Ultra)
       coneSegments: 24,
@@ -434,9 +434,10 @@ export const CONFIG = Object.freeze({
     sizePerClearance: 2.4,  // rozmiar ≤ (prześwit − dryf) × to (brak przecięć ze ścianami)
     lowBand: [0.25, 1.0],   // warstwa dolna (m) — równomierna przyziemna mgiełka
     highBand: [3.0, 4.2],   // warstwa podsufitowa (m)
-    lowShare: 0.55,
+    lowShare: 0.3,
+    lowOpacity: 0.6,        // × krycie płacht przyziemnych (czytane jako płaskie plamy-decale na podłodze)
     midBand: [1.0, 2.4],    // warstwa środkowa (m) — kłęby na wysokości oka/listew, łapią kolor lamp
-    midShare: 0.35,
+    midShare: 0.6,
     midAspect: [1.3, 2.0],  // bliżej kuli niż płachty przyziemne
     midSize: 0.75,          // × zakres rozmiaru (mniejsze niż płachty, większe niż podsufitowe)
     midOpacity: 2.6,        // × krycie warstwy środkowej (addytywny ciemny odcień — inaczej niewidoczna poza stożkami lamp)
