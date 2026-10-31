@@ -11,7 +11,7 @@ import { CONFIG } from '../../config.js';
 import { segmentClearSeg, SEG } from '../../world/physics.js';
 import { nearestNodeBuf, NEAR, findPath, randomNode, smoothPath } from '../../world/nav.js';
 import { isEnemy, sameTeam, heightScale } from '../combat.js';
-import { skillScale, stepAdapt } from './adapt.js';
+import { stepAdapt } from './adapt.js';   // skala = skillScale (adapt.js), liczona wprost w updateSkill
 
 export const BOT_STATE = Object.freeze({ PATROL: 'patrol', HOLD: 'hold', ENGAGE: 'engage', COVER: 'cover', CHASE: 'chase' });
 
@@ -165,10 +165,11 @@ function updateSkill(B, P, sim) {
   const L = B.L;
   if (B.adapt !== null && B.player !== null && isEnemy(P, B.player)) {
     stepAdapt(B.adapt, sim.time);
-    const s = skillScale(B.adapt, L);
-    B.sigma = s.aimSigma * DEG;
-    B.reaction = s.reaction;
-    B.turn = s.turn * DEG;
+    // = skillScale(B.adapt, L) liczone wprost: odczyt pól współdzielonego A.scale w meczu z graczem alokował HeapNumbery
+    const s = B.adapt.offset;
+    B.sigma = L.aimSigmaDeg * (1 - s) * DEG;
+    B.reaction = L.reaction * (1 - s);
+    B.turn = L.turnDegPerSec * (1 + s) * DEG;
   } else {
     B.sigma = L.aimSigmaDeg * DEG;
     B.reaction = L.reaction;

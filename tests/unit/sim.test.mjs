@@ -270,7 +270,7 @@ test('separacja: dwa ciała idące na siebie nie nachodzą (d ≥ 2r − ε), pr
   assert.ok(Math.abs(A.body.x + B.body.x) < 1e-6, 'symetryczne rozepchnięcie po połowie');
 });
 
-test('separacja: ciało wypchnięte na ścianę nie wchodzi w nią; wyeliminowany stoi', () => {
+test('separacja: ciało wypchnięte na ścianę nie wchodzi w nią; wyeliminowany nie blokuje (D-018)', () => {
   const w = buildWorld({
     id: 't', name: 't', seed: 1, size: { w: 30, d: 30 }, ceiling: 6, perimeter: { h: 6 },
     walls: [{ x: -2, z: 0, w: 1, d: 6, h: 3 }], ramps: [], spawns: [{ x: 10, z: 10, team: 0 }], cams: [], lights: [], decor: [], palette: {},
@@ -285,11 +285,12 @@ test('separacja: ciało wypchnięte na ścianę nie wchodzi w nią; wyeliminowan
     assert.ok(B.body.x - B.body.radius >= wallFace - 2e-3, `B w ścianie: x=${B.body.x}`);
     assert.ok(A.body.x - B.body.x >= A.body.radius + B.body.radius - 2e-3, 'A nachodzi na B');
   }
-  // wyeliminowany: nie przesuwa się, żywy się od niego odbija
+  // wyeliminowany (D-018): nie przesuwa się i nie blokuje — żywy przechodzi przez jego ciało aż do ściany
   B.state = 'eliminated'; B.stateTimer = 100;
   const bx = B.body.x;
   placeAt(A, bx + 2, 0, 0, Math.PI / 2);
   for (let i = 0; i < 60; i++) stepSim(sim, DT);
   assert.equal(B.body.x, bx);
-  assert.ok(A.body.x - bx >= A.body.radius + B.body.radius - 1e-6);
+  assert.ok(A.body.x - A.body.radius < bx + B.body.radius, `A zablokowany przez wyeliminowanego: x=${A.body.x}`);
+  assert.ok(A.body.x - A.body.radius >= wallFace - 2e-3, `A w ścianie: x=${A.body.x}`);
 });

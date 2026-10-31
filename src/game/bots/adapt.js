@@ -8,6 +8,12 @@ import { CONFIG } from '../../config.js';
 import { EV } from '../../core/events.js';
 
 const KILL = 1;
+// evaluate rzadko (co evalInterval) → zwykle nie jest zoptymalizowana, a w interpreterze każdy wynik double to HeapNumber.
+// Dlatego offset liczony w całkowitych mikro-jednostkach (Smi), progi r jako ułamki ‰ (porównanie całkowite).
+const ADA = CONFIG.bots.adapt;
+const U = 1e6;
+const STEP_U = Math.round(ADA.step * U), DECAY_U = Math.round(ADA.decay * U), MAX_U = Math.round(ADA.maxOffset * U);
+const HIGH_PM = Math.round(ADA.highRatio * 1000), LOW_PM = Math.round(ADA.lowRatio * 1000);
 const DEATH = 2;
 
 /** @param {{ capacity?: number }} [o] capacity = pojemność pierścienia zdarzeń gracza w oknie */
@@ -72,16 +78,17 @@ function evaluate(A, time) {
     if (A.times[k] > time) continue;
     if (A.kinds[k] === KILL) e++; else d++;
   }
-  const r = (e + 1) / (d + 1);
-  A.lastRatio = r;
-  let s = A.offset;
-  if (r > C.highRatio) s += C.step;
-  else if (r < C.lowRatio) s -= C.step;
-  else if (s > 0) s = s - C.decay < 0 ? 0 : s - C.decay;
-  else if (s < 0) s = s + C.decay > 0 ? 0 : s + C.decay;
-  if (s > C.maxOffset) s = C.maxOffset;
-  if (s < -C.maxOffset) s = -C.maxOffset;
-  A.offset = Math.round(s * 1e6) / 1e6;    // bez dryfu zmiennoprzecinkowego (0.05 kroki)
+  A.lastRatio = (e + 1) / (d + 1);
+  // r > high ⇔ (e+1)·1000 > high‰·(d+1)  (wszystko całkowite)
+  const rn = (e + 1) * 1000;
+  let u = Math.round(A.offset * U);
+  if (rn > HIGH_PM * (d + 1)) u += STEP_U;
+  else if (rn < LOW_PM * (d + 1)) u -= STEP_U;
+  else if (u > 0) u = u - DECAY_U < 0 ? 0 : u - DECAY_U;
+  else if (u < 0) u = u + DECAY_U > 0 ? 0 : u + DECAY_U;
+  if (u > MAX_U) u = MAX_U;
+  if (u < -MAX_U) u = -MAX_U;
+  A.offset = u / U;                         // bez dryfu zmiennoprzecinkowego (kroki 0.05)
   A.evals++;
 }
 

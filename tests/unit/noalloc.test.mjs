@@ -25,6 +25,8 @@ import { buildNav } from '../../src/world/nav.js';
 import { createBotBrain } from '../../src/game/bots/ai.js';
 import neonhive from '../../src/world/maps/neonhive.js';
 import reactor from '../../src/world/maps/reactor.js';
+import { createAdapt, recordFromEvents } from '../../src/game/bots/adapt.js';
+import { createMatch, stepMatch } from '../../src/game/match.js';
 
 const N = 100_000;
 const LIMIT = 64 * 1024;
@@ -173,6 +175,28 @@ for (const [mapName, data] of [['uvmaze', uvmaze], ['neonhive', neonhive], ['rea
     addParticipant(sim, createParticipant({ id, inputSource: createBotBrain({ level: LEVELS[id % 3], nav, adapt: null }) }));
   }
   SCENARIOS[`stepSim (${mapName}, 8 botów)`] = (i) => simStep(sim, i);
+}
+// Pełna pętla meczu jak main.js: gracz (isPlayer) + 8 botów z adaptacją, stepMatch i recordFromEvents co krok.
+{
+  const nav = buildNav(world);
+  const sim = createSim({ world, seed: 33 });
+  const adapt = createAdapt();
+  addParticipant(sim, createParticipant({ id: 0, isPlayer: true, inputSource: createDummyInput({ strafe: true }) }));
+  for (let id = 1; id <= 8; id++) {
+    addParticipant(sim, createParticipant({ id, inputSource: createBotBrain({ level: LEVELS[id % 3], nav, adapt }) }));
+  }
+  const M = createMatch(sim, 'ffa', { countdown: 0 });
+  const ps = sim.participants;
+  SCENARIOS['stepSim + stepMatch + adapt (uvmaze, gracz + 8 botów)'] = () => {
+    stepSim(sim, 1 / 60);
+    stepMatch(M, sim, 1 / 60);
+    recordFromEvents(adapt, sim.events, 0);
+    sim.events.clear();
+    if (M.state === 'ended') {   // nowy „mecz" bez alokacji: zeruj wyniki i czas
+      for (let k = 0; k < ps.length; k++) { const st = ps[k].stats; st.score = 0; st.elims = 0; st.deaths = 0; st.hits = 0; st.shots = 0; }
+      M.state = 'playing'; M.timeLeft = M.timeLimit; M.elapsed = 0; M.sinceStart = 0;
+    }
+  };
 }
 for (const k of Object.keys(SCENARIOS)) if (k.startsWith('stepSim')) WARMUP[k] = 200_000;
 
