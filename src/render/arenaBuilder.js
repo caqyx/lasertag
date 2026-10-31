@@ -173,44 +173,67 @@ function addSolid(paintBuf, plainBuf, s, rng, vJit = false) {
   w[0] = saved[0]; w[1] = saved[1]; w[2] = saved[2];
 }
 
+/** Kierunek osi długiej skrzydła (świat) i znak przesuwu wzdłuż niej: σ = +1, gdy kieszeń leży po stronie +u. */
+function doorAxis(s, D) {
+  const longX = s.hx >= s.hz;
+  const ax = longX ? s.cos : s.sin, az = longX ? -s.sin : s.cos;
+  return { longX, ax, az, sigma: D.sx * ax + D.sz * az >= 0 ? 1 : -1, slide: Math.hypot(D.sx, D.sz) };
+}
+
 /**
- * Skrzydło drzwi przesuwnych w pozie zamkniętej (x0, z0): ciemny korpus + neon na krawędziach + pasy ostrzegawcze na licach.
- * Jeden bufor z kolorami wierzchołków (materiał listew) → 1 draw call na skrzydło.
+ * Skrzydło drzwi przesuwnych w pozie zamkniętej (x0, z0): ciemny korpus, neon na krawędziach, przy krawędzi natarcia
+ * (wjeżdża w przejście) pionowy pas ostrzegawczy na całą wysokość i uchwyt. Jeden bufor z kolorami wierzchołków
+ * (materiał listew) → 1 draw call na skrzydło. Szyna-prowadnica jest statyczna (doorRail).
  */
 function doorGeometry(s, D, col, warnCol) {
   const DR = A.door, t = A.trimSize;
   const buf = new GeoBuf({ color: true });
   const c = { ...s, cx: D.x0, cz: D.z0 };
-  const longX = c.hx >= c.hz, L = longX ? c.hx : c.hz, T = longX ? c.hz : c.hx;
+  const { longX, sigma } = doorAxis(s, D);
+  const L = longX ? c.hx : c.hz, T = longX ? c.hz : c.hx;
   const end = (u, v, out) => (longX ? toWorld(c, u, v, out) : toWorld(c, v, u, out));
   const body = DR.body;
   end(-L, 0, _wa); end(L, 0, _wb);
   // korpus o DR.inset cieńszy od bryły: w kieszeni chowa się za licem ściany (bez z-fightingu, gdy lico drzwi = lico ściany)
   addBar(buf, _wa[0], c.y1 / 2, _wa[1], _wb[0], c.y1 / 2, _wb[1], 2 * (T - DR.inset), c.y1, body.r, body.g, body.b);
-  // neon: górna i dolna krawędź (po obu licach), pionowe krawędzie skrzydła
+  const lead = -sigma * L;                  // krawędź natarcia (po przeciwnej stronie niż kieszeń)
+  const H = DR.hazard, k = H.k;
   for (const v of [-1, 1]) {
-    end(-L, v * (T + DR.trimOff), _wa); end(L, v * (T + DR.trimOff), _wb);
+    const off = v * (T + DR.trimOff);
+    // neon: górna i dolna krawędź, pionowe krawędzie skrzydła
+    end(-L, off, _wa); end(L, off, _wb);
     addBar(buf, _wa[0], c.y1 - t / 2, _wa[1], _wb[0], c.y1 - t / 2, _wb[1], t, t, col.r, col.g, col.b);
     addBar(buf, _wa[0], t * 1.5, _wa[1], _wb[0], t * 1.5, _wb[1], t, t, col.r * DR.dim, col.g * DR.dim, col.b * DR.dim);
     for (const u of [-L, L]) {
-      end(u, v * (T + DR.trimOff), _wa);
+      end(u, off, _wa);
       addBar(buf, _wa[0], t, _wa[1], _wa[0], c.y1 - t, _wa[1], t, t, col.r, col.g, col.b);
     }
-    // środkowy pas (dim) i pionowa szczelina w połowie skrzydła — panel czyta się jako drzwi, nie ściana
-    end(-L, v * (T + DR.trimOff), _wa); end(L, v * (T + DR.trimOff), _wb);
-    addBar(buf, _wa[0], c.y1 * DR.midY, _wa[1], _wb[0], c.y1 * DR.midY, _wb[1], t * 0.7, t * 0.7, col.r * DR.dim, col.g * DR.dim, col.b * DR.dim);
-    if (L > DR.seamMin) {
-      end(0, v * (T + DR.trimOff), _wa);
-      addBar(buf, _wa[0], t * 2, _wa[1], _wa[0], c.y1 - t * 2, _wa[1], t * 0.6, t * 0.6, col.r * DR.dim, col.g * DR.dim, col.b * DR.dim);
+    // pas ostrzegawczy przy krawędzi natarcia: ukośne odcinki jeden nad drugim, na całą wysokość skrzydła
+    const u0 = lead + sigma * H.inset, u1 = u0 + sigma * H.width;
+    for (let y = H.step * 0.5; y + H.step <= c.y1 - t * 2; y += H.step) {
+      end(u0, off, _wa); end(u1, off, _wb);
+      addBar(buf, _wa[0], y, _wa[1], _wb[0], y + H.step * H.slant, _wb[1], H.w, H.w, warnCol.r * k, warnCol.g * k, warnCol.b * k);
     }
-    // ukośne pasy ostrzegawcze w dolnej części lica
-    for (let u = -L + DR.stripe.gap; u + DR.stripe.run <= L - DR.stripe.gap * 0.5; u += DR.stripe.gap) {
-      end(u, v * (T + DR.trimOff), _wa); end(u + DR.stripe.run, v * (T + DR.trimOff), _wb);
-      addBar(buf, _wa[0], DR.stripe.y0, _wa[1], _wb[0], DR.stripe.y1, _wb[1], DR.stripe.w, DR.stripe.w,
-        warnCol.r * DR.stripe.k, warnCol.g * DR.stripe.k, warnCol.b * DR.stripe.k);
-    }
+    // uchwyt: pionowy pręt za pasem ostrzegawczym, odsunięty od lica
+    const uh = lead + sigma * (H.inset + H.width + DR.handle.gap);
+    end(uh, v * (T + DR.handle.out), _wa);
+    addBar(buf, _wa[0], DR.handle.y0, _wa[1], _wa[0], DR.handle.y1, _wa[1], DR.handle.size, DR.handle.size,
+      col.r * DR.handle.k, col.g * DR.handle.k, col.b * DR.handle.k);
   }
   return buf.toGeometry();
+}
+
+/** Szyna-prowadnica nad przejściem i kieszenią (statyczna, w buforze stali) + przygaszony neon pod nią. */
+function doorRail(steelBuf, trimBuf, s, D, col) {
+  const RL = A.door.rail;
+  const { ax, az, sigma, slide } = doorAxis(s, D);
+  const longX = s.hx >= s.hz, L = longX ? s.hx : s.hz;
+  const a = -sigma * L, b = sigma * (L + slide + RL.over);   // od krawędzi natarcia (skrzydła rozsuwane stykają się w osi) do końca kieszeni
+  const y = s.y1 + RL.lift + RL.h / 2;
+  addBar(steelBuf, D.x0 + ax * a, y, D.z0 + az * a, D.x0 + ax * b, y, D.z0 + az * b, RL.w, RL.h, 1, 1, 1);
+  const k = RL.k;
+  addBar(trimBuf, D.x0 + ax * a, y - RL.h / 2 - A.trimSize * 0.3, D.z0 + az * a, D.x0 + ax * b, y - RL.h / 2 - A.trimSize * 0.3, D.z0 + az * b,
+    A.trimSize * 0.6, A.trimSize * 0.6, col.r * k, col.g * k, col.b * k);
 }
 
 // ---------------------------------------------------------------- listwy, odboje
@@ -433,6 +456,13 @@ function addDisc(buf, cx, cz, r0, r1, y, n) {
   for (let k = 0; k < n; k++) { const a = i0 + 2 * k; buf.quad(a, a + 2, a + 3, a + 1); }   // CCW patrząc z góry
 }
 // neonowy obręcz z n prętów
+// przerywany obręcz (bieżnik opony): co drugi segment z n
+function ringDashes(buf, cx, y, cz, r, n, size, col) {
+  for (let k = 0; k < n; k += 2) {
+    const a0 = (k / n) * Math.PI * 2, a1 = ((k + 1) / n) * Math.PI * 2;
+    addBar(buf, cx + Math.cos(a0) * r, y, cz + Math.sin(a0) * r, cx + Math.cos(a1) * r, y, cz + Math.sin(a1) * r, size, size, col.r, col.g, col.b);
+  }
+}
 function ringBars(buf, cx, y, cz, r, n, size, col) {
   for (let k = 0; k < n; k++) {
     const a0 = (k / n) * Math.PI * 2, a1 = ((k + 1) / n) * Math.PI * 2;
@@ -457,17 +487,24 @@ function addProp(bodyBuf, trimBuf, s, col, accentCol) {
   }
   // opony: k sztuk, profil zaokrąglony (stożki ścięte przy bokach), rowek między oponami, otwór w środku;
   // neon na bieżniku (środek wysokości) każdej opony, co druga w kolorze akcentu
-  const k = PR.tireCount, th = h / k, ri = r * PR.tireInner, rs = r * PR.tireShoulder, e = th * PR.tireBevel;
+  const k = PR.tireCount, th = h / k, e = th * PR.tireBevel;
+  let cx = s.cx, cz = s.cz, ri = 0, rs = 0;
   for (let j = 0; j < k; j++) {
+    // każda opona lekko przesunięta (stos układany ręcznie) — deterministycznie z numeru grupy i opony
+    const ang = (s.group * 2.399 + j * 2.1) % (Math.PI * 2);
+    cx = s.cx + Math.cos(ang) * PR.tireJitter; cz = s.cz + Math.sin(ang) * PR.tireJitter;
+    const rj = r - PR.tireJitter;   // obrys w granicach bryły kolizji mimo przesunięcia
+    ri = rj * PR.tireInner; rs = rj * PR.tireShoulder;
     const y0 = j * th + PR.tireGap, y1 = (j + 1) * th;
-    addFrustum(bodyBuf, s.cx, s.cz, rs, r, y0, y0 + e, n);
-    addCyl(bodyBuf, s.cx, s.cz, r, y0 + e, y1 - e, n);
-    addFrustum(bodyBuf, s.cx, s.cz, r, rs, y1 - e, y1, n);
-    addCyl(bodyBuf, s.cx, s.cz, ri, y0, y1, n, true);
-    addDisc(bodyBuf, s.cx, s.cz, ri, rs, y1, n);
-    ringBars(trimBuf, s.cx, (y0 + y1) / 2, s.cz, r + t * 0.5, n, t, j % 2 ? accentCol : bright);
+    addFrustum(bodyBuf, cx, cz, rs, rj, y0, y0 + e, n);
+    addCyl(bodyBuf, cx, cz, rj, y0 + e, y1 - e, n);
+    addFrustum(bodyBuf, cx, cz, rj, rs, y1 - e, y1, n);
+    addCyl(bodyBuf, cx, cz, ri, y0, y1, n, true);
+    addDisc(bodyBuf, cx, cz, ri, rs, y1, n);
+    // bieżnik: przerywany neon (sygnatura opony — beczka ma ciągłe obręcze), co druga opona w kolorze akcentu
+    ringDashes(trimBuf, cx, (y0 + y1) / 2, cz, rj + t * 0.5, PR.treadDashes, t, j % 2 ? accentCol : bright);
   }
-  ringBars(trimBuf, s.cx, h + t * 0.3, s.cz, (ri + rs) / 2, n, t * 0.6, bright);   // obrys otworu górnej opony
+  ringBars(trimBuf, cx, h + t * 0.3, cz, ri + t, n, t * 0.6, bright);   // obrys otworu górnej opony
 }
 /** siatka maskująca: ażur (bufor siatek barierek), słupki stalowe na końcach, neon na górnej krawędzi */
 function addNet(steelBuf, trimBuf, netBuf, s, col) {
@@ -1018,7 +1055,7 @@ export function buildArena(world, preset, textures, opts = {}) {
   const own = (x) => { disposables.push(x); return x; };
   const rng = createRng((world.seed ^ A.seedSalt) >>> 0).next;
   const pal = paletteFor(world);
-  paintK = A.paintScaleMap[world.id] ?? 1;
+  paintK = A.paintScaleMap[world.id] ?? A.paintScale;
   boundaryK = A.boundaryPaintScaleMap[world.id] ?? 1;
   const boundaryPI = A.boundaryPaintIntensityMap[world.id] ?? A.boundaryPaintIntensity;
   const paintI = A.paintIntensity * (A.paintIntensityMap[world.id] ?? 1);
@@ -1095,7 +1132,10 @@ export function buildArena(world, preset, textures, opts = {}) {
       if (s.group === i) addProp(rubberBuf, trimBuf, s, trimCol[tk && tk !== 'accent' ? tk : 'secondary'], trimCol.accent);
       return;
     }
-    if (s.mover >= 0) return;   // drzwi przesuwne: osobny mesh (doorMeshes), przesuwany w update
+    if (s.mover >= 0) {   // drzwi przesuwne: skrzydło = osobny mesh (doorMeshes, przesuwany w update); szyna statyczna tutaj
+      doorRail(steelBuf, trimBuf, s, world.doors[s.mover], trimCol[tk && tk !== 'accent' ? tk : 'secondary']);
+      return;
+    }
     if (s.kind === 'net') { addNet(steelBuf, trimBuf, netBuf, s, trimCol[tk && tk !== 'accent' ? tk : 'uv']); return; }
     if (isSteel(s)) {
       // obrysy galerii/barierek w kolorach przewodnich; czerwień (akcent) tylko jako krótkie pasy ostrzegawcze

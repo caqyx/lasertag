@@ -156,7 +156,11 @@ export function createSmoke(world, count, rng, opts = {}) {
   for (let i = 0; i < count; i++) {
     // dwie warstwy: nisko nad podłogą (większe płachty) i pod sufitem (wokół lamp); trochę pomiędzy
     const r0 = rnd();
-    const band = r0 < SM.lowShare ? SM.lowBand : (r0 < SM.lowShare + SM.highShare ? SM.highBand : [SM.heightMin, SM.heightMax]);
+    // warstwy: przyziemna (płachty), środkowa na wysokości oka/listew (kłęby bliższe kuli — widoczny dym w powietrzu),
+    // podsufitowa (opcjonalna), reszta losowo w [heightMin, heightMax]
+    const band = r0 < SM.lowShare ? SM.lowBand
+      : r0 < SM.lowShare + SM.midShare ? SM.midBand
+        : r0 < SM.lowShare + SM.midShare + SM.highShare ? SM.highBand : [SM.heightMin, SM.heightMax];
     const top = Math.min(band[1], world.ceiling - 0.45);
     const layer = rnd();
     const y = band[0] + layer * Math.max(0, top - band[0]);
@@ -170,11 +174,12 @@ export function createSmoke(world, count, rng, opts = {}) {
     mtx.makeTranslation(x, y, z);
     params[i * 4] = rnd();
     params[i * 4 + 1] = (rnd() - 0.5) * 2 * SM.spin;
-    let size = SM.sizeMin + (SM.sizeMax - SM.sizeMin) * (band === SM.lowBand ? 1 : 0.7) * (0.6 + 0.4 * rnd());
+    let size = SM.sizeMin + (SM.sizeMax - SM.sizeMin) * (band === SM.lowBand ? 1 : band === SM.midBand ? SM.midSize : 0.7) * (0.6 + 0.4 * rnd());
     // prześwit do ścian: kłąb (z dryfem) nie może przecinać brył — inaczej widać prostą krawędź billboardu
     const clear = clearanceXZ(world, x, z, y);
     const amp = Math.min(SM.driftRadius, Math.max(0, clear - SM.wallClearance) * 0.5);
-    const aspect = SM.aspect[0] + (SM.aspect[1] - SM.aspect[0]) * rnd();
+    const asp = band === SM.midBand ? SM.midAspect : SM.aspect;
+    const aspect = asp[0] + (asp[1] - asp[0]) * rnd();
     // szerokość smugi (size × aspect) ograniczona prześwitem
     size = Math.min(size, Math.max(SM.sizeFloor, (clear - amp) * SM.sizePerClearance) / aspect);
     mtx.elements[0] = amp;    // amplituda dryfu w instanceMatrix[0][0] (translacja w [3])
