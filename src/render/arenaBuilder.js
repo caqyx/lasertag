@@ -612,7 +612,8 @@ uniform float camFar;
 uniform vec2 reflRes;
 uniform float reflOn;
 uniform float reflStrength;
-uniform float reflRedDamp;   // czerwone akcenty w odbiciu słabiej (nie „lewitujący pas”)
+uniform float reflRedDamp;
+uniform float reflFade;      // droga zaniku odbicia (m), per mapa   // czerwone akcenty w odbiciu słabiej (nie „lewitujący pas”)
 uniform vec4 maskRect[ ${MAX_MASK} ];   // cx, cz, hx, hz
 uniform vec2 maskRot[ ${MAX_MASK} ];    // cos, sin
 varying vec2 vFW;
@@ -647,7 +648,7 @@ float floorMask() {
       vec2 o = vec2( ( mod( float( k ), 2.0 ) - 0.5 ) * ${A.reflect.sideSpread.toFixed(2)}, t ) * spread * px * 2.0;
       vec3 sc = texture2D( tReflect, ruv + o, bias ).rgb;
       float bd = max( -perspectiveDepthToViewZ( texture2D( tReflectDepth, ruv + o ).x, camNear, camFar ) - vViewPosition.z, 0.0 );
-      float f = exp( -bd / ${A.reflect.fadeLen.toFixed(2)} );
+      float f = exp( -bd / reflFade );
       rc += sc * w * f;
       wsum += w;
     }
@@ -1019,7 +1020,7 @@ export function buildArena(world, preset, textures, opts = {}) {
     scaleUv(geo, W / A.ceilingTile, D / A.ceilingTile);
     const tex = textures.get('ceiling');
     const mat = own(new THREE.MeshStandardMaterial({
-      color: 0xffffff, map: tex, roughness: A.ceilingRoughness, metalness: 0,
+      color: new THREE.Color(1, 1, 1).multiplyScalar(A.ceilingAlbedoMap[world.id] ?? 1), map: tex, roughness: A.ceilingRoughness, metalness: 0,
       emissive: new THREE.Color(pal.uv), emissiveMap: tex, emissiveIntensity: A.ceilingGlow * (A.ceilingGlowMap[world.id] ?? 1) * darkNorm,
     }));
     const lamps = { pos: [], col: [] };
@@ -1227,6 +1228,7 @@ export function buildArena(world, preset, textures, opts = {}) {
     maskRect: { value: [] }, maskRot: { value: [] },
     reflStrength: { value: A.reflect.strengthMap[world.id] ?? A.reflect.strength },
     reflRedDamp: { value: A.reflect.redDampMap[world.id] ?? 0 },
+    reflFade: { value: A.reflect.fadeLenMap[world.id] ?? A.reflect.fadeLen },
   };
   {
     const plats = world.solids.filter((sd) => sd.y0 > A.steelMinY && sd.kind === 'platform');

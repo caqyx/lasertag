@@ -297,7 +297,7 @@ export const CONFIG = Object.freeze({
       // zanik z odległością od podłogi (głębia RT), farba przygaszona w odbiciu (odbijają się głównie listwy)
       // odbicie podłogi: smuga rośnie z drogą za lustrem (blurGrow/m, mipGrow/m ≤ mipMax), zanik fadeLen (m) per próbka
       reflect: { scale: 0.5, mipBias: 2.4, streak: 7, taps: 9, strength: 0.24, f0: 0.25, maskSoft: 0.9,
-        strengthMap: { reactor: 0.52, neonhive: 0.17 }, redDampMap: { reactor: 0.7 },
+        strengthMap: { reactor: 0.52, neonhive: 0.17 }, redDampMap: { reactor: 0.7 }, fadeLenMap: { reactor: 4.0 },
         fadeLen: 2.2, blurGrow: 0.7, mipGrow: 0.6, mipMax: 2.5, sideSpread: 0.7, paintInReflection: 0.25, maxValue: 16 },
       accentPolicy: { default: 'full', uvmaze: 'paint' },   // 'paint' = akcent tylko w farbie; 'full' = też listwy/światła
       darkNormRef: 0.15,            // emisja tła w kolorze uv × min(1, ref / luminancja uv) (jasny uv → ciemniej)
@@ -312,7 +312,8 @@ export const CONFIG = Object.freeze({
       envFarScale: 1.5,             // far PMREM = max(szer., gł. areny) × to
       bakeSearch: { maxRadius: 12, step: 0.5, margin: 0.6 },   // szukanie punktu bake envMap poza bryłami
       ceilingTile: 4.8,
-      ceilingGlowMap: { reactor: 0.35 },   // Reactor: ciemniejszy strop (bez płaskiej turkusowej strefy)
+      ceilingGlowMap: { reactor: 0.35 },
+      ceilingAlbedoMap: { reactor: 0.3 },   // Reactor: strop ciemniejszy (lampy pod stropem nie dają płaskiej turkusowej strefy)   // Reactor: ciemniejszy strop (bez płaskiej turkusowej strefy)
       ceilingGlow: 1.8,             // emisja paneli sufitu (tekstura × palette.uv)
       ceilingRoughness: 0.95,
       trussColor: '#2a2638',
