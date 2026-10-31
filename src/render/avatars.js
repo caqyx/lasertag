@@ -1,31 +1,43 @@
-// Awatary uczestników (SPEC §2.1/§2.2/§4; PLAN §7.7).
-// createAvatars(scene, maxCount) → { sync(participants, alpha, time, localId, camera?), dispose() }
+// Awatary uczestników + ciało gracza w FPP (SPEC §2.1/§2.2/§4; PLAN §7.7).
+// createAvatars(scene, maxCount) → { sync(participants, alpha, time, localId, camera?, fpLocal?), localGait, dispose(), meshes }
 //   camera: awatar, w którego kapsule (XZ < avatar.hideDist, w zakresie wysokości) jest kamera, jest pomijany.
-//   Kucanie: body.height (wys. kapsuły) i body.crouch (0..1) — undefined = stojący.
+//   fpLocal: true → lokalny gracz (localId) rysowany jako „ciało FPP” (tors + nogi, bez hełmu/ramion/broni — te są
+//            w viewModel), przesunięte do tyłu o CONFIG.fpBody.back wg yaw kamery; tylko żywy. Osobny InstancedMesh na
+//            warstwie LAYER_NO_REFLECT (bez bezgłowego ciała w odbiciu podłogi).
+//   localGait: { phase, amp, sprint } lokalnego gracza po sync (faza kroku dla kołysania broni FPP).
+//   Kucanie: body.height (wys. kapsuły) i body.crouch (0..1); sprint: body.sprinting (undefined = false).
 //
-// 2 draw calle:
-//  • korpus — jedna scalona geometria na uczestnika (nogi, tors, ramiona, hełm z wizjerem, broń w dłoni, pas),
-//    ciemny matowy MeshStandardMaterial; atrybut wierzchołka aEmit = części emisyjne (wizjer, pas, pasek broni)
-//    w kolorze uczestnika (instanceColor), + tani fresnel/rim w kolorze uczestnika (czytelna sylwetka w ciemności).
-//    aFx (na instancję) = mnożnik emisji: eliminacja → miganie, ochrona → pulsowanie.
-//  • sensory kamizelki — 4 instancje na uczestnika (front/back na klatce, lewe/prawe na ramionach,
-//    pozycje z SENSOR_OFFSETS/CONFIG.combat.sensors), MeshBasicMaterial × instanceColor HDR: zapalony = kolor × sensorLit,
-//    zgaszony = ciemny, błysk = biały, eliminacja = miganie, ochrona = pulsowanie.
+// Draw calle: 2 (awatary: korpus + sensory) + 2 (ciało FPP: korpus + sensor przedni; tylko w FPP) — ≤ 8.
+// Animacja: skinning w vertex shaderze (bez szkieletu three). Każdy wierzchołek ma aBone (część ciała: tors, uda,
+// łydki, ramiona+broń, hełm, elementy ukrywane w FPP); na instancję aAnim = (faza kroku, wymach uda [rad],
+// opuszczenie broni [rad], maska FPP) i aShape = (height/standHeight, crouch). Uda/łydki obracane wokół piwotów
+// biodra/kolana (CONFIG.avatar), kucanie = zgięcie nóg (stopy na podłodze, biodra opadają) + ściśnięcie torsu tak,
+// by wysokości sensorów ≈ y × height/standHeight (jak w combat). Wybrane zamiast osobnych InstancedMesh na kończyny:
+// zero dodatkowych draw calli (×2 z odbiciem na High/Ultra), brak macierzy kończyn na CPU, jeden materiał.
+// Faza kroku = przebyty dystans (interpolowana pozycja) / długość kroku × π, per uczestnik (tablice prealokowane).
 // Model zwrócony w −Z (yaw = 0 patrzy w −Z, PLAN §0). sync bez alokacji (scratch na poziomie modułu).
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { CONFIG } from '../config.js';
 import { hexNumber } from './color.js';
+import { LAYER_NO_REFLECT } from './arenaBuilder.js';
 import { SENSOR, SENSOR_OFFSETS, isSensorLit } from '../game/participant.js';
 
 const AV = CONFIG.avatar;
+const FP = CONFIG.fpBody;
+const TAU = Math.PI * 2;
+
+// części ciała (atrybut aBone)
+const B_TORSO = 0, B_LTHIGH = 1, B_LSHIN = 2, B_RTHIGH = 3, B_RSHIN = 4, B_ARMS = 5, B_HEAD = 6, B_UPPER = 7;
 
 // scratch
 const _m = new THREE.Matrix4();
 const _ms = new THREE.Matrix4();
 const _l = new THREE.Matrix4();
+const _zero = new THREE.Matrix4().makeScale(0, 0, 0);
 const STAND = CONFIG.player.height;
 const HIDE2 = CONFIG.avatar.hideDist * CONFIG.avatar.hideDist;
+const LEG = AV.hipHeight - AV.ankleHeight;
 const _q = new THREE.Quaternion();
 const _p = new THREE.Vector3();
 const _s = new THREE.Vector3(1, 1, 1);
@@ -35,12 +47,12 @@ const _white = new THREE.Color(1, 1, 1);
 
 // ------------------------------------------------------------------ geometria korpusu
 
-function part(geo, emit, matrix) {
+function part(geo, emit, bone, matrix) {
   geo.deleteAttribute('uv');
   if (matrix) geo.applyMatrix4(matrix);
   const n = geo.attributes.position.count;
-  const e = new Float32Array(n).fill(emit);
-  geo.setAttribute('aEmit', new THREE.BufferAttribute(e, 1));
+  geo.setAttribute('aEmit', new THREE.BufferAttribute(new Float32Array(n).fill(emit), 1));
+  geo.setAttribute('aBone', new THREE.BufferAttribute(new Float32Array(n).fill(bone), 1));
   return geo;
 }
 
@@ -51,47 +63,110 @@ function trs(x, y, z, rx = 0, ry = 0, rz = 0, sx = 1, sy = 1, sz = 1) {
 }
 
 // kapsuła między punktami a i b
-function limb(ax, ay, az, bx, by, bz, r, emit = 0) {
+function limb(ax, ay, az, bx, by, bz, r, bone, emit = 0, radial = 7) {
   const a = new THREE.Vector3(ax, ay, az), b = new THREE.Vector3(bx, by, bz);
   const d = b.clone().sub(a);
   const len = d.length();
-  const g = new THREE.CapsuleGeometry(r, Math.max(0.01, len), 2, 5);
+  const g = new THREE.CapsuleGeometry(r, Math.max(0.01, len), 2, radial);
   const m = new THREE.Matrix4().compose(
     a.clone().add(b).multiplyScalar(0.5),
     new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize()),
     new THREE.Vector3(1, 1, 1),
   );
-  return part(g, emit, m);
+  return part(g, emit, bone, m);
+}
+
+// „sfazowany prostopadłościan”: graniastosłup ośmiokątny wzdłuż Z przeskalowany do w × h × d
+function chamfer(w, h, d, emit, bone, x, y, z, rx = 0, ry = 0, rz = 0) {
+  const g = new THREE.CylinderGeometry(1, 1, d, 8, 1);
+  g.rotateY(Math.PI / 8);
+  g.rotateX(Math.PI / 2);
+  const k = 1 / Math.cos(Math.PI / 8);
+  g.scale(w * 0.5 * k, h * 0.5 * k, 1);
+  return part(g, emit, bone, trs(x, y, z, rx, ry, rz));
+}
+
+function box(w, h, d, emit, bone, x, y, z, rx = 0, ry = 0, rz = 0) {
+  return part(new THREE.BoxGeometry(w, h, d), emit, bone, trs(x, y, z, rx, ry, rz));
+}
+
+function legParts(sx) {
+  const x = sx * 0.105;
+  const T = sx < 0 ? B_LTHIGH : B_RTHIGH;
+  const S = sx < 0 ? B_LSHIN : B_RSHIN;
+  const trim = AV.trimIntensity;
+  return [
+    limb(sx * 0.11, AV.hipHeight, 0, x, AV.kneeHeight + 0.02, 0, 0.082, T),
+    box(0.012, 0.2, 0.03, trim * 0.45, T, sx * 0.19, 0.68, 0, 0, 0, sx * 0.03),       // pasek boczny uda
+    limb(x, AV.kneeHeight, 0, x, 0.15, 0.005, 0.066, S),
+    chamfer(0.115, 0.11, 0.05, 0, S, x, AV.kneeHeight, -0.07),                       // nakolannik
+    part(new THREE.CylinderGeometry(0.078, 0.074, 0.08, 8, 1), 0, S, trs(x, 0.15, 0.0)), // cholewka
+    chamfer(0.125, 0.1, 0.27, 0, S, x, 0.055, -0.045),                                // but
+    box(0.13, 0.014, 0.275, trim * 0.5, S, x, 0.011, -0.045),                        // podeszwa (neon)
+  ];
+}
+
+function armParts() {
+  const trim = AV.trimIntensity;
+  return [
+    // prawe: ramię + przedramię + dłoń na chwycie
+    limb(0.25, 1.45, 0.0, 0.28, 1.22, -0.07, 0.058, B_ARMS),
+    limb(0.28, 1.22, -0.07, 0.205, 1.35, -0.14, 0.052, B_ARMS),
+    part(new THREE.SphereGeometry(0.047, 7, 5), 0, B_ARMS, trs(0.205, 1.36, -0.15, 0, 0, 0, 0.9, 1.1, 1)),
+    part(new THREE.CylinderGeometry(0.056, 0.056, 0.026, 8, 1, true), trim * 0.5, B_ARMS, trs(0.245, 1.285, -0.105, 0.6, 0, 0.5)),
+    // lewe: przedramię nisko pod sensorem przednim (sensor widoczny z przodu), dłoń pod przodem broni
+    limb(-0.25, 1.45, 0.0, -0.17, 1.08, -0.2, 0.058, B_ARMS),
+    limb(-0.17, 1.08, -0.2, 0.17, 1.37, -0.37, 0.052, B_ARMS),
+    part(new THREE.SphereGeometry(0.047, 7, 5), 0, B_ARMS, trs(0.19, 1.385, -0.375, 0, 0, 0, 1.1, 0.9, 1)),
+    part(new THREE.CylinderGeometry(0.056, 0.056, 0.026, 8, 1, true), trim * 0.5, B_ARMS, trs(0.08, 1.29, -0.325, 0, 0, -0.9)),
+  ];
+}
+
+// fazer w dłoniach — uproszczona wersja broni FPP (wylot ≈ (0.21, 1.47, −0.45) = oko + CONFIG.weapon.muzzleOffset)
+function weaponParts() {
+  const X = 0.21, trim = AV.trimIntensity, vis = AV.visorIntensity;
+  return [
+    chamfer(0.062, 0.078, 0.29, 0, B_ARMS, X, 1.44, -0.22),                 // korpus
+    chamfer(0.074, 0.09, 0.1, 0, B_ARMS, X, 1.445, -0.36),                  // osłona przednia
+    part(new THREE.CylinderGeometry(0.02, 0.024, 0.05, 8, 1), 0, B_ARMS, trs(X, 1.455, -0.43, Math.PI / 2)),
+    part(new THREE.CylinderGeometry(0.019, 0.019, 0.01, 8, 1), vis, B_ARMS, trs(X, 1.455, -0.457, Math.PI / 2)), // soczewka
+    box(0.03, 0.016, 0.2, 0, B_ARMS, X, 1.487, -0.22),                      // szyna
+    box(0.012, 0.005, 0.17, trim, B_ARMS, X, 1.497, -0.22),                 // pasek ciepła (neon)
+    box(0.004, 0.01, 0.26, trim * 0.8, B_ARMS, X - 0.032, 1.43, -0.24),     // listwy boczne
+    box(0.004, 0.01, 0.26, trim * 0.8, B_ARMS, X + 0.032, 1.43, -0.24),
+    box(0.04, 0.1, 0.05, 0, B_ARMS, X, 1.37, -0.13, 0.3),                   // chwyt
+    box(0.032, 0.06, 0.04, 0, B_ARMS, X, 1.385, -0.37),                     // chwyt przedni
+  ];
 }
 
 function buildBodyGeometry() {
+  const trim = AV.trimIntensity;
   const parts = [
-    // nogi + biodra
-    limb(-0.11, 0.1, 0.0, -0.1, 0.78, 0.0, 0.085),
-    limb(0.11, 0.1, 0.0, 0.1, 0.78, 0.0, 0.085),
-    part(new THREE.SphereGeometry(0.16, 8, 5), 0, trs(0, 0.86, 0, 0, 0, 0, 1.25, 0.7, 0.95)),
-    // tors (kamizelka): kapsuła spłaszczona
-    part(new THREE.CapsuleGeometry(0.2, 0.38, 3, 10), 0, trs(0, 1.27, 0, 0, 0, 0, 1.18, 1, 1.0)),
-    // naramienniki
-    part(new THREE.SphereGeometry(0.095, 7, 5), 0, trs(-0.235, 1.5, 0, 0, 0, 0, 1, 0.85, 1)),
-    part(new THREE.SphereGeometry(0.095, 7, 5), 0, trs(0.235, 1.5, 0, 0, 0, 0, 1, 0.85, 1)),
-    // ramiona: fazer na wysokości barku (wylot = CONFIG.weapon.muzzleOffset względem oka — stąd startują wiązki botów)
-    limb(0.25, 1.45, 0.0, 0.28, 1.22, -0.08, 0.06),
-    limb(0.28, 1.22, -0.08, 0.2, 1.36, -0.15, 0.055),
-    // lewe przedramię nisko pod sensorem przednim (sensor ma być widoczny z przodu)
-    limb(-0.25, 1.45, 0.0, -0.17, 1.08, -0.2, 0.06),
-    limb(-0.17, 1.08, -0.2, 0.15, 1.37, -0.38, 0.055),
-    // szyja + hełm + wizjer (emisyjny, łuk z przodu)
-    part(new THREE.CylinderGeometry(0.06, 0.07, 0.1, 6, 1, true), 0, trs(0, 1.64, 0)),
-    part(new THREE.SphereGeometry(0.145, 10, 7), 0, trs(0, 1.75, 0.01, 0, 0, 0, 1, 1.02, 1.08)),
-    part(new THREE.CylinderGeometry(0.152, 0.148, 0.055, 10, 1, true, Math.PI - 0.95, 1.9), AV.visorIntensity, trs(0, 1.75, 0.005)),
-    // pas (emisyjny, słaby) — linia talii czytelna z daleka
-    part(new THREE.TorusGeometry(0.205, 0.016, 3, 14), AV.trimIntensity * 0.6, trs(0, 0.95, 0, Math.PI / 2, 0, 0, 1.12, 0.92, 1)),
-    // fazer w dłoniach (wylot ≈ (0.22, 1.47, −0.45))
-    part(new THREE.BoxGeometry(0.07, 0.09, 0.36), 0, trs(0.2, 1.44, -0.25)),
-    part(new THREE.BoxGeometry(0.045, 0.11, 0.055), 0, trs(0.2, 1.36, -0.14, 0.3, 0, 0)),
-    part(new THREE.BoxGeometry(0.075, 0.016, 0.26), AV.trimIntensity, trs(0.2, 1.492, -0.27)),
-    part(new THREE.CylinderGeometry(0.024, 0.024, 0.05, 6), AV.visorIntensity, trs(0.21, 1.46, -0.445, Math.PI / 2, 0, 0)),
+    ...legParts(-1), ...legParts(1),
+    // biodra + pas (neon) ze sprzączką
+    part(new THREE.SphereGeometry(0.16, 9, 5), 0, B_TORSO, trs(0, 0.88, 0, 0, 0, 0, 1.25, 0.7, 0.95)),
+    part(new THREE.TorusGeometry(0.205, 0.017, 3, 16), trim * 0.6, B_TORSO, trs(0, 0.95, 0, Math.PI / 2, 0, 0, 1.12, 0.92, 1)),
+    box(0.075, 0.05, 0.025, 0, B_TORSO, 0, 0.95, -0.215),
+    // tors (kombinezon) + kamizelka: płyty przód/tył, dolna listwa neonowa
+    part(new THREE.CapsuleGeometry(0.19, 0.36, 3, 10), 0, B_TORSO, trs(0, 1.27, 0, 0, 0, 0, 1.18, 1, 0.98)),
+    chamfer(0.36, 0.4, 0.07, 0, B_TORSO, 0, 1.3, -0.165),
+    chamfer(0.36, 0.42, 0.07, 0, B_TORSO, 0, 1.3, 0.165),
+    box(0.33, 0.012, 0.012, trim * 0.55, B_TORSO, 0, 1.1, -0.2),
+    box(0.33, 0.012, 0.012, trim * 0.55, B_TORSO, 0, 1.1, 0.2),
+    // kołnierz, szyja, naramienniki (ukrywane w FPP)
+    part(new THREE.TorusGeometry(0.1, 0.03, 4, 12), 0, B_UPPER, trs(0, 1.57, 0, Math.PI / 2)),
+    part(new THREE.CylinderGeometry(0.06, 0.07, 0.12, 7, 1, true), 0, B_UPPER, trs(0, 1.63, 0)),
+    part(new THREE.SphereGeometry(0.1, 8, 4, 0, TAU, 0, Math.PI / 2), 0, B_UPPER, trs(-0.24, 1.46, 0, 0, 0, 0.35, 1.05, 0.95, 1.15)),
+    part(new THREE.SphereGeometry(0.1, 8, 4, 0, TAU, 0, Math.PI / 2), 0, B_UPPER, trs(0.24, 1.46, 0, 0, 0, -0.35, 1.05, 0.95, 1.15)),
+    // hełm: skorupa, wizjer (neon, łuk z przodu), grzebień z paskiem, nauszniki
+    part(new THREE.SphereGeometry(0.145, 12, 8), 0, B_HEAD, trs(0, 1.75, 0.01, 0, 0, 0, 1, 1.02, 1.08)),
+    part(new THREE.CylinderGeometry(0.153, 0.149, 0.058, 12, 1, true, Math.PI - 1.0, 2.0), AV.visorIntensity, B_HEAD, trs(0, 1.75, 0.005)),
+    box(0.045, 0.03, 0.26, 0, B_HEAD, 0, 1.892, 0.02),
+    box(0.012, 0.006, 0.22, trim, B_HEAD, 0, 1.909, 0.02),
+    part(new THREE.CylinderGeometry(0.05, 0.05, 0.04, 8, 1), 0, B_HEAD, trs(-0.145, 1.735, 0.025, 0, 0, Math.PI / 2)),
+    part(new THREE.CylinderGeometry(0.05, 0.05, 0.04, 8, 1), 0, B_HEAD, trs(0.145, 1.735, 0.025, 0, 0, Math.PI / 2)),
+    ...armParts(),
+    ...weaponParts(),
   ];
   const g = mergeGeometries(parts, false);
   for (const p of parts) p.dispose();
@@ -126,7 +201,63 @@ function buildSensorLocals() {
   return out;
 }
 
-// ------------------------------------------------------------------ materiał korpusu
+// ------------------------------------------------------------------ materiał korpusu (skinning w shaderze)
+
+const SKIN_GLSL = /* glsl */`
+attribute float aEmit;
+attribute float aBone;
+attribute float aFx;
+attribute vec2 aShape;
+attribute vec4 aAnim;
+uniform float uHeadBase, uHip, uKneeY, uAnkle, uCrouchA, uKneeWalk, uKneeBase;
+uniform vec2 uShoulder;
+varying float vEmit;
+varying float vFx;
+vec3 ltP;
+vec3 ltN;
+// obrót wokół osi X (dodatni kąt: wektor „w dół” → „do przodu” (−Z))
+vec2 ltRot(vec2 yz, float a) { float c = cos(a), s = sin(a); return vec2(yz.x * c - yz.y * s, yz.x * s + yz.y * c); }
+void ltSkin(vec3 p, vec3 n) {
+  float b = aBone;
+  float sY = aShape.x;
+  float cA = aShape.y * uCrouchA;
+  float hip = uHip - (uHip - uAnkle) * (1.0 - cos(cA));      // biodra opadają, stopy zostają na podłodze
+  float su = (uHeadBase * sY - hip) / (uHeadBase - uHip);     // tors: biodra → podstawa hełmu (≈ y × sY dla sensorów)
+  ltP = p; ltN = n;
+  if (aAnim.w > 0.5 && b > 4.5) { ltP = vec3(0.0, -50.0, 0.0); return; } // ciało FPP: bez ramion/broni, hełmu, naramienników
+  if (b > 0.5 && b < 4.5) {
+    // noga: lewa faza φ, prawa φ + π; udo wymach + kuc, kolano zgięte w fazie wykroku
+    bool right = b > 2.5;
+    float ph = aAnim.x + (right ? 3.14159265 : 0.0);
+    float amp = aAnim.y;
+    float thigh = amp * sin(ph) + cA;
+    float knee = 2.0 * cA + amp * (uKneeWalk * max(0.0, cos(ph)) + uKneeBase);
+    bool shin = b > 1.5 && b < 2.5 || b > 3.5;
+    vec2 rel = vec2(p.y - uHip, p.z);
+    vec2 base = vec2(hip, 0.0);
+    float a = thigh;
+    if (shin) {
+      base += ltRot(vec2(uKneeY - uHip, 0.0), thigh);
+      rel = vec2(p.y - uKneeY, p.z);
+      a = thigh - knee;
+    }
+    vec2 r = ltRot(rel, a) + base;
+    ltP = vec3(p.x, r.x, r.y);
+    ltN = vec3(n.x, ltRot(n.yz, a));
+  } else if (b > 5.5 && b < 6.5) {
+    ltP.y = p.y - uHeadBase * (1.0 - sY);                      // hełm: sztywno w dół
+  } else if (b > 4.5 && b < 5.5) {
+    // ramiona + broń: sztywno za barkiem, obrót wokół piwotu barku (opuszczenie przy sprincie, kołysanie)
+    float sh = hip + (uShoulder.x - uHip) * su;
+    vec2 r = ltRot(vec2(p.y - uShoulder.x, p.z - uShoulder.y), -aAnim.z);
+    ltP = vec3(p.x, r.x + sh, r.y + uShoulder.y);
+    ltN = vec3(n.x, ltRot(n.yz, -aAnim.z));
+  } else {
+    ltP.y = hip + (p.y - uHip) * su;                           // tors/biodra: ściśnięcie przy kucaniu
+    ltN = normalize(vec3(n.x, n.y / max(su, 0.2), n.z));
+  }
+}
+`;
 
 function buildBodyMaterial() {
   const mat = new THREE.MeshStandardMaterial({
@@ -138,30 +269,19 @@ function buildBodyMaterial() {
     uRimPow: { value: AV.rimPower },
     uHeadBase: { value: AV.headBase },
     uHip: { value: AV.hipHeight },
-    uKnee: { value: AV.kneeBend },
+    uKneeY: { value: AV.kneeHeight },
+    uAnkle: { value: AV.ankleHeight },
+    uCrouchA: { value: AV.crouchThigh },
+    uKneeWalk: { value: AV.kneeWalk },
+    uKneeBase: { value: AV.kneeBase },
+    uShoulder: { value: new THREE.Vector2(AV.shoulderPivot[0], AV.shoulderPivot[1]) },
   };
   mat.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, uniforms);
     shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nattribute float aEmit;\nattribute float aFx;\nattribute vec2 aShape;\nuniform float uHeadBase;\nuniform float uHip;\nuniform float uKnee;\nvarying float vEmit;\nvarying float vFx;')
-      // kucanie: wszystko poniżej podstawy hełmu skalowane w pionie (aShape.x = height/standHeight — te same
-      // wysokości sensorów co w combat), hełm przesunięty sztywno; kolana wypchnięte do przodu (aShape.y = crouch)
-      .replace('#include <beginnormal_vertex>', [
-        '#include <beginnormal_vertex>',
-        'if (position.y < uHeadBase) objectNormal = normalize(vec3(objectNormal.x, objectNormal.y / max(aShape.x, 0.2), objectNormal.z));',
-      ].join('\n'))
-      .replace('#include <begin_vertex>', [
-        '#include <begin_vertex>',
-        'if (position.y < uHeadBase) {',
-        '  transformed.y = position.y * aShape.x;',
-        '  float leg = clamp(position.y / uHip, 0.0, 1.0);',
-        '  transformed.z -= aShape.y * uKnee * sin(3.14159265 * leg) * step(position.y, uHip);',
-        '} else {',
-        '  transformed.y = position.y - uHeadBase * (1.0 - aShape.x);',
-        '}',
-        'vEmit = aEmit;',
-        'vFx = aFx;',
-      ].join('\n'));
+      .replace('#include <common>', '#include <common>\n' + SKIN_GLSL)
+      .replace('#include <beginnormal_vertex>', 'ltSkin(position, normal);\nvec3 objectNormal = ltN;\n#ifdef USE_TANGENT\nvec3 objectTangent = vec3( tangent.xyz );\n#endif')
+      .replace('#include <begin_vertex>', 'vec3 transformed = ltP;\nvEmit = aEmit;\nvFx = aFx;');
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', '#include <common>\nuniform float uTint;\nuniform float uRimI;\nuniform float uRimPow;\nvarying float vEmit;\nvarying float vFx;')
       .replace('#include <color_fragment>', 'diffuseColor.rgb *= mix(vec3(1.0), vColor, uTint);')
@@ -172,18 +292,23 @@ function buildBodyMaterial() {
         'totalEmissiveRadiance += vColor * (vEmit + rim * uRimI) * vFx;',
       ].join('\n'));
   };
-  mat.customProgramCacheKey = () => 'lt-avatar-body';
+  mat.customProgramCacheKey = () => 'lt-avatar-body-v2';
   return mat;
 }
 
 // ------------------------------------------------------------------ API
 
+function instAttr(geo, name, n, size, fill) {
+  const a = new THREE.InstancedBufferAttribute(new Float32Array(n * size).fill(fill), size).setUsage(THREE.DynamicDrawUsage);
+  geo.setAttribute(name, a);
+  return a;
+}
+
 export function createAvatars(scene, maxCount) {
   const bodyGeo = buildBodyGeometry();
-  const fxAttr = new THREE.InstancedBufferAttribute(new Float32Array(maxCount).fill(1), 1).setUsage(THREE.DynamicDrawUsage);
-  bodyGeo.setAttribute('aFx', fxAttr);
-  const shapeAttr = new THREE.InstancedBufferAttribute(new Float32Array(maxCount * 2).fill(1), 2).setUsage(THREE.DynamicDrawUsage);
-  bodyGeo.setAttribute('aShape', shapeAttr);
+  const fxAttr = instAttr(bodyGeo, 'aFx', maxCount, 1, 1);
+  const shapeAttr = instAttr(bodyGeo, 'aShape', maxCount, 2, 1);
+  const animAttr = instAttr(bodyGeo, 'aAnim', maxCount, 4, 0);
   const bodyMat = buildBodyMaterial();
   const body = new THREE.InstancedMesh(bodyGeo, bodyMat, maxCount);
   body.name = 'avatars:body';
@@ -197,11 +322,34 @@ export function createAvatars(scene, maxCount) {
   sensors.frustumCulled = false;
   sensors.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
 
+  // ciało FPP: osobna geometria współdzieląca bufory wierzchołków korpusu (własne atrybuty instancji), 1 instancja
+  const fpGeo = new THREE.BufferGeometry();
+  fpGeo.setIndex(bodyGeo.index);
+  for (const k of ['position', 'normal', 'aEmit', 'aBone']) fpGeo.setAttribute(k, bodyGeo.getAttribute(k));
+  const fpFx = instAttr(fpGeo, 'aFx', 1, 1, 1);
+  const fpShape = instAttr(fpGeo, 'aShape', 1, 2, 1);
+  const fpAnim = instAttr(fpGeo, 'aAnim', 1, 4, 0);
+  fpAnim.array[3] = 1; // maska FPP
+  const fpBody = new THREE.InstancedMesh(fpGeo, bodyMat, 1);
+  fpBody.name = 'avatars:fpBody';
+  fpBody.frustumCulled = false;
+  fpBody.layers.set(LAYER_NO_REFLECT);
+  fpBody.visible = false;
+  const fpSensorList = Int8Array.from(FP.sensors.map((k) => ['front', 'back', 'left', 'right'].indexOf(k)).filter((i) => i >= 0));
+  const fpSensors = new THREE.InstancedMesh(sensorGeo, sensorMat, Math.max(1, fpSensorList.length));
+  fpSensors.name = 'avatars:fpSensors';
+  fpSensors.frustumCulled = false;
+  fpSensors.layers.set(LAYER_NO_REFLECT);
+  fpSensors.visible = false;
+
   // prealokacja instanceColor (setColorAt tworzy bufor przy pierwszym wywołaniu — robimy to tutaj, nie w sync)
   for (let i = 0; i < maxCount; i++) body.setColorAt(i, _white);
   for (let i = 0; i < maxCount * 4; i++) sensors.setColorAt(i, _white);
+  fpBody.setColorAt(0, _white);
+  for (let i = 0; i < fpSensors.count; i++) fpSensors.setColorAt(i, _white);
   body.instanceColor.setUsage(THREE.DynamicDrawUsage);
   sensors.instanceColor.setUsage(THREE.DynamicDrawUsage);
+  fpSensors.instanceColor.setUsage(THREE.DynamicDrawUsage);
   body.count = 0;
   sensors.count = 0;
 
@@ -209,25 +357,148 @@ export function createAvatars(scene, maxCount) {
   // cache koloru per slot instancji: hex liczony tylko przy zmianie stringu koloru (porównanie referencji)
   const colStr = new Array(maxCount).fill(null);
   const colRGB = new Float32Array(maxCount * 3);
+  let fpColStr = null;
+  const fpRGB = new Float32Array(3);
+
+  // stan chodu per uczestnik (indeks w tablicy participants)
+  const gPhase = new Float64Array(maxCount);
+  const gAmp = new Float32Array(maxCount);
+  const gSprint = new Float32Array(maxCount);
+  const gX = new Float64Array(maxCount);
+  const gZ = new Float64Array(maxCount);
+  const gInit = new Uint8Array(maxCount);
+  const localGait = { phase: 0, amp: 0, sprint: 0 };
+  let lastTime = -1;
 
   scene.add(body);
   scene.add(sensors);
+  scene.add(fpBody);
+  scene.add(fpSensors);
 
-  const TAU = Math.PI * 2;
+  /** Faza/amplituda kroku uczestnika i (dystans z interpolowanej pozycji _p). */
+  function stepGait(i, P, dt) {
+    const b = P.body;
+    let dist = 0;
+    if (gInit[i]) {
+      const dx = _p.x - gX[i], dz = _p.z - gZ[i];
+      dist = Math.sqrt(dx * dx + dz * dz);
+      if (dist > AV.teleportDist) dist = 0;
+    }
+    gInit[i] = 1;
+    gX[i] = _p.x; gZ[i] = _p.z;
+    const alive = P.state === 'alive';
+    const crouch = b.crouch > 0 ? b.crouch : 0;
+    const sprintT = alive && b.sprinting === true ? 1 : 0;
+    const ks = Math.min(1, dt * AV.sprintSmooth);
+    gSprint[i] += (sprintT - gSprint[i]) * ks;
+    const spr = gSprint[i];
+    const step = (AV.stepWalk + (AV.stepSprint - AV.stepWalk) * spr) * (1 + (AV.stepCrouch / AV.stepWalk - 1) * crouch);
+    let ph = gPhase[i] + dist / step * Math.PI;
+    if (ph > TAU) ph -= TAU;
+    gPhase[i] = ph;
+    const speed = alive && b.onGround !== false ? Math.sqrt(b.vx * b.vx + b.vz * b.vz) : 0;
+    const k = Math.min(1, speed / CONFIG.player.walkSpeed);
+    const target = k * (AV.swingWalk + (AV.swingSprint - AV.swingWalk) * spr) * (1 + (AV.swingCrouch - 1) * crouch);
+    gAmp[i] += (target - gAmp[i]) * Math.min(1, dt * AV.swingSmooth);
+  }
 
-  function sync(participants, alpha, time, localId, camera) {
+  /** Kolor sensora s uczestnika P (kolor bazowy cr,cg,cb; fx = mnożnik stanu) → _c. */
+  function sensorColor(P, s, cr, cg, cb, fx, elim) {
+    let I;
+    if (elim) I = AV.sensorLit * fx;
+    else if (!isSensorLit(P, s)) I = AV.sensorOff;
+    else I = AV.sensorLit * (P.protectTimer > 0 ? fx : 1);
+    _c.setRGB(cr * I, cg * I, cb * I);
+    const fl = P.sensorFlash[s];
+    if (fl > 0) {
+      const t = Math.min(1, fl / CONFIG.combat.hitFlashTime);
+      const w = AV.sensorFlash * t;
+      _c.r += (w - _c.r) * t; _c.g += (w - _c.g) * t; _c.b += (w - _c.b) * t;
+    }
+  }
+
+  function stateFx(P, time) {
+    if (P.state === 'eliminated') return Math.sin(time * TAU * AV.elimBlinkHz) > 0 ? 1 : AV.elimDim;
+    if (P.protectTimer > 0) return 1 + AV.protectBoost * (0.5 + 0.5 * Math.sin(time * TAU * AV.protectPulseHz));
+    return 1;
+  }
+
+  /** Macierz instancji: pozycja _p (+ opadanie przy wykroku), yaw → _m. */
+  function composeAt(i, yaw) {
+    const sw = gAmp[i] * Math.sin(gPhase[i]);
+    _p.y -= LEG * (1 - Math.cos(sw)) * AV.bodyBob;
+    _q.setFromAxisAngle(_up, yaw);
+    _m.compose(_p, _q, _s);
+  }
+
+  function writeAnim(arr, o, i, crouch) {
+    const amp = gAmp[i];
+    arr[o] = gPhase[i];
+    arr[o + 1] = amp;
+    arr[o + 2] = gSprint[i] * AV.sprintArmPitch * (1 - crouch) + AV.armBob * (amp / AV.swingWalk) * Math.sin(2 * gPhase[i]);
+  }
+
+  function syncLocal(P, i, time, camera) {
+    const b = P.body;
+    const h = b.height > 0 ? b.height : STAND;
+    const crouch = b.crouch > 0 ? b.crouch : 0;
+    const yaw = camera ? camera.rotation.y : b.yaw;
+    const back = FP.back + (FP.crouchBack - FP.back) * crouch;
+    _p.x += Math.sin(yaw) * back;
+    _p.z += Math.cos(yaw) * back;
+    composeAt(i, yaw);
+    fpBody.setMatrixAt(0, _m);
+    fpBody.instanceMatrix.needsUpdate = true;
+    const sY = h / STAND;
+    fpShape.array[0] = sY; fpShape.array[1] = crouch;
+    writeAnim(fpAnim.array, 0, i, crouch);
+    fpShape.needsUpdate = true; fpAnim.needsUpdate = true;
+    const fx = stateFx(P, time);
+    fpFx.array[0] = fx; fpFx.needsUpdate = true;
+    if (P.color !== fpColStr) {
+      fpColStr = P.color;
+      _c.setHex(hexNumber(P.color));
+      fpRGB[0] = _c.r; fpRGB[1] = _c.g; fpRGB[2] = _c.b;
+      fpBody.setColorAt(0, _c);
+      fpBody.instanceColor.needsUpdate = true;
+    }
+    for (let k = 0; k < fpSensorList.length; k++) {
+      const s = fpSensorList[k];
+      _l.copy(locals[s]);
+      _l.elements[13] *= sY;
+      _ms.multiplyMatrices(_m, _l);
+      fpSensors.setMatrixAt(k, _ms);
+      sensorColor(P, s, fpRGB[0], fpRGB[1], fpRGB[2], fx, false);
+      fpSensors.setColorAt(k, _c);
+    }
+    fpSensors.instanceMatrix.needsUpdate = true;
+    fpSensors.instanceColor.needsUpdate = true;
+  }
+
+  function sync(participants, alpha, time, localId, camera, fpLocal = false) {
+    let dt = lastTime < 0 ? 0 : time - lastTime;
+    if (dt < 0 || dt > 0.25) dt = 0;
+    lastTime = time;
     const cp = camera ? camera.position : null; // kamera jest dzieckiem sceny (bez rodzica z transformacją) → position = świat
     let j = 0;
-    const n = participants.length;
-    for (let i = 0; i < n && j < maxCount; i++) {
+    let fpShown = false;
+    const n = participants.length < maxCount ? participants.length : maxCount;
+    for (let i = 0; i < n; i++) {
       const P = participants[i];
-      if (P.id === localId) continue;
       const b = P.body;
       _p.set(
         P.prevX + (b.x - P.prevX) * alpha,
         P.prevY + (b.y - P.prevY) * alpha,
         P.prevZ + (b.z - P.prevZ) * alpha,
       );
+      stepGait(i, P, dt);
+      if (P.id === localId) {
+        localGait.phase = gPhase[i];
+        localGait.amp = gAmp[i] / AV.swingWalk;
+        localGait.sprint = gSprint[i];
+        if (fpLocal && P.state === 'alive') { syncLocal(P, i, time, camera); fpShown = true; }
+        continue;
+      }
       const h = b.height > 0 ? b.height : STAND;
       // kamera w (lub tuż przy) korpusie → pomiń instancję (nigdy pełnoekranowy ciemny blok)
       if (cp !== null) {
@@ -235,17 +506,16 @@ export function createAvatars(scene, maxCount) {
         if (dx * dx + dz * dz < HIDE2 && cp.y > _p.y - AV.hideMarginY && cp.y < _p.y + h + AV.hideMarginY) continue;
       }
       const sY = h / STAND;
+      const crouch = b.crouch > 0 ? b.crouch : 0;
       shapeAttr.array[j * 2] = sY;
-      shapeAttr.array[j * 2 + 1] = b.crouch > 0 ? b.crouch : 0;
-      _q.setFromAxisAngle(_up, b.yaw);
-      _m.compose(_p, _q, _s);
+      shapeAttr.array[j * 2 + 1] = crouch;
+      writeAnim(animAttr.array, j * 4, i, crouch);
+      composeAt(i, b.yaw);
       body.setMatrixAt(j, _m);
 
       // stan: eliminacja → miganie, ochrona → pulsowanie
       const elim = P.state === 'eliminated';
-      let fx = 1;
-      if (elim) fx = Math.sin(time * TAU * AV.elimBlinkHz) > 0 ? 1 : AV.elimDim;
-      else if (P.protectTimer > 0) fx = 1 + AV.protectBoost * (0.5 + 0.5 * Math.sin(time * TAU * AV.protectPulseHz));
+      const fx = stateFx(P, time);
       fxAttr.array[j] = fx;
 
       if (P.color !== colStr[j]) {
@@ -263,21 +533,14 @@ export function createAvatars(scene, maxCount) {
         _l.elements[13] *= sY;
         _ms.multiplyMatrices(_m, _l);
         sensors.setMatrixAt(k, _ms);
-        let I;
-        if (elim) I = AV.sensorLit * fx;
-        else if (!isSensorLit(P, s)) I = AV.sensorOff;
-        else I = AV.sensorLit * (P.protectTimer > 0 ? fx : 1);
-        _c.setRGB(cr * I, cg * I, cb * I);
-        const fl = P.sensorFlash[s];
-        if (fl > 0) {
-          const t = Math.min(1, fl / CONFIG.combat.hitFlashTime);
-          const w = AV.sensorFlash * t;
-          _c.r += (w - _c.r) * t; _c.g += (w - _c.g) * t; _c.b += (w - _c.b) * t;
-        }
+        sensorColor(P, s, cr, cg, cb, fx, elim);
         sensors.setColorAt(k, _c);
       }
       j++;
     }
+    for (let i = n; i < maxCount; i++) gInit[i] = 0;
+    fpBody.visible = fpShown;
+    fpSensors.visible = fpShown && fpSensorList.length > 0;
     body.count = j;
     sensors.count = j * 4;
     body.instanceMatrix.needsUpdate = true;
@@ -285,14 +548,15 @@ export function createAvatars(scene, maxCount) {
     sensors.instanceColor.needsUpdate = true;
     fxAttr.needsUpdate = true;
     shapeAttr.needsUpdate = true;
+    animAttr.needsUpdate = true;
   }
 
   function dispose() {
-    if (body.parent) body.parent.remove(body);
-    if (sensors.parent) sensors.parent.remove(sensors);
-    bodyGeo.dispose(); bodyMat.dispose(); body.dispose();
-    sensorGeo.dispose(); sensorMat.dispose(); sensors.dispose();
+    for (const m of [body, sensors, fpBody, fpSensors]) if (m.parent) m.parent.remove(m);
+    // fpGeo współdzieli bufory z bodyGeo — zwalniane razem
+    fpGeo.dispose(); bodyGeo.dispose(); bodyMat.dispose(); body.dispose(); fpBody.dispose();
+    sensorGeo.dispose(); sensorMat.dispose(); sensors.dispose(); fpSensors.dispose();
   }
 
-  return { sync, dispose, meshes: [body, sensors] };
+  return { sync, dispose, localGait, meshes: [body, sensors, fpBody, fpSensors] };
 }

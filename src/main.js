@@ -372,9 +372,10 @@ function boot(graphics) {
     const fired = consumeEvents();
     recordFromEvents(adapt, sim.events, player.id);
     // localId + pozycja kamery: avatars ukrywa lokalnego gracza i awatary zbyt blisko kamery
-    avatars.sync(sim.participants, alpha, time, debugCam ? -1 : player.id, camera);
+    // ciało FPP (tors + nogi przy patrzeniu w dół) tylko w widoku z oczu: bez kamery debug, ?nohud i death cam
+    avatars.sync(sim.participants, alpha, time, debugCam ? -1 : player.id, camera, showHud && !debugCam && !deadCam);
     const b = player.body;
-    viewModel.update(frameDt, player.weapon, fired, player.color, Math.hypot(b.vx, b.vz), player.stunTimer > 0);
+    viewModel.update(frameDt, player.weapon, fired, player.color, Math.hypot(b.vx, b.vz), player.stunTimer > 0, avatars.localGait);
     if (showHud && !debugCam) {
       hud.update(player, sim, frameDt);
       matchBar.update(match, sim);
@@ -411,6 +412,8 @@ function boot(graphics) {
     startMatch: (cfg) => startMatch(cfg === undefined ? lastCfg || params : cfg),
     goMenu: () => goMenu(),
     info: () => graphics.info(),
+    /** Kąty sterowania gracza (testy/zrzuty: np. patrzenie w dół). */
+    setAngles: (yaw, pitch) => km.setAngles(yaw, pitch),
     camera: () => ({ x: camera.position.x, y: camera.position.y, z: camera.position.z, yaw: camera.rotation.y, pitch: camera.rotation.x }),
     setCam(i) {
       if (i === null || i === undefined) {
