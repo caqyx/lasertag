@@ -231,9 +231,15 @@ function doorRail(steelBuf, trimBuf, s, D, col) {
   const a = -sigma * L, b = sigma * (L + slide + RL.over);   // od krawędzi natarcia (skrzydła rozsuwane stykają się w osi) do końca kieszeni
   const y = s.y1 + RL.lift + RL.h / 2;
   addBar(steelBuf, D.x0 + ax * a, y, D.z0 + az * a, D.x0 + ax * b, y, D.z0 + az * b, RL.w, RL.h, 1, 1, 1);
-  const k = RL.k;
-  addBar(trimBuf, D.x0 + ax * a, y - RL.h / 2 - A.trimSize * 0.3, D.z0 + az * a, D.x0 + ax * b, y - RL.h / 2 - A.trimSize * 0.3, D.z0 + az * b,
-    A.trimSize * 0.6, A.trimSize * 0.6, col.r * k, col.g * k, col.b * k);
+  // wsporniki nad kieszenią (szyna stoi na ścianie, odsunięta od jej listwy — osobny element, nie „druga listwa”)
+  for (let u = sigma * L + sigma * RL.hangers * 0.5; Math.abs(u) <= Math.abs(b) - RL.hangers * 0.25; u += sigma * RL.hangers) {
+    addBar(steelBuf, D.x0 + ax * u, s.y1, D.z0 + az * u, D.x0 + ax * u, y - RL.h / 2, D.z0 + az * u, RL.w * 0.5, RL.w * 0.5, 1, 1, 1);
+  }
+  if (RL.k > 0) {
+    const k = RL.k;
+    addBar(trimBuf, D.x0 + ax * a, y - RL.h / 2 - A.trimSize * 0.3, D.z0 + az * a, D.x0 + ax * b, y - RL.h / 2 - A.trimSize * 0.3, D.z0 + az * b,
+      A.trimSize * 0.6, A.trimSize * 0.6, col.r * k, col.g * k, col.b * k);
+  }
 }
 
 // ---------------------------------------------------------------- listwy, odboje
@@ -464,8 +470,10 @@ function ringDashes(buf, cx, y, cz, r, n, size, col) {
   }
 }
 function ringBars(buf, cx, y, cz, r, n, size, col) {
+  // odcinki wydłużone o ½ grubości na końcach: sąsiednie nachodzą (bez szczelin na zewnętrznych narożach)
+  const ext = (size * 0.5) / (2 * Math.PI * r / n);
   for (let k = 0; k < n; k++) {
-    const a0 = (k / n) * Math.PI * 2, a1 = ((k + 1) / n) * Math.PI * 2;
+    const a0 = ((k - ext) / n) * Math.PI * 2, a1 = ((k + 1 + ext) / n) * Math.PI * 2;
     addBar(buf, cx + Math.cos(a0) * r, y, cz + Math.sin(a0) * r, cx + Math.cos(a1) * r, y, cz + Math.sin(a1) * r, size, size, col.r, col.g, col.b);
   }
 }
@@ -1510,7 +1518,7 @@ export function buildArena(world, preset, textures, opts = {}) {
   (world.doors || []).forEach((D, i) => {
     const s = world.solids[D.solid];
     const tk = mainKey(s.trim, D.solid) || 'secondary';
-    const geo = doorGeometry(s, D, trimCol[tk === 'accent' ? 'secondary' : tk], trimCol[warnKey]);
+    const geo = doorGeometry(s, D, trimCol[tk === 'accent' ? 'secondary' : tk], trimCol.accent);   // pas ostrzegawczy w akcencie (kontrast z listwami)
     if (!neonMat) { neonMat = own(new THREE.MeshBasicMaterial({ vertexColors: true, fog: true })); patchNeonMaterial(neonMat); }
     geo.deleteAttribute('uv');
     const m = new THREE.Mesh(own(geo), neonMat);

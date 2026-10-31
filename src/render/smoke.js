@@ -29,6 +29,7 @@ varying vec3 vColor;
 varying float vDepth;
 varying float vCenterDepth;
 varying float vWorldY;
+varying float vAlpha;
 void main() {
   float ph = aParams.x;
   float driftR = instanceMatrix[0][0];   // amplituda dryfu per kłąb (ograniczona prześwitem)
@@ -39,7 +40,8 @@ void main() {
     sin(time * w * 0.63 + ph * 11.0) * 0.22,
     cos(time * w * 0.81 + ph * 4.7) * driftR);
   // kolor: odcień palety + światło lamp w pobliżu (dym „łapie" kolor)
-  vec3 col = mix(tintA, tintB, aParams.w * 0.5) * baseGlow;
+  vec3 col = mix(tintA, tintB, aParams.w * 0.5) * baseGlow * instanceMatrix[0][1];
+  vAlpha = instanceMatrix[2][2];
   for (int i = 0; i < ${MAX_LIGHTS}; i++) {
     if (i >= lightCount) break;
     float d = distance(pos, lightPos[i]);
@@ -78,6 +80,7 @@ varying float vCenterDepth;
 varying float vWorldY;
 uniform float ceilY;
 uniform float planeFade;
+varying float vAlpha;
 uniform vec3 hiFade;   // x..y: wysokość przejścia (m), z: jasność powyżej
 void main() {
   float d = texture2D(map, vUv).r;
@@ -85,7 +88,7 @@ void main() {
   // zanik przy kamerze: po środku kłębu i po fragmencie (żadnych „ścian" przed twarzą)
   float near = smoothstep(nearFade.x, nearFade.y, vCenterDepth) * smoothstep(0.3, nearFade.x + 0.6, vDepth);
   float fogF = exp(-fogDensity * fogDensity * vDepth * vDepth);
-  float a = d * opacity * near * fogF;
+  float a = d * opacity * vAlpha * near * fogF;
   // powyżej wysokości ścian: ciemniej i bez koloru (brak barwnej „zupy" pod sufitem)
   float hi = smoothstep(hiFade.x, hiFade.y, vWorldY);
   vec3 col = mix(vColor, vec3(dot(vColor, vec3(0.2126, 0.7152, 0.0722))) * hiFade.z, hi);
@@ -184,6 +187,9 @@ export function createSmoke(world, count, rng, opts = {}) {
     size = Math.min(size, Math.max(SM.sizeFloor, (clear - amp) * SM.sizePerClearance) / aspect);
     mtx.elements[0] = amp;    // amplituda dryfu w instanceMatrix[0][0] (translacja w [3])
     mtx.elements[5] = aspect; // proporcje smugi w [1][1]
+    const mid = band === SM.midBand;
+    mtx.elements[10] = mid ? SM.midOpacity : 1;   // mnożnik krycia w [2][2]
+    mtx.elements[1] = mid ? SM.midGlow : 1;       // mnożnik jasności bazowej w [0][1]
     mesh.setMatrixAt(i, mtx);
     params[i * 4 + 2] = size;
     params[i * 4 + 3] = rnd();

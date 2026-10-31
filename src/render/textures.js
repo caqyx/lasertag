@@ -495,9 +495,17 @@ function drawNet(S, rng) {
     const x = ((i + (j % 2) * 0.5) * S) / n, y = (j * S) / (2 * n);
     g.beginPath(); g.arc(x, y, lw * 0.9, 0, Math.PI * 2); g.fill();
   }
+  // nieregularne dziury (rozdarcia) i pasy maskujące — siatka maskująca, nie ogrodzenie
+  g.save();
+  g.globalCompositeOperation = 'destination-out';
+  for (let k = 0; k < N.holes; k++) {
+    const x = rng() * S, y = rng() * S, rx = rr(rng, 0.03, 0.08) * S, ry = rr(rng, 0.02, 0.05) * S;
+    g.beginPath(); g.ellipse(x, y, rx, ry, rng() * Math.PI, 0, Math.PI * 2); g.fillStyle = '#000'; g.fill();
+  }
+  g.restore();
   // pasy maskujące (wplecione „liście”): krótkie, półprzezroczyste prostokąty pod losowym kątem
   for (let k = 0; k < N.strips; k++) {
-    const x = rng() * S, y = rng() * S, w = rr(rng, 0.04, 0.09) * S, h = rr(rng, 0.012, 0.025) * S;
+    const x = rng() * S, y = rng() * S, w = rr(rng, 0.05, 0.15) * S, h = rr(rng, 0.015, 0.045) * S;
     const v = 90 + Math.floor(rng() * 70);
     g.save(); g.translate(x, y); g.rotate(rng() * Math.PI);
     g.fillStyle = `rgb(${v},${v},${v})`;

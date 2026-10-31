@@ -175,7 +175,7 @@ export const CONFIG = Object.freeze({
   elements: {
     window: { sill: 1.1, lintel: 1.85, top: 2.4 },   // parapet 0..sill, otwór sill..lintel (oko stojącego 1.65 widzi), nadproże lintel..top
     barrel: { r: 0.32, h: 1.05, k: 0.86 },          // beczka: promień, wysokość (> oko kucającego 1.0 → osłona); kolizja = gwiazda 2 kwadratów o połowie boku r·k
-    tires: { r: 0.45, h: 1.05, k: 0.86 },           // stos opon (3 × 0.35 m)
+    tires: { r: 0.55, h: 1.05, k: 0.86 },           // stos opon (4 × 0.26 m), szerszy niż beczka (sylwetka odróżnialna)
     net: { h: 2.2, t: 0.08 },                       // siatka maskująca: wysokość, grubość (blokuje ruch, przepuszcza wzrok i strzał)
     door: { h: 2.4, t: 0.3, pass: 0.98, safety: 0.05 },   // drzwi przesuwne (MapData.doors): wysokość, grubość; nav przepuszcza przy otwarciu ≥ pass; zapas czujnika (m)
     propCoverExtra: 0.3,    // m — beczki/opony: większy zasięg flagi cover (nav) i kucania (bots.halfCoverDist) — mały obrys, węzły dalej od krawędzi
@@ -200,7 +200,7 @@ export const CONFIG = Object.freeze({
     clearColor: '#05030a',
     msaaSamples: 4,
     hdrMax: 64,             // strażnik HDR przed bloomem: clamp jasności, NaN/Inf → 0
-    bloomFactors: [1.0, 0.62, 0.32, 0.14, 0.06],  // wagi 5 mipów UnrealBloomPass (domyślnie 1/.8/.6/.4/.2); runda renderu: szersze halo (było 1/.5/.2/.07/.02)
+    bloomFactors: [1.0, 0.5, 0.2, 0.07, 0.02],  // wagi 5 mipów UnrealBloomPass (domyślnie 1/.8/.6/.4/.2); szersze halo w rundzie renderu cofnięte (D-032: brudne halo Hive, przepalony rdzeń Reactora)
     // Oświetlenie (render/graphics.js): ciemność dominuje — ambient/hemi bardzo słabe.
     lights: {
       hemiIntensity: 0.3,     // HemisphereLight w kolorze palette.ambient
@@ -223,7 +223,7 @@ export const CONFIG = Object.freeze({
       paintWideFrom: 1024,
       accentShare: 0.08,      // udział akcentu wśród drobnych elementów farby
       netSize: 256,           // tekstura siatki maskującej
-      net: { cells: 6, rope: 0.12, strips: 26 },   // oczka na kafel, grubość linki (× oczko), pasy maskujące
+      net: { cells: 6, rope: 0.1, strips: 70, holes: 9 },   // oczka na kafel, grubość linki (× oczko), pasy maskujące
       paintVJitter: ['neonhive', 'reactor', 'orbita', 'uvmaze'],   // losowe przesunięcie farby w pionie per ściana
       bandSplit: ['neonhive', 'reactor', 'orbita', 'uvmaze'],      // styl stripes: poziome taśmy w odcinkach (nie przez cały kafel)
       paintBlur: [1.0, 0.0004], // rozmycie masek farby σ = max([0] px, szer. kafla × [1]) — shader wyostrza (SDF-lite)
@@ -260,7 +260,7 @@ export const CONFIG = Object.freeze({
       wallRoughness: 0.85,
       paintIntensity: 0.62,         // runda renderu: farba ciemniejsza od listew (hierarchia jasności; było 0.75) — emisja farby UV (maski × kolor bryły; HDR → bloom)
       paintIntensityMap: { neonhive: 0.7 },   // mnożnik emisji farby per mapa
-      paintScale: 0.8,              // runda renderu: mniejsze motywy farby (mniej „naklejek wektorowych”) — mapy bez wpisu w paintScaleMap
+      paintScale: 1.0,              // skala motywów farby dla map bez wpisu w paintScaleMap (0.8 cofnięte: moiré w dali — D-032)
       paintScaleMap: { neonhive: 0.75 },      // skala motywów farby per mapa (< 1 → mniejsze motywy)
       accentPaintMap: { neonhive: 0.5, orbita: 0.5 },      // róż w Hive tylko jako drobne, ciemniejsze akcenty
       accentPaintScale: 0.8,        // akcent (limonka) tylko w drobnych elementach farby
@@ -303,13 +303,13 @@ export const CONFIG = Object.freeze({
       spawnPanel: { width: 1.6, height: 0.9, depth: 0.04, y: 1.45, intensity: 0.9, marker: 0.16, trimScale: 0.8 },
       rampWarn: { inset: 0.08, lift: 0.01, width: 0.06, height: 0.012, k: 0.8 },   // pasy ostrzegawcze na końcach ramp
       platformWarn: { spacing: 1.8, length: 0.32, k: 0.75 },   // krótkie skośne pasy ostrzegawcze na czołach galerii
-      props: { segments: 24, trimScale: 0.9, ringK: 1.6, barrelVisual: 0.82, barrelBands: [0.28, 0.72], lidInner: 0.9, lidDrop: 0.03,   // beczki / opony
-        tireCount: 4, tireInner: 0.5, tireShoulder: 0.8, tireBevel: 0.32, tireGap: 0.035, tireJitter: 0.035, treadDashes: 20 },
+      props: { segments: 32, trimScale: 0.9, ringK: 1.6, barrelVisual: 0.82, barrelBands: [0.28, 0.72], lidInner: 0.9, lidDrop: 0.03,   // beczki / opony
+        tireCount: 4, tireInner: 0.45, tireShoulder: 0.7, tireBevel: 0.38, tireGap: 0.06, tireJitter: 0.04, treadDashes: 24 },
       window: { jambIn: 0.04 },   // okno strzeleckie: ościeża (pionowe neony) cofnięte od końców otworu
       door: { body: { r: 0.012, g: 0.012, b: 0.03 }, trimOff: 0.01, dim: 0.45, inset: 0.01, hideOpen: 0.999,   // drzwi przesuwne: ciemny korpus (HDR liniowy), neon krawędzi
         hazard: { inset: 0.06, width: 0.26, step: 0.22, slant: 0.7, w: 0.05, k: 1.3 },   // pas ostrzegawczy przy krawędzi natarcia
         handle: { gap: 0.08, out: 0.045, y0: 0.85, y1: 1.45, size: 0.045, k: 1.4 },     // uchwyt (pionowy pręt)
-        rail: { w: 0.1, h: 0.08, lift: 0.03, over: 0.1, k: 0.5 } },                  // szyna-prowadnica nad przejściem i kieszenią
+        rail: { w: 0.12, h: 0.1, lift: 0.14, over: 0.1, k: 0.0, hangers: 0.6 } },   // szyna nad listwą (lift), na wieszakach co hangers m                  // szyna-prowadnica nad przejściem i kieszenią
       net: { post: 0.07, tile: 0.9, bottomGap: 0.04, color: '#2a2648', opacity: 0.9, glow: 0.9, frameDim: 0.5 },   // siatka maskująca: słupki, kafel tekstury (m), materiał (przezroczysty, emisja uv)
       rail: { kick: 0.25, postSpacing: 1.2, post: 0.06, rail: 0.05, midY: 0.5, meshAlphaTest: 0.35 },   // barierki: ażur
       floorRoughnessMap: { neonhive: 1.3, reactor: 0.55 },   // Hive: szersze, miękkie pobłyski PointLight (bez owalnych „decali”)
@@ -395,11 +395,11 @@ export const CONFIG = Object.freeze({
       smoke: 24, pointLights: 2, envReflections: false, texSize: 512, anisotropy: 2,
     },
     high: {
-      pixelRatio: 1.5, aa: 'msaa', bloom: { strength: 0.95, radius: 0.0, threshold: 0.4, scale: 1.0 },
+      pixelRatio: 1.5, aa: 'msaa', bloom: { strength: 0.82, radius: 0.0, threshold: 0.4, scale: 1.0 },
       smoke: 64, pointLights: 4, envReflections: true, texSize: 1024, anisotropy: 4,
     },
     ultra: {
-      pixelRatio: 2.0, aa: 'msaa', bloom: { strength: 1.05, radius: 0.0, threshold: 0.4, scale: 1.0 },
+      pixelRatio: 2.0, aa: 'msaa', bloom: { strength: 0.9, radius: 0.0, threshold: 0.4, scale: 1.0 },
       smoke: 128, pointLights: 6, envReflections: true, texSize: 1024, anisotropy: 8,
     },
   },
@@ -439,6 +439,8 @@ export const CONFIG = Object.freeze({
     midShare: 0.35,
     midAspect: [1.3, 2.0],  // bliżej kuli niż płachty przyziemne
     midSize: 0.75,          // × zakres rozmiaru (mniejsze niż płachty, większe niż podsufitowe)
+    midOpacity: 2.6,        // × krycie warstwy środkowej (addytywny ciemny odcień — inaczej niewidoczna poza stożkami lamp)
+    midGlow: 1.8,           // × jasność bazowa warstwy środkowej
     highShare: 0.0,         // bez warstwy podsufitowej (lokalne kule przy lampach)
     aspect: [2.2, 3.6],     // kłęby jako poziome smugi (szerokość / wysokość)
     tilt: 0.25,             // maks. przechył smugi (rad)
