@@ -56,11 +56,11 @@ void main() {
   vec3 c;
   if (vK > 0.5) {
     // pręt wewnętrzny: jasny, prawie biało-zielony
-    c = mix(colA, vec3(1.0), 0.35) * (1.6 + 0.6 * bands) * pulse;
+    c = mix(colA, vec3(1.0), ${D.core.rodWhite.toFixed(2)}) * (${D.core.rodK.toFixed(2)} + 0.4 * bands) * pulse;
   } else {
     // płaszcz: ciemniejszy środek, jaśniejsze brzegi (fresnel), pasma i strugi
     float rim = pow(clamp(1.0 - facing, 0.0, 1.0), 2.0);
-    c = colA * (0.25 + 0.9 * rim + 1.4 * bands + 0.8 * flow) * pulse;
+    c = colA * (0.2 + 0.9 * rim + ${D.core.bandK.toFixed(2)} * bands + 0.6 * flow) * pulse;
     c += colB * smoothstep(0.92, 1.0, fract(vY * 0.12 - time * 0.08)) * 0.8;
   }
   float fogF = exp(-fogDensity * fogDensity * vFogDepth * vFogDepth);

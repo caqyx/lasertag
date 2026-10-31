@@ -168,7 +168,7 @@ export function createGraphics({ canvas, presetName = CONFIG.defaults.preset }) 
     if (!world) { scene.fog = null; return; }
     if (!scene.fog) scene.fog = new THREE.FogExp2(world.palette.fog, R.fogDensity);
     // mgła: kolor palety podbarwiony fioletem UV (widoczna fioletowo-granatowa głębia, nie czarna)
-    scene.fog.color.set(world.palette.fog).lerp(fogTintColor.set(paletteFor(world).uv), R.fogTint * darkNormFor(world));
+    scene.fog.color.set(world.palette.fog).lerp(fogTintColor.set(paletteFor(world).uv), (R.fogTintMap[world.id] ?? R.fogTint) * darkNormFor(world));
     scene.fog.density = R.fogDensityMap[world.id] ?? R.fogDensity;
     renderer.setClearColor(scene.fog.color, 1);
   }

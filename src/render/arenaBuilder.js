@@ -150,10 +150,11 @@ function addCap(buf, s, y, up) {
 }
 
 let paintK = 1;   // skala motywów farby dla budowanej mapy (A.paintScaleMap)
+let boundaryK = 1; // dodatkowa skala farby ścian obwodowych (A.boundaryPaintScaleMap)
 function addSolid(paintBuf, plainBuf, s, rng, vJit = false) {
   const uScale = A.wallUScale[0] + (A.wallUScale[1] - A.wallUScale[0]) * rng();
-  const tileW = paintK * (s.boundary ? TX.paintMeters[0] * A.boundaryPaintScale : TX.paintMeters[0] * uScale);
-  const tileH = paintK * (s.boundary ? TX.paintMeters[1] * A.boundaryPaintScale : TX.paintMeters[1]);
+  const tileW = paintK * (s.boundary ? TX.paintMeters[0] * A.boundaryPaintScale * boundaryK : TX.paintMeters[0] * uScale);
+  const tileH = paintK * (s.boundary ? TX.paintMeters[1] * A.boundaryPaintScale * boundaryK : TX.paintMeters[1]);
   const { hx, hz, y0, y1 } = s;
   const base = rng() * tileW * 4;
   const off = [base, base + 2 * hz + rng() * tileW, base + rng() * tileW * 2, base + rng() * tileW * 3];
@@ -611,6 +612,7 @@ uniform float camFar;
 uniform vec2 reflRes;
 uniform float reflOn;
 uniform float reflStrength;
+uniform float reflRedDamp;   // czerwone akcenty w odbiciu słabiej (nie „lewitujący pas”)
 uniform vec4 maskRect[ ${MAX_MASK} ];   // cx, cz, hx, hz
 uniform vec2 maskRot[ ${MAX_MASK} ];    // cos, sin
 varying vec2 vFW;
@@ -652,6 +654,7 @@ float floorMask() {
     rc /= wsum;
     if ( any( isnan( rc ) ) || any( isinf( rc ) ) ) rc = vec3( 0.0 );   // odbicie nie przenosi NaN/Inf na podłogę
     rc = min( rc, vec3( ${A.reflect.maxValue.toFixed(1)} ) );
+    rc.r = mix( rc.r, min( rc.r, max( rc.g, rc.b ) ), reflRedDamp );
     vec3 fN = normalize( ( viewMatrix * vec4( 0.0, 1.0, 0.0, 0.0 ) ).xyz );
     float ndv = clamp( abs( dot( fN, vViewPosition ) ) * inversesqrt( max( dot( vViewPosition, vViewPosition ), 1e-12 ) ), 0.0, 1.0 );
     float fres = ${A.reflect.f0.toFixed(3)} + ( 1.0 - ${A.reflect.f0.toFixed(3)} ) * pow( 1.0 - ndv, 5.0 );
@@ -836,6 +839,8 @@ export function buildArena(world, preset, textures, opts = {}) {
   const rng = createRng((world.seed ^ A.seedSalt) >>> 0).next;
   const pal = paletteFor(world);
   paintK = A.paintScaleMap[world.id] ?? 1;
+  boundaryK = A.boundaryPaintScaleMap[world.id] ?? 1;
+  const boundaryPI = A.boundaryPaintIntensityMap[world.id] ?? A.boundaryPaintIntensity;
   const paintI = A.paintIntensity * (A.paintIntensityMap[world.id] ?? 1);
   const lin = (hex, k = 1) => new THREE.Color(hex).multiplyScalar(k);
   const palLin = { primary: lin(pal.primary), secondary: lin(pal.secondary), uv: lin(pal.uv), accent: lin(pal.accent) };
@@ -889,7 +894,7 @@ export function buildArena(world, preset, textures, opts = {}) {
 
   const setCur = (buf, aKey, bKey, washKey, top, bot) => {
     const c = buf.cur;
-    const pk = paintI * (buf.curBoundary ? A.boundaryPaintIntensity : 1);
+    const pk = paintI * (buf.curBoundary ? boundaryPI : 1);
     const ka = pk * boost(aKey), kb = pk * boost(bKey);
     c.pa[0] = palLin[aKey].r * ka; c.pa[1] = palLin[aKey].g * ka; c.pa[2] = palLin[aKey].b * ka;
     c.pb[0] = palLin[bKey].r * kb; c.pb[1] = palLin[bKey].g * kb; c.pb[2] = palLin[bKey].b * kb;
@@ -1015,7 +1020,7 @@ export function buildArena(world, preset, textures, opts = {}) {
     const tex = textures.get('ceiling');
     const mat = own(new THREE.MeshStandardMaterial({
       color: 0xffffff, map: tex, roughness: A.ceilingRoughness, metalness: 0,
-      emissive: new THREE.Color(pal.uv), emissiveMap: tex, emissiveIntensity: A.ceilingGlow * darkNorm,
+      emissive: new THREE.Color(pal.uv), emissiveMap: tex, emissiveIntensity: A.ceilingGlow * (A.ceilingGlowMap[world.id] ?? 1) * darkNorm,
     }));
     const lamps = { pos: [], col: [] };
     for (let i = 0; i < MAX_LAMPS; i++) {
@@ -1106,7 +1111,9 @@ export function buildArena(world, preset, textures, opts = {}) {
     addBar(trussBuf, L.x - hl - LM.housingPad, yh, L.z, L.x + hl + LM.housingPad, yh, L.z, A.lampSize[1] + 2 * LM.housingPad, LM.housingHeight);
     const y = yh - LM.housingHeight / 2 - A.lampSize[2] / 2;
     lampY.push(y);
-    const c = saturate(lin(lightColorHex(world, L.color), A.lampIntensity), A.trimSaturation);
+    // zawiesia oprawy do stropu (lampa nie „lewituje” między dźwigarami)
+    for (const ex of [-hl * 0.8, hl * 0.8]) addBar(trussBuf, L.x + ex, yh, L.z, L.x + ex, ceil, L.z, A.trussHanger, A.trussHanger);
+    const c = saturate(lin(lightColorHex(world, L.color), A.lampIntensity * (A.lampIntensityMap[world.id] ?? 1)), A.trimSaturation);
     addBar(trimBuf, L.x - hl, y, L.z, L.x + hl, y, L.z, A.lampSize[1], A.lampSize[2], c.r, c.g, c.b);
   }
   {
@@ -1147,6 +1154,20 @@ export function buildArena(world, preset, textures, opts = {}) {
         color: SM.color, map: grate, metalness: SM.metalness, roughness: SM.roughness,
         emissive: new THREE.Color(pal.uv), emissiveMap: grate, emissiveIntensity: SM.glow * darkNorm,
       }));
+      if (SM.farFade) {
+        // kratka z odległością → średni kolor tekstury (najwyższy mip): bez mory na pokładach galerii
+        const [f0, f1] = SM.farFade;
+        mat.onBeforeCompile = (sh) => {
+          sh.fragmentShader = sh.fragmentShader
+            .replace('#include <map_fragment>', `
+  float gFar = smoothstep( ${f0.toFixed(1)}, ${f1.toFixed(1)}, vViewPosition.z );
+  vec4 sampledDiffuseColor = mix( texture2D( map, vMapUv ), texture2D( map, vMapUv, 12.0 ), gFar );
+  diffuseColor *= sampledDiffuseColor;`)
+            .replace('#include <emissivemap_fragment>', `
+  totalEmissiveRadiance *= mix( texture2D( emissiveMap, vEmissiveMapUv ).rgb, texture2D( emissiveMap, vEmissiveMapUv, 12.0 ).rgb, gFar );`);
+        };
+        mat.customProgramCacheKey = () => 'lt-steel-fade';
+      }
       const m = new THREE.Mesh(own(geo), mat);
       m.name = 'steel';
       group.add(m);
@@ -1205,6 +1226,7 @@ export function buildArena(world, preset, textures, opts = {}) {
     reflRes: { value: new THREE.Vector2(1, 1) }, reflOn: { value: 0 },
     maskRect: { value: [] }, maskRot: { value: [] },
     reflStrength: { value: A.reflect.strengthMap[world.id] ?? A.reflect.strength },
+    reflRedDamp: { value: A.reflect.redDampMap[world.id] ?? 0 },
   };
   {
     const plats = world.solids.filter((sd) => sd.y0 > A.steelMinY && sd.kind === 'platform');
