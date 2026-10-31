@@ -25,6 +25,12 @@ MapData = {
   walls: [ { x, z, w, d, h, y: 0, rot: 0, kind: 'wall'|'half'|'pillar'|'platform'|'prop',
              paint?: 'stripes'|'geo'|'splatter'|'grid'|'none', trim?: 'primary'|'secondary'|'accent'|'uv'|'none',
              trimBottom?: bool } ],     // jawne bryły (dodawane do tych z grid); rot w radianach wokół Y
+  // Elementy (CONFIG.elements), rozwijane przez mapgen.expandWall z walls[]:
+  //   { kind: 'window', x, z, w, d, rot }     → parapet (half, 0..sill) + nadproże (wall, lintel..top, flaga lintel); w grid znak 'w'
+  //   { kind: 'barrel'|'tires', x, z, r?, h? } → 2 bryły 'half' pod 0°/45° (gwiazda ≈ koło), flaga prop + group (render raz)
+  //   { kind: 'net', x, z, w, d?, h?, rot }   → bryła 'net' z seeThrough (blokuje ruch; raycast/linia wzroku/cover ją pomijają)
+  doors: [ { x, z, w, d?, h?, rot?, slide: [sx, sz], cycle: [open, move, closed], phase? } ],
+                                               // drzwi przesuwne: (x,z) = poza zamknięta, otwarta = +slide (kieszeń w ścianie)
   ramps: [ { x, z, w, d, rot, y0, y1 } ],      // wznosi się wzdłuż lokalnego +Z: y0 przy -d/2, y1 przy +d/2
   decor: [ { type: 'reactorCore'|'truss'|..., ... } ],  // tylko wizualne, renderer interpretuje, mapgen przepuszcza
   lights: [ { x, y, z, color, intensity, range } ],     // kolejność = priorytet (preset bierze pierwsze N)
@@ -44,7 +50,10 @@ World = {
   grid: SpatialGrid,        // kubełki indeksów solids/ramps (komórka CONFIG-niezależna, np. 4 m) do szybkich zapytań
   spawns, lights, cams, decor,   // przepisane z danych (spawny z y uzupełnionym)
 }
-Solid = { kind, cx, cz, hx, hz, y0, y1, rot, cos, sin, paint, trim, trimBottom, boundary }
+Solid = { kind, cx, cz, hx, hz, y0, y1, rot, cos, sin, paint, trim, trimBottom, boundary,
+          seeThrough, window, lintel, prop, group, radius, mover, sweepX, sweepZ }   // te same pola w każdej bryle (kształt V8)
+World += { doors: [{ solid, x0, z0, sx, sz, tOpen, tMove, tClosed, period, phase }], doorOpen: Float64Array }
+        // stan drzwi żyje w świecie (jeden aktywny sim na świat): game/doors.js — resetDoors(world, t), stepDoors(sim, dt)
         // OBB w XZ (połowy wymiarów hx,hz w lokalnym układzie), zakres pionowy [y0,y1]
 Ramp  = { cx, cz, hx, hz, rot, cos, sin, y0, y1 }
 ```
@@ -184,6 +193,9 @@ findPath(nav, from, to, outPath: Int32Array) → length (0 = brak)   // A* z pre
 randomNode(nav, rng) → index
 ```
 Wymóg: z każdego spawnu osiągalne ≥ 98% węzłów; na mapach 2-poziomowych (M4) krawędzie przez rampy.
+Drzwi przesuwne: graf budowany przy otwartych drzwiach; `nav.nodeDoor: Int16Array` (węzeł → drzwi, strefa = promień gracza
++ ½ oczka wokół pozy zamkniętej), `nav.doorOpen` (= world.doorOpen); `findPath` pomija węzły drzwi przy doorOpen < pass,
+`smoothPath` zostawia je w ścieżce. Siatki (`seeThrough`) nie dają flagi `cover`; beczki/opony mają zasięg cover + propCoverExtra.
 
 ### 8.2 Bot (`src/game/bots/ai.js`) — InputSource
 ```js

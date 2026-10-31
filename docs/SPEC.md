@@ -98,6 +98,13 @@ Jednostka = 1 m. Oś Y w górę. Oko gracza 1.65 m.
 - 8 spawnów w pasie między pierścieniem zewnętrznym a obwodem (osłona pośrodku każdej strony).
 - Paleta: lodowy błękit `#6fd8ff`, fiolet `#b04bff`, indygo UV `#4b3cff`, akcent pomarańcz `#ff8a00` (tylko farba/listwy osłon rdzenia).
 
+### 3.5 Elementy map (od 2026-10-31, D-026…D-029)
+- **Okno strzeleckie** — parapet 1.1 m + nadproże od 1.85 m: stojący widzi i strzela przez otwór, kucający schowany.
+- **Beczka / stos opon** — okrągła osłona 1.05 m (zasłania kucającego), kolizja 2 kwadraty 0°/45°.
+- **Siatka maskująca** — blokuje ruch, przepuszcza wzrok i strzał; nie jest osłoną.
+- **Drzwi przesuwne** — cykl z czasu meczu (deterministyczny), czujnik: nie zamykają się na żywym uczestniku; boty omijają
+  zamknięte przejścia. UV Maze: bramy przy ostrogach N/S naprzemiennie; Orbita: pary N/S i E/W pierścienia w przeciwfazie.
+
 ## 4. Wygląd
 
 - Ciemność dominuje: ściany czarne/granatowe, matowe, z **farbą UV** (proceduralne wzory: pasy, geometria,
@@ -249,3 +256,7 @@ tests/                unit/*.test.mjs (node --test), smoke/*.mjs (Playwright), t
 | D-023 | 2026-10-31 | UV Maze: przebudowa układu przy 36×36 m („trzy linie”, 58 brył, 904 węzły nav); test liczby brył 70 → 58. | Decyzja użytkownika: nowy układ, ten sam rozmiar; usunięcie 12 kieszeni, czytelny flow między placami. |
 | D-024 | 2026-10-31 | `halfCoverNear` w ai.js dostaje punkt przez bufor `HC` (`halfCoverAt`), nie 3 double w argumentach. | Boxing V8 (jak D-012) ~0.6 B/krok w startHold/startHoldNear; test noalloc „gracz + 8 botów” był na granicy progu także na starej mapie. Resztkowe drobne alokacje (enterCover, headroomOk) poniżej progu — do zbadania. |
 | D-025 | 2026-10-31 | Nowa mapa Orbita (koncepcja B z 3 propozycji); lampy bez koloru akcentu. | Wybór użytkownika; mechanika spiralnego dostępu do środka odrębna od UV Maze/Hive/Reactor; akcent w lampach dawał brązowe plamy na stropie (jak D-008). |
+| D-026 | 2026-10-31 | Elementy map jako makra mapgen (walls: window/barrel/tires/net) na statycznych OBB; nowe pola Solid w makeSolid dla każdej bryły. | Fizyka/raycast/nav nie rozróżniają `kind` — elementy bez zmian w rdzeniu kolizji; stały kształt obiektu = brak deoptów V8. |
+| D-027 | 2026-10-31 | Beczki/opony 1.05 m (nie 0.9) + zasięg cover/kucania +0.3 m dla propów. | 0.95 m nie zasłaniało oka kucającego (1.0 m); mały obrys → węzły nav 1.15–1.25 m od krawędzi, poza progiem cover 1.1 m. |
+| D-028 | 2026-10-31 | Siatka maskująca: flaga `seeThrough` pomijana w raycast/segmentClear/cover; render przezroczysty z własną teksturą (+1 call, +1 tekstura). | Ażur z alphaTest znikał z odległości (mipmapy uśredniają alfę poniżej progu). |
+| D-029 | 2026-10-31 | Drzwi przesuwne: stan w świecie (world.doorOpen), cykl z czasu meczu, czujnik bezpieczeństwa; SpatialGrid wpisuje bryłę w kubełki całego toru; nav: strefa drzwi = promień + ½ oczka. | Determinizm (pod M5) bez dynamicznej przebudowy siatki/grafu; czujnik eliminuje zgniatanie; węższa strefa przepuszczała krawędź nav przez zamknięte skrzydło 0.3 m. |
