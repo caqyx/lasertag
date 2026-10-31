@@ -187,5 +187,8 @@ export default {
     { name: 'spawn', pos: [-6, 1.65, -18], look: [10, 1.4, -16] },
     // narożnik SE, widok przez przejście w pierścieniu zewnętrznym
     { name: 'corner', pos: [17.5, 1.65, 17.5], look: [6, 1.3, 6] },
+    // elementy: okno strzeleckie NE pierścienia środkowego (z korytarza zewnętrznego) i drzwi rozsuwane E
+    { name: 'window', pos: [11.6, 1.65, -6.4], look: [6.72, 1.45, -6.72] },
+    { name: 'door', pos: [12.3, 1.65, -3.6], look: [9.5, 1.2, 0.3] },
   ],
 };

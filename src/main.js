@@ -14,6 +14,7 @@ import { applyDebugCam, listDebugCams } from './render/debugCams.js';
 import { resetInputState } from './game/input/inputState.js';
 import { createParticipant } from './game/participant.js';
 import { createSim, addParticipant, stepSim, findParticipant } from './game/sim.js';
+import { resetDoors } from './game/doors.js';
 import { MODES, setupRoster, spawnTeamCount } from './game/modes.js';
 import { createMatch, stepMatch, matchRunning } from './game/match.js';
 import { createBotBrain } from './game/bots/ai.js';
@@ -86,7 +87,9 @@ function boot(graphics) {
     if (world !== null && world.id === id) return;
     world = buildWorld(MAPS[id]);
     graphics.setWorld(world);
-    nav = buildNav(world);
+    nav = buildNav(world);       // graf przy otwartych drzwiach przesuwnych (buildNav sam to zapewnia)
+    resetDoors(world, 0);        // widok areny (menu, kamery debug) = poza drzwi ze startu meczu
+    graphics.update(0, 0);       // przesunięcie meshy drzwi do tej pozy
   }
   loadMap(params.map);
 

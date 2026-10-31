@@ -404,6 +404,17 @@ function addCyl(buf, cx, cz, r, y0, y1, n, inner = false) {
     if (inner) buf.quad(a, a + 2, a + 3, a + 1); else buf.quad(a, a + 1, a + 3, a + 2);   // CCW z zewnątrz (lub od środka)
   }
 }
+// stożek ścięty (bok) r0 przy y0 → r1 przy y1, normalne skośne na zewnątrz (profil opony: zaokrąglone boki)
+function addFrustum(buf, cx, cz, r0, r1, y0, y1, n) {
+  const i0 = buf.count, h = y1 - y0, dr = r0 - r1, l = Math.hypot(h, dr) || 1;
+  const ny = dr / l, nr = h / l;
+  for (let k = 0; k <= n; k++) {
+    const a = (k / n) * Math.PI * 2, c = Math.cos(a), sn = Math.sin(a);
+    buf.vert(cx + c * r0, y0, cz + sn * r0, c * nr, ny, sn * nr, k / n, 0);
+    buf.vert(cx + c * r1, y1, cz + sn * r1, c * nr, ny, sn * nr, k / n, 1);
+  }
+  for (let k = 0; k < n; k++) { const a = i0 + 2 * k; buf.quad(a, a + 1, a + 3, a + 2); }
+}
 // pierścień poziomy (pokrywa) r0..r1 na wysokości y, normalna w górę; r0 = 0 → pełny krąg
 function addDisc(buf, cx, cz, r0, r1, y, n) {
   const i0 = buf.count;
@@ -424,22 +435,31 @@ function ringBars(buf, cx, y, cz, r, n, size, col) {
 /** beczka / stos opon: korpus w buforze gumy (ciemny), obręcze neonowe w buforze listew */
 function addProp(bodyBuf, trimBuf, s, col, accentCol) {
   const PR = A.props, n = PR.segments, r = s.radius, h = s.y1, t = A.trimSize * PR.trimScale;
+  const kc = PR.ringK;   // obręcze jaśniejsze od listew ścian (małe obiekty giną na tle)
+  const bright = { r: col.r * kc, g: col.g * kc, b: col.b * kc };
   if (s.prop === 'barrel') {
+    // beczka: walec + przetłoczenia (lekko większy promień na obręczach) + pokrywa z rantem
     addCyl(bodyBuf, s.cx, s.cz, r, 0, h, n);
-    addDisc(bodyBuf, s.cx, s.cz, 0, r, h, n);
-    for (const f of PR.barrelBands) ringBars(trimBuf, s.cx, h * f, s.cz, r + t * 0.5, n, t, col);
-    ringBars(trimBuf, s.cx, h - t * 0.5, s.cz, r - t * 0.5, n, t * 0.8, accentCol);   // rant pokrywy
+    addDisc(bodyBuf, s.cx, s.cz, 0, r * PR.lidInner, h - PR.lidDrop, n);
+    addCyl(bodyBuf, s.cx, s.cz, r * PR.lidInner, h - PR.lidDrop, h, n, true);
+    addDisc(bodyBuf, s.cx, s.cz, r * PR.lidInner, r, h, n);
+    for (const f of PR.barrelBands) ringBars(trimBuf, s.cx, h * f, s.cz, r + t * 0.5, n, t * 1.2, bright);
+    ringBars(trimBuf, s.cx, h - t * 0.5, s.cz, r + t * 0.3, n, t * 0.8, accentCol);   // rant pokrywy
     return;
   }
-  // opony: k sztuk, każda = zewnętrzny walec + wewnętrzny + pokrywa-pierścień; neon na bieżniku co drugiej
-  const k = PR.tireCount, th = h / k, ri = r * PR.tireInner;
+  // opony: k sztuk, profil zaokrąglony (stożki ścięte przy bokach), rowek między oponami, otwór w środku;
+  // neon na bieżniku (środek wysokości) każdej opony, co druga w kolorze akcentu
+  const k = PR.tireCount, th = h / k, ri = r * PR.tireInner, rs = r * PR.tireShoulder, e = th * PR.tireBevel;
   for (let j = 0; j < k; j++) {
     const y0 = j * th + PR.tireGap, y1 = (j + 1) * th;
-    addCyl(bodyBuf, s.cx, s.cz, r, y0, y1, n);
+    addFrustum(bodyBuf, s.cx, s.cz, rs, r, y0, y0 + e, n);
+    addCyl(bodyBuf, s.cx, s.cz, r, y0 + e, y1 - e, n);
+    addFrustum(bodyBuf, s.cx, s.cz, r, rs, y1 - e, y1, n);
     addCyl(bodyBuf, s.cx, s.cz, ri, y0, y1, n, true);
-    addDisc(bodyBuf, s.cx, s.cz, ri, r, y1, n);
-    ringBars(trimBuf, s.cx, (y0 + y1) / 2, s.cz, r + t * 0.5, n, t, j % 2 ? accentCol : col);
+    addDisc(bodyBuf, s.cx, s.cz, ri, rs, y1, n);
+    ringBars(trimBuf, s.cx, (y0 + y1) / 2, s.cz, r + t * 0.5, n, t, j % 2 ? accentCol : bright);
   }
+  ringBars(trimBuf, s.cx, h + t * 0.3, s.cz, (ri + rs) / 2, n, t * 0.6, bright);   // obrys otworu górnej opony
 }
 /** siatka maskująca: ażur (bufor siatek barierek), słupki stalowe na końcach, neon na górnej krawędzi */
 function addNet(steelBuf, trimBuf, netBuf, s, col) {
@@ -460,6 +480,10 @@ function addNet(steelBuf, trimBuf, netBuf, s, col) {
   netBuf.quad(i, i + 1, i + 2, i + 3);
   addBar(trimBuf, _wa[0], yB, _wa[1], _wb[0], yB, _wb[1], A.trimSize, A.trimSize, col.r, col.g, col.b);
   addBar(steelBuf, _wa[0], yA, _wa[1], _wb[0], yA, _wb[1], NT.post * 0.6, NT.post * 0.6, 1, 1, 1);
+  // neonowa rama: dolna linka przygaszona + pionowe neony na słupkach (siatka czytelna z daleka)
+  const dk = NT.frameDim;
+  addBar(trimBuf, _wa[0], yA + A.trimSize, _wa[1], _wb[0], yA + A.trimSize, _wb[1], A.trimSize * 0.7, A.trimSize * 0.7, col.r * dk, col.g * dk, col.b * dk);
+  for (const p of [_wa, _wb]) addBar(trimBuf, p[0], yA, p[1], p[0], yB, p[1], NT.post + A.trimSize * 0.5, A.trimSize * 0.5, col.r, col.g, col.b);
 }
 
 // prostopadłościan bryły do bufora stali; UV w metrach / kafel kratki (góra: x/z, boki: wzdłuż/wysokość)
@@ -1126,7 +1150,16 @@ export function buildArena(world, preset, textures, opts = {}) {
       }
     }
     if (s.trimBottom) trimLoop(trimBuf, s, s.y0 + A.trimSize / 2 + A.trimBottomLift, col);
-    if (s.lintel) trimLoop(trimBuf, s, s.y0 + A.trimSize / 2, col);   // górna krawędź otworu okna
+    if (s.lintel) {
+      trimLoop(trimBuf, s, s.y0 + A.trimSize / 2, col);   // górna krawędź otworu okna
+      // ościeża: pionowe neony na końcach otworu (po obu licach) — otwór czytelny jako okno, nie półka
+      const W = CONFIG.elements.window, longX = s.hx >= s.hz, L = longX ? s.hx : s.hz, Tk = longX ? s.hz : s.hx;
+      const o = A.trimSize / 2 + A.trimGap;
+      for (const u of [-L + A.window.jambIn, L - A.window.jambIn]) for (const v of [-(Tk + o), Tk + o]) {
+        if (longX) toWorld(s, u, v, _wa); else toWorld(s, v, u, _wa);
+        addBar(trimBuf, _wa[0], W.sill, _wa[1], _wa[0], W.lintel, _wa[1], A.trimSize, A.trimSize, col.r, col.g, col.b);
+      }
+    }
   });
   // ramy przejść: listwa nad otworem między współliniowymi segmentami ścian (przerwa doorFrame.gap) — heks czytelny z oczu gracza
   if (A.doorFrame.maps.includes(world.id)) {

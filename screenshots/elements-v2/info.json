@@ -1,0 +1,87 @@
+{
+  "uvmaze/ultra/overview": {
+    "file": "screenshots/elements-v2/uvmaze-ultra-0-overview.png",
+    "info": {
+      "calls": 48,
+      "triangles": 60771,
+      "points": 0,
+      "lines": 0,
+      "textures": 28,
+      "geometries": 23,
+      "programs": 32
+    }
+  },
+  "uvmaze/ultra/corridor": {
+    "file": "screenshots/elements-v2/uvmaze-ultra-1-corridor.png",
+    "info": {
+      "calls": 46,
+      "triangles": 60459,
+      "points": 0,
+      "lines": 0,
+      "textures": 28,
+      "geometries": 23,
+      "programs": 32
+    }
+  },
+  "uvmaze/ultra/plaza": {
+    "file": "screenshots/elements-v2/uvmaze-ultra-2-plaza.png",
+    "info": {
+      "calls": 44,
+      "triangles": 60147,
+      "points": 0,
+      "lines": 0,
+      "textures": 28,
+      "geometries": 23,
+      "programs": 32
+    }
+  },
+  "uvmaze/ultra/spawn": {
+    "file": "screenshots/elements-v2/uvmaze-ultra-3-spawn.png",
+    "info": {
+      "calls": 46,
+      "triangles": 60459,
+      "points": 0,
+      "lines": 0,
+      "textures": 28,
+      "geometries": 23,
+      "programs": 32
+    }
+  },
+  "uvmaze/ultra/corner": {
+    "file": "screenshots/elements-v2/uvmaze-ultra-4-corner.png",
+    "info": {
+      "calls": 46,
+      "triangles": 60459,
+      "points": 0,
+      "lines": 0,
+      "textures": 28,
+      "geometries": 23,
+      "programs": 32
+    }
+  },
+  "uvmaze/ultra/window": {
+    "file": "screenshots/elements-v2/uvmaze-ultra-5-window.png",
+    "info": {
+      "calls": 46,
+      "triangles": 60459,
+      "points": 0,
+      "lines": 0,
+      "textures": 28,
+      "geometries": 23,
+      "programs": 32
+    }
+  },
+  "uvmaze/ultra/door": {
+    "file": "screenshots/elements-v2/uvmaze-ultra-6-door.png",
+    "info": {
+      "calls": 46,
+      "triangles": 60459,
+      "points": 0,
+      "lines": 0,
+      "textures": 28,
+      "geometries": 23,
+      "programs": 32
+    }
+  },
+  "uvmaze/ultra/console": []
+}

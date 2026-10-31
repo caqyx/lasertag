@@ -302,10 +302,12 @@ export const CONFIG = Object.freeze({
       spawnPanel: { width: 1.6, height: 0.9, depth: 0.04, y: 1.45, intensity: 0.9, marker: 0.16, trimScale: 0.8 },
       rampWarn: { inset: 0.08, lift: 0.01, width: 0.06, height: 0.012, k: 0.8 },   // pasy ostrzegawcze na końcach ramp
       platformWarn: { spacing: 1.8, length: 0.32, k: 0.75 },   // krótkie skośne pasy ostrzegawcze na czołach galerii
-      props: { segments: 16, trimScale: 0.8, barrelBands: [0.28, 0.72], tireCount: 3, tireInner: 0.55, tireGap: 0.02 },   // beczki / opony
+      props: { segments: 24, trimScale: 0.9, ringK: 1.6, barrelBands: [0.28, 0.72], lidInner: 0.9, lidDrop: 0.03,   // beczki / opony
+        tireCount: 3, tireInner: 0.5, tireShoulder: 0.84, tireBevel: 0.3, tireGap: 0.04 },
+      window: { jambIn: 0.04 },   // okno strzeleckie: ościeża (pionowe neony) cofnięte od końców otworu
       door: { body: { r: 0.012, g: 0.012, b: 0.03 }, trimOff: 0.01, dim: 0.45, inset: 0.01, hideOpen: 0.999,   // drzwi przesuwne: ciemny korpus (HDR liniowy), neon krawędzi
         stripe: { gap: 0.5, run: 0.3, y0: 0.25, y1: 0.75, w: 0.05, k: 0.8 } },   // pasy ostrzegawcze na licach
-      net: { post: 0.07, tile: 0.9, bottomGap: 0.04, color: '#1a1830', opacity: 0.85, glow: 0.35 },   // siatka maskująca: słupki, kafel tekstury (m), materiał (przezroczysty, emisja uv)
+      net: { post: 0.07, tile: 0.9, bottomGap: 0.04, color: '#2a2648', opacity: 0.9, glow: 0.9, frameDim: 0.5 },   // siatka maskująca: słupki, kafel tekstury (m), materiał (przezroczysty, emisja uv)
       rail: { kick: 0.25, postSpacing: 1.2, post: 0.06, rail: 0.05, midY: 0.5, meshAlphaTest: 0.35 },   // barierki: ażur
       floorRoughnessMap: { neonhive: 1.3, reactor: 0.55 },   // Hive: szersze, miękkie pobłyski PointLight (bez owalnych „decali”)
       floorRoughness: 0.75,         // × roughnessMap (≈0.6) → ~0.45 (półpołysk)

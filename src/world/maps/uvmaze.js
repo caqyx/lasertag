@@ -114,5 +114,8 @@ export default {
     { name: 'spawn', pos: [-17, 1.65, 7], look: [-3, 1.4, 11] },
     // róg korytarza SE, długa perspektywa na północ (kolumna 15, przecięta osłoną) w mgłę
     { name: 'corner', pos: [13, 1.65, 13], look: [13, 1.5, -9] },
+    // elementy: okno strzeleckie N placu (widok przez otwór na plac z oponami) i bramy z drzwiami przy ostrodze N
+    { name: 'window', pos: [0.5, 1.65, -10.5], look: [0, 1.35, 0] },
+    { name: 'door', pos: [4.6, 1.65, -12.4], look: [1.8, 1.2, -14.6] },
   ],
 };
