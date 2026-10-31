@@ -97,6 +97,10 @@ function drawPaint(style, S, palette, rng) {
   g.fillStyle = '#000';
   g.fillRect(0, 0, W, H);
   const ppm = W / T.paintMeters[0]; // pikseli na metr
+  // maska „SDF-lite": rozmycie (σ px) → shader ściany wyostrza próg 0.5 przez fwidth (gładkie krawędzie z bliska);
+  // cienkie elementy ≥ MINW, żeby szczyt po rozmyciu został > 0.5 (nie znikają po progowaniu)
+  const blur = Math.max(T.paintBlur[0], W * T.paintBlur[1]);
+  MINW = blur * 1.7;
   const cols = paletteColors();
   g.lineJoin = 'miter';
   g.lineCap = 'butt';
@@ -105,6 +109,22 @@ function drawPaint(style, S, palette, rng) {
   else if (style === 'splatter') paintSplatter(g, W, H, ppm, cols, rng);
   else if (style === 'grid') paintGrid(g, W, H, ppm, cols, rng);
   else throw new Error(`textures: nieznany styl farby '${style}'`);
+  return blurWrapped(c, blur);
+}
+
+let MINW = 1; // minimalna grubość linii / promień kropli farby (px) dla bieżącego kafla
+
+// rozmycie gaussowskie z zawinięciem (kafel powtarzalny w obu osiach); bez ctx.filter → maska bez zmian
+function blurWrapped(c, sigma) {
+  const W = c.width, H = c.height, p = Math.ceil(sigma * 3);
+  const pad = makeCanvas(W + 2 * p, H + 2 * p);
+  const pg = pad.getContext('2d');
+  for (const dy of [-H, 0, H]) for (const dx of [-W, 0, W]) pg.drawImage(c, p + dx, p + dy);
+  const g = c.getContext('2d');
+  g.filter = `blur(${sigma.toFixed(2)}px)`;
+  if (g.filter === 'none') return c;
+  g.drawImage(pad, -p, -p);
+  g.filter = 'none';
   return c;
 }
 
@@ -165,7 +185,7 @@ function paintStripes(g, W, H, ppm, cols, rng) {
     const x = rng() * W;
     const l = rr(rng, 0.4, 2.5) * ppm;
     g.fillStyle = pick(rng, cols);
-    wrapX(W, (dx) => g.fillRect(x + dx, y, l, Math.max(1, 0.006 * ppm)));
+    wrapX(W, (dx) => g.fillRect(x + dx, y, l, Math.max(MINW, 0.006 * ppm)));
   }
 }
 
@@ -187,7 +207,7 @@ function paintGeo(g, W, H, ppm, cols, rng) {
       g.translate(x + dx, y);
       g.rotate(rot);
       g.strokeStyle = col;
-      g.lineWidth = Math.max(1, lw);
+      g.lineWidth = Math.max(MINW, lw);
       for (let k = 0; k < rings; k++) {
         const rk = r * (1 - k * 0.28);
         g.beginPath();
@@ -243,7 +263,7 @@ function paintSplatter(g, W, H, ppm, cols, rng) {
     const col = pick(rng, cols);
     const lobes = [], drips = [];
     for (let k = 0; k < 9; k++) { const a = rng() * Math.PI * 2; lobes.push(Math.cos(a) * r * 0.7, Math.sin(a) * r * 0.6, r * rr(rng, 0.3, 0.6)); }
-    for (let k = 0; k < 3 + Math.floor(rng() * 3); k++) drips.push(rr(rng, -0.8, 0.8) * r, Math.max(1, r * rr(rng, 0.1, 0.2)), rr(rng, 0.25, 0.8) * ppm);
+    for (let k = 0; k < 3 + Math.floor(rng() * 3); k++) drips.push(rr(rng, -0.8, 0.8) * r, Math.max(MINW, r * rr(rng, 0.1, 0.2)), rr(rng, 0.25, 0.8) * ppm);
     wrapX(W, (dx) => {
       g.fillStyle = col;
       g.beginPath(); g.arc(x + dx, y, r, 0, Math.PI * 2); g.fill();
@@ -279,11 +299,11 @@ function paintSplatter(g, W, H, ppm, cols, rng) {
       const dust = [];
       for (let k = 0; k < 10 + Math.floor(rng() * 14); k++) {
         const a = rng() * Math.PI * 2, d = r * rr(rng, 1.3, 4.0);
-        dust.push(Math.cos(a) * d, Math.sin(a) * d, Math.max(0.6, r * rr(rng, 0.04, 0.16)));
+        dust.push(Math.cos(a) * d, Math.sin(a) * d, Math.max(MINW * 0.8, r * rr(rng, 0.04, 0.16)));
       }
       const drips = kind === 0 ? Math.floor(rng() * 3) : 0;
       const dripP = [];
-      for (let k = 0; k < drips; k++) dripP.push(rr(rng, -0.6, 0.6) * r, Math.max(1, r * rr(rng, 0.12, 0.22)), rr(rng, 0.08, 0.45) * ppm);
+      for (let k = 0; k < drips; k++) dripP.push(rr(rng, -0.6, 0.6) * r, Math.max(MINW, r * rr(rng, 0.12, 0.22)), rr(rng, 0.08, 0.45) * ppm);
       wrapX(W, (dx) => {
         g.fillStyle = col;
         g.save();
@@ -341,7 +361,7 @@ function paintGrid(g, W, H, ppm, cols, rng) {
     wrapX(W, (dx) => {
       g.strokeStyle = col;
       g.fillStyle = col;
-      g.lineWidth = Math.max(1, lw);
+      g.lineWidth = Math.max(MINW, lw);
       g.beginPath();
       g.moveTo(pts[0] + dx, pts[1]);
       for (let k = 2; k < pts.length; k += 2) g.lineTo(pts[k] + dx, pts[k + 1]);
@@ -351,7 +371,7 @@ function paintGrid(g, W, H, ppm, cols, rng) {
       g.beginPath(); g.arc(pts[0] + dx, pts[1], pr, 0, Math.PI * 2); g.fill();
       const ex = pts[pts.length - 2] + dx, ey = pts[pts.length - 1];
       g.beginPath();
-      if (padEnd) { g.arc(ex, ey, pr * 1.4, 0, Math.PI * 2); g.lineWidth = Math.max(1, lw * 0.8); g.stroke(); }
+      if (padEnd) { g.arc(ex, ey, pr * 1.4, 0, Math.PI * 2); g.lineWidth = Math.max(MINW, lw * 0.8); g.stroke(); }
       else { g.rect(ex - pr * 1.5, ey - pr * 1.5, pr * 3, pr * 3); g.fill(); }
     });
   }
@@ -364,7 +384,7 @@ function paintGrid(g, W, H, ppm, cols, rng) {
     const pins = Math.floor(w / (0.05 * ppm));
     wrapX(W, (dx) => {
       g.strokeStyle = col; g.fillStyle = col;
-      g.lineWidth = Math.max(1, 0.012 * ppm);
+      g.lineWidth = Math.max(MINW, 0.012 * ppm);
       g.strokeRect(x + dx, y, w, h);
       for (let p = 0; p < pins; p++) {
         const px = x + dx + (p + 0.5) * (w / pins) - 0.008 * ppm;

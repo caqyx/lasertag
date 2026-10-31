@@ -249,7 +249,6 @@ export function createGraphics({ canvas, presetName = CONFIG.defaults.preset }) 
     renderer, scene, camera,
     presetName: presetName,
     setPreset, setWorld, update, render, resize, info, dispose,
-    get composer() { return composer; },   // diagnostyka (testy/zrzuty)
   };
   setPreset(presetName);
   return api;

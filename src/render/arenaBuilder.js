@@ -522,6 +522,7 @@ function addSteelRamp(steelBuf, paintBuf, trimBuf, r, warnCol, sideCol) {
 
 // ściany: maski farby (R/G/B) → kolory per bryła; poświata UV od listwy gasnąca w dół; delikatne krawędzie pionowe
 function patchWallMaterial(mat, accentLin, reflPass) {
+  const TS = TX.paintSharpen;
   mat.onBeforeCompile = (sh) => {
     sh.uniforms.uAccent = { value: accentLin };
     sh.uniforms.uPaintK = reflPass;
@@ -551,6 +552,15 @@ varying float vWY;`)
       .replace('#include <emissivemap_fragment>', `
 #ifdef USE_EMISSIVEMAP
   vec3 pm = texture2D( emissiveMap, vEmissiveMapUv ).rgb;
+  {
+    // maska rozmyta w teksturze → próg 0.5 o szerokości ~1 px ekranu (ostre, gładkie krawędzie z bliska);
+    // gdy teksel < piksel (z daleka), wraca surowa maska z mipmap — cienkie linie nie znikają
+    vec2 tx = fwidth( vEmissiveMapUv * vec2( textureSize( emissiveMap, 0 ) ) );
+    float texelPx = max( tx.x, tx.y );   // teksele na piksel ekranu (> 1: pomniejszenie)
+    vec3 w = max( fwidth( pm ) * ${TS.k.toFixed(3)}, vec3( ${TS.min.toFixed(4)} ) );
+    vec3 sharp = smoothstep( 0.5 - w, 0.5 + w, pm );
+    pm = mix( sharp, pm, smoothstep( ${TS.rawFrom.toFixed(3)}, ${TS.rawTo.toFixed(3)}, texelPx ) );
+  }
   // farba w „panelu": margines od pionowych krawędzi, nad listwą przypodłogową i przy listwach (nie ucina się przypadkiem)
   float pe = min( vWall.x, vWall.y - vWall.x );
   float pmask = smoothstep( ${A.paintMargin.edge.toFixed(3)}, ${(A.paintMargin.edge + 0.012).toFixed(3)}, pe );

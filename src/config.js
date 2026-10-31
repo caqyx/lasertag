@@ -103,6 +103,7 @@ export const CONFIG = Object.freeze({
     timerWarn: 30,          // s do końca → timer ostrzegawczy
     scoreboardRefresh: 0.25, // s między odświeżeniami tablicy (Tab)
     playerColorFfa: 5,      // indeks CONFIG.colors.ffa dla gracza w FFA (cyjan, spójnie z HUD)
+    endInputDelay: 0.5,     // s po pokazaniu ekranu końca, zanim klawisze zadziałają (bez przypadkowego restartu)
   },
 
   colors: {
@@ -205,6 +206,9 @@ export const CONFIG = Object.freeze({
       paintWide: 2.5,         // szerokość kafla farby = S × to (S ≥ paintWideFrom), inaczej 2 × S
       paintWideFrom: 1024,
       accentShare: 0.08,      // udział akcentu wśród drobnych elementów farby
+      paintBlur: [1.0, 0.0004], // rozmycie masek farby σ = max([0] px, szer. kafla × [1]) — shader wyostrza (SDF-lite)
+      // wyostrzanie maski w shaderze ściany: w = max(fwidth(maska)·k, min); przy texel/px rawFrom..rawTo → surowa maska
+      paintSharpen: { k: 0.7, min: 0.015, rawFrom: 1.2, rawTo: 2.0 },
     },
     // Dekoracje (render/decor.js)
     decor: {
@@ -237,9 +241,9 @@ export const CONFIG = Object.freeze({
       boundaryPaintScale: 1.4,      // ściany obwodowe: kafel 8.4 × 3.36 m (duże murale, ostre z bliska)
       boundaryPaintIntensity: 0.6,  // farba na ścianach obwodowych przygaszona (nie dominuje kadru)
       wallUScale: [0.85, 1.2],      // losowa skala farby wzdłuż ściany per bryła (mniej powtórzeń)
-      boundaryCycle: ['reactor'],
+      boundaryCycle: ['reactor'],   // mapy, w których ściany obwodowe dostają różne style farby per strona
       topLine: { maps: ['neonhive'], width: 0.06, height: 0.012, k: 0.8 },   // neon na wierzchu ścian (plaster czytelny z góry)
-      boundaryPanel: 9,             // szerokość panelu farby na ścianie obwodowej (m) przy boundaryCycle   // mapy, w których ściany obwodowe dostają różne style farby per strona
+      boundaryPanel: 9,             // szerokość panelu farby na ścianie obwodowej (m) przy boundaryCycle
       uvRemap: { reactor: 'secondary' },   // mapy bez fioletu w palecie: kolor 'uv' (listwy, lampy, stożki, sufit) → ten klucz
       coneTint: { neonhive: { key: 'primary', mix: 0.55 } }, // stożki światła podbarwione kolorem przewodnim mapy
       // poświata UV/neonu na licu ściany (× kolor listwy bryły × faktura): mocna przy listwie, gaśnie w dół
