@@ -124,7 +124,7 @@ export default {
     secondary: '#ff5a1f', // pomarańcz
     uv: '#18e0ff',        // cyjan
     accent: '#ff3d9a',    // róż
-    fog: '#120806',
+    fog: '#05080b',     // prawie czarna, lekko chłodna (wcześniej #120806 dawał czerwono-brązową zupę pod sufitem)
     ambient: '#26140a',
   },
   walls: buildWalls(),
