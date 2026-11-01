@@ -62,7 +62,7 @@ export function createGraphics({ canvas, presetName = CONFIG.defaults.preset }) 
   let decor = null;
   let smoke = null;
   let heads = null;
-  const atmo = createAtmoUniforms();   // snopy ruchomych głowic: wspólne uniformy podłogi/ścian/dymu (D-038)
+  const atmo = createAtmoUniforms();   // snopy ruchomych głowic: wspólne uniformy podłogi/ścian/dymu (D-040)
   let composer = null, bloomPass = null, fxaaPass = null, outputPass = null, renderPass = null, guardPass = null;
   const size = new THREE.Vector2();
   const fogTintColor = new THREE.Color();
@@ -159,7 +159,8 @@ export function createGraphics({ canvas, presetName = CONFIG.defaults.preset }) 
     });
     decor = createDecor(world, preset);
     scene.add(decor.group);
-    arena = buildArena(world, preset, textures, { renderer, covers: decor.covers, atmo });
+    // plamy snopów w shaderach podłogi/ścian tylko gdy preset.headSpots (Low: bez kodu plam — taniej)
+    arena = buildArena(world, preset, textures, { renderer, covers: decor.covers, atmo: preset.headSpots ? atmo : null });
     scene.add(arena.group);
     renderer.getDrawingBufferSize(size);
     arena.setSize(size.x, size.y);

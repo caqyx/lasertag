@@ -2,7 +2,7 @@
 // createSmoke(world, count, rng, opts?) → { mesh, update(dt, camera), dispose() }
 //   rng: funkcja () → [0,1) albo obiekt { next() } (src/core/rng.js).
 //   opts.texture: tekstura 'smoke' z textures.js (gdy brak — moduł tworzy własną i ją zwalnia).
-//   opts.atmo: wspólne uniformy snopów ruchomych głowic (ceilingLights.js) — kłąb w snopie łapie jego kolor (D-038).
+//   opts.atmo: wspólne uniformy snopów ruchomych głowic (ceilingLights.js) — kłąb w snopie łapie jego kolor (D-040).
 // Jeden draw call: InstancedMesh quadów; billboard, dryf i rotacja w vertex shaderze (zero pracy CPU w update).
 // Mieszanie addytywne (dym rozprasza światło UV — w ciemnej scenie daje „świecącą mgiełkę", nigdy szarą zasłonę).
 import * as THREE from 'three';

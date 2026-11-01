@@ -1,4 +1,4 @@
-// Ruchome głowice pod kratownicą sufitu (reflektory/skanery jak w klubie laser tag) — D-038.
+// Ruchome głowice pod kratownicą sufitu (reflektory/skanery jak w klubie laser tag) — D-040.
 // createAtmoUniforms() → wspólne uniformy snopów (pozycja/kierunek/kolor), czytane przez:
 //   • podłogę i ściany (arenaBuilder: plamy światła z gobo; injectSpots),
 //   • dym (smoke.js: kłęby przecinane snopem łapią jego kolor).

@@ -446,7 +446,7 @@ export const CONFIG = Object.freeze({
       // tablice (decale) na ścianach obwodowych: symbol sektora + znaki — orientacja w hali
       signs: { maps: ['reactor', 'neonhive'], size: 2.2, y: 2.6, intensity: 1.1, texSize: 512 },
     },
-    // Ruchome głowice pod kratownicą (render/ceilingLights.js, D-038): liczba głowic = preset.heads, plamy = preset.headSpots.
+    // Ruchome głowice pod kratownicą (render/ceilingLights.js, D-040): liczba głowic = preset.heads, plamy = preset.headSpots.
     // 2 draw calle (głowice + snopy), poza odbiciem planarnym; plamy na podłodze/ścianach w shaderach powierzchni.
     movingHeads: {
       maxHeads: 8,                  // rozmiar tablic uniformów (podłoga/ściany/dym)
@@ -476,14 +476,14 @@ export const CONFIG = Object.freeze({
       beamOpacity: 0.36,
       beamNoSmoke: 0.6,             // × krycie snopu bez dymu (Low)
       beamIntensity: 1.0,
-      beamIntensityMap: { neonhive: 0.75, reactor: 0.9 },
+      beamIntensityMap: { neonhive: 0.5, reactor: 0.9 },   // Hive: bursztyn w bliskich snopach szybko się „wylewa”
       beamEdge: [0.1, 1.0],         // fresnel boków stożka (smoothstep facing)^beamEdgePow
       beamEdgePow: 3,
       beamFalloff: 0.1,             // 1/(1 + d·k)
       beamStart: 0.25,              // m od soczewki — miękki początek
       beamEndFade: 0.6, beamEndDim: 0.6,
       beamNoise: 0.55,
-      beamNear: [0.5, 2.5],         // m od kamery — snop nie oślepia
+      beamNear: [1.0, 3.5],         // m od kamery — snop nie oślepia
       beamFog: 0.5,
       spotIntensity: 1.15,          // plamy na powierzchniach (emisja, × kolor głowicy)
       spotIntensityMap: { neonhive: 0.7, reactor: 0.85 },
@@ -527,7 +527,7 @@ export const CONFIG = Object.freeze({
   smoke: {
     sizeMin: 3.5,
     sizeMax: 7.0,
-    opacity: 0.11,          // D-038: 0.085 → 0.11 (gęstsza atmosfera; wcześniej 0.07 → 0.085 w D-034)
+    opacity: 0.11,          // D-040: 0.085 → 0.11 (gęstsza atmosfera; wcześniej 0.07 → 0.085 w D-034)
     drift: 0.18,            // m/s
     heightMin: 0.4,
     heightMax: 3.2,
@@ -549,15 +549,15 @@ export const CONFIG = Object.freeze({
     highBand: [2.6, 4.2],   // warstwa podsufitowa (m); górna granica = sufit − highCeilGap (snopy głowic widoczne w dymie)
     highCeilGap: 0.8,
     highOpacity: 0.8,       // × krycie warstwy podsufitowej
-    lowShare: 0.25,
-    lowOpacity: 0.6,        // × krycie płacht przyziemnych (czytane jako płaskie plamy-decale na podłodze)
+    lowShare: 0.2,
+    lowOpacity: 0.4,        // × krycie płacht przyziemnych (czytane jako płaskie plamy-decale na podłodze)
     midBand: [1.0, 2.4],    // warstwa środkowa (m) — kłęby na wysokości oka/listew, łapią kolor lamp
-    midShare: 0.5,
+    midShare: 0.55,
     midAspect: [1.3, 2.0],  // bliżej kuli niż płachty przyziemne
     midSize: 0.75,          // × zakres rozmiaru (mniejsze niż płachty, większe niż podsufitowe)
     midOpacity: 2.9,        // × krycie warstwy środkowej (addytywny ciemny odcień — inaczej niewidoczna poza stożkami lamp)
     midGlow: 1.8,           // × jasność bazowa warstwy środkowej
-    highShare: 0.17,        // D-038: warstwa podsufitowa wraca (snopy głowic i lamp przecinają dym); reszta do 1 — losowo w [heightMin, heightMax]
+    highShare: 0.17,        // D-040: warstwa podsufitowa wraca (snopy głowic i lamp przecinają dym); reszta do 1 — losowo w [heightMin, heightMax]
     aspect: [2.2, 3.6],     // kłęby jako poziome smugi (szerokość / wysokość)
     tilt: 0.25,             // maks. przechył smugi (rad)
     fogMix: 0.6,            // odcień bazowy = lerp(uv palety, mgła, fogMix) — ciemny, chłodny
