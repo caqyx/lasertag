@@ -1,0 +1,757 @@
+// CONFIG — jedyne źródło liczb w grze (SPEC §12). Moduły importują stąd, nie hardkodują wartości.
+// Sekcje odpowiadają modułom. Wartości z SPEC §2/§5/§7.
+
+// Fazer z przegrzewaniem (SPEC §2.3) — wspólny obiekt CONFIG.weapon i CONFIG.weapons.phaser.
+const PHASER = {
+  name: 'FAZER', kind: 'hitscan',
+  range: 50,
+  fireInterval: 0.22,
+  burst: 1, burstGap: 0, semiAuto: false,
+  heatPerShot: 0.11,
+  coolRate: 0.45,
+  coolDelay: 0.25,
+  overheatCoolRate: 0.6,
+  overheatRecover: 0.35,
+  damage: 4,                // punkty HP = 1 segment (combat.segmentPoints)
+  stunScale: 1,
+  beamDuration: 0.12,
+  beamWidth: 1,             // × fx.beamWidth
+  muzzleOffset: [0.22, -0.18, -0.45], // względem kamery (prawo, dół, przód) — wylot broni awatara (wiązki botów)
+  bot: { maxFireDist: 0, engage: null, lead: false },   // 0/null → wartości poziomu bota / bots.engageRange
+};
+
+export const CONFIG = Object.freeze({
+  sim: {
+    hz: 60,                 // stały krok symulacji
+    maxSubSteps: 5,         // limit kroków na klatkę (ochrona przed spiralą śmierci)
+  },
+
+  player: {
+    radius: 0.35,
+    height: 1.8,
+    eyeHeight: 1.65,
+    walkSpeed: 3.8,         // D-015: tempo chodu w hali laser tag
+    sprintSpeed: 5.6,
+    crouchHeight: 1.15,     // wysokość ciała w kucu
+    crouchEyeHeight: 1.0,   // oko w kucu
+    crouchTime: 0.15,       // s — pełne przejście stanie ↔ kuc
+    crouchSpeedMul: 0.45,   // mnożnik prędkości w pełnym kucu (bez sprintu i skoku)
+    accelGround: 60,
+    accelAir: 12,
+    friction: 12,
+    jumpSpeed: 5.0,
+    gravity: 20,
+    stepHeight: 0.45,       // max wysokość stopnia pokonywana bez skoku
+    maxSlopeY: 0.6,         // nachylenie rampy: tan(kąta) maks. ~31°
+    mouseSensitivity: 0.0022,
+    pitchLimit: 1.45,       // rad
+    fov: 78,
+    stamina: {              // D-023: ograniczony sprint (body.stamina 0..1, body.sprinting, body.exhausted)
+      drain: 0.25,          // /s sprintu → pełny pasek ≈ 4 s ciągłego sprintu
+      regen: 0.2,           // /s (w ruchu, bez sprintu) → 0 → 1 w 5 s
+      regenDelay: 1.0,      // s bez sprintu/skoku, zanim zacznie się regeneracja
+      regenIdleMul: 1.5,    // mnożnik regeneracji stojąc (bez wejścia ruchu) lub w kucu
+      exhaustedRecover: 0.35, // po wyczerpaniu (0) sprint zablokowany, dopóki stamina < tyle
+      jumpCost: 0.12,       // skok kosztuje; przy stamina < jumpCost skok niedostępny
+    },
+  },
+
+  physics: {
+    skin: 0.001,
+    maxIterations: 4,       // iteracje rozwiązywania kolizji na krok
+    groundSnap: 0.12,
+  },
+
+  weapon: PHASER,           // fazer = broń domyślna (SPEC §2.3); alias CONFIG.weapons.phaser
+
+  // Bronie (D-037): wybór przed meczem (menu BROŃ / ?weapon=), jedna na mecz; boty losują z sim.rng.
+  // damage w punktach HP (combat.segmentPoints punktów = 1 segment kamizelki); stunScale × combat.hitStun.
+  // burst > 1: jedno naciśnięcie spustu = seria (burstGap s między strzałami); semiAuto: trzymanie spustu nie powtarza.
+  weapons: {
+    phaser: PHASER,
+    pistol: {
+      name: 'PISTOLET', kind: 'hitscan',
+      range: 16,              // m — mały zasięg
+      fireInterval: 0.3,      // s od początku serii do gotowości na kolejną
+      burst: 2, burstGap: 0.07, semiAuto: true,
+      heatPerShot: 0.025,     // bardzo mało ciepła na strzał (40 strzałów do przegrzania)
+      coolRate: 0.45, coolDelay: 0.25, overheatCoolRate: 0.6, overheatRecover: 0.35,
+      damage: 2,              // ½ segmentu — seria 2 trafień = 1 trafienie fazera
+      stunScale: 0.5,
+      beamDuration: 0.07,     // wiązka krótsza w czasie
+      beamWidth: 0.5,         // × fx.beamWidth (cieńsza)
+      bot: { maxFireDist: 14, engage: [3, 9], lead: false },
+    },
+    bouncer: {
+      name: 'WYRZUTNIA', kind: 'projectile',
+      speed: 14,              // m/s — wolny impuls (nie hitscan)
+      life: 2.5,              // s lotu (zasięg ≈ 35 m)
+      maxBounces: 1,          // odbicie lustrzane raz; drugi kontakt z powierzchnią = znika
+      range: 35,              // m — dla botów/opisu (≈ speed × life)
+      fireInterval: 0.55,
+      burst: 1, burstGap: 0, semiAuto: false,
+      heatPerShot: 0.2,
+      coolRate: 0.45, coolDelay: 0.25, overheatCoolRate: 0.6, overheatRecover: 0.35,
+      damage: 4,              // 1 segment
+      stunScale: 1,
+      beamDuration: 0, beamWidth: 0,
+      maxActive: 48,          // pula pocisków w sim (najstarszy nadpisywany po wyczerpaniu)
+      surfaceEps: 0.01,       // m — odsunięcie od powierzchni po odbiciu
+      bot: { maxFireDist: 24, engage: [6, 15], lead: true },
+    },
+  },
+
+
+  combat: {
+    maxHp: 4,               // segmenty kamizelki (P.hp)
+    damage: 1,              // segmenty na trafienie fazera (= weapons.phaser.damage / segmentPoints)
+    segmentPoints: 4,       // D-037: punkty HP na segment; P.dmg = punkty utracone w bieżącym segmencie
+    eliminatedTime: 3.0,
+    protectionTime: 2.0,
+    hitFlashTime: 0.15,
+    friendlyFire: false,
+    hitCapsuleRadius: 0.42,
+    hitCapsuleBottom: 0.2,
+    hitCapsuleTop: 1.85,
+    // sensory kamizelki: offset od stóp (x prawo, y, z przód); kolejność gaśnięcia: tył, lewe, prawe, przód
+    sensors: {
+      front: [0, 1.35, 0.22],
+      back: [0, 1.35, -0.22],
+      left: [-0.28, 1.55, 0],
+      right: [0.28, 1.55, 0],
+    },
+    loseOrder: ['back', 'left', 'right', 'front'],
+    spawnOccupiedRadius: 1.5, // m — spawn z żywym uczestnikiem bliżej niż to jest zajęty (pickSpawn)
+    spawnOffset: 1.2,       // m — przesunięcie od spawnu, gdy wszystkie dozwolone zajęte
+    spawnOffsetClear: 0.8,  // m — punkt przesunięty wolny, gdy nikt bliżej (≥ 2 × player.radius; D-039: 16 osób na 8 spawnach)
+    hitStun: 0.45,          // D-016: s bez broni po trafieniu (nie eliminującym) — kto trafi pierwszy, wygrywa wymianę
+    eventCapacity: 256,     // pierścień zdarzeń symulacji (core/events.js); czyszczony raz na klatkę renderu
+    maxParticipants: 16,    // pojemność instancji awatarów
+    dummy: {                // manekin treningowy (game/input/dummyInput.js — tylko testy)
+      strafePeriod: 2.0,    // s — pełny cykl lewo → prawo
+      strafeMove: 0.4,      // moveX (× walkSpeed) podczas chodzenia
+    },
+  },
+
+  scoring: {
+    hit: 10,
+    elimination: 50,
+  },
+
+  modes: {
+    ffa: { teams: 0, participants: 8, timeLimit: 300, elimLimit: 25 },
+    tdm2: { teams: 2, perTeam: 4, timeLimit: 300, elimLimit: 60 },
+    tdm4: { teams: 4, perTeam: 2, timeLimit: 300, elimLimit: 30 },
+    // Multiplayer → Custom (D-039): N drużyn × tyle samo osób; gracz w drużynie 0, reszta slotów = boty (pod M5: 'remote').
+    // Łącznie ≤ combat.maxParticipants → maks. osób w drużynie = floor(16 / teams) (2→8, 3→5, 4→4).
+    // Limit eliminacji drużyny = elimPerMember × perTeam (4v4 → 60 jak tdm2, 4×2 → 30 jak tdm4).
+    custom: { minTeams: 2, maxTeams: 4, minPerTeam: 1, defaultTeams: 2, defaultPerTeam: 4, timeLimit: 300, elimPerMember: 15 },
+  },
+
+  // Kamera gracza (main.js): wygładzanie wysokości oka (kucanie) i death cam (SPEC §2.2).
+  camera: {
+    eyeSmoothing: 14,       // 1/s — wykładnicze dążenie wysokości oka do eyeHeightOf(body)
+    deathHeight: 2.6,       // m nad stopami ciała
+    deathRise: 1.1,         // s — czas uniesienia (ease-out)
+    deathLookRate: 4,       // 1/s — obrót w stronę zabójcy
+    ceilingClearance: 0.25, // m odstępu od sufitu / spodu bryły nad ciałem
+  },
+
+  // Mecz (game/match.js) i UI meczu (ui/matchBar.js, ui/scoreboard.js).
+  match: {
+    countdown: 3.0,         // s odliczania przed startem (uczestnicy zamrożeni)
+    goTime: 0.8,            // s wyświetlania „START!" po odliczaniu
+    timerWarn: 30,          // s do końca → timer ostrzegawczy
+    scoreboardRefresh: 0.25, // s między odświeżeniami tablicy (Tab)
+    playerColorFfa: 5,      // indeks CONFIG.colors.ffa dla gracza w FFA (cyjan, spójnie z HUD)
+    endInputDelay: 0.5,     // s po pokazaniu ekranu końca, zanim klawisze zadziałają (bez przypadkowego restartu)
+  },
+
+  colors: {
+    teams: ['#ff3355', '#2f8bff', '#3dff7a', '#ffd600'],
+    ffa: ['#ff3355', '#2f8bff', '#3dff7a', '#ffd600', '#ff4dff', '#00f0ff', '#ff8a00', '#b0ff00'],
+  },
+
+  bots: {
+    levels: {
+      easy:   { reaction: 0.65, aimSigmaDeg: 5.5, turnDegPerSec: 160, viewDist: 28, fovDeg: 100, strafe: 0,   coverHp: 1, coverOnOverheat: false, heatLimit: 1.0,
+                retreatFirstHit: false, holdChance: 0.15, holdTime: [2, 4], maxFireDist: 25, flankChance: 0.3, sprintChase: false },
+      normal: { reaction: 0.40, aimSigmaDeg: 3.0, turnDegPerSec: 260, viewDist: 38, fovDeg: 120, strafe: 0.5, coverHp: 2, coverOnOverheat: false, heatLimit: 0.9,
+                retreatFirstHit: true, holdChance: 0.4, holdTime: [3, 6], maxFireDist: 30, flankChance: 0.7, sprintChase: false },
+      hard:   { reaction: 0.24, aimSigmaDeg: 1.6, turnDegPerSec: 400, viewDist: 48, fovDeg: 140, strafe: 0.8, coverHp: 2, coverOnOverheat: true, heatLimit: 0.8,
+                retreatFirstHit: true, holdChance: 0.5, holdTime: [4, 8], maxFireDist: 35, flankChance: 0.9, sprintChase: true },
+    },
+    chaseTime: 4.0,
+    burstShots: [2, 5],
+    burstPause: [0.35, 0.9],
+    thinkInterval: 0.1,     // s między decyzjami FSM (rozłożone między botów)
+    arriveDist: 0.6,
+    stuckTime: 1.2,
+    // --- bots/ai.js (M2)
+    stuckMinMove: 0.35,     // m postępu w oknie stuckTime, poniżej = utknięcie (skok + nowa ścieżka)
+    pathCapacity: 256,      // maks. długość ścieżki (węzły)
+    rampDy: 0.15,           // m — różnica wysokości węzłów oznaczająca odcinek rampy
+    rampArriveDist: 0.3,    // m — dojście do waypointu na rampie (zamiast arriveDist), bez sprintu
+    patrolSamples: 6,       // losowane kandydaty celu patrolu (preferencja nieodwiedzonych)
+    patrolMinDist: 6,       // m — min. odległość celu patrolu
+    aimHeight: 1.3,         // m nad stopami celu (klatka)
+    fireTolDeg: 3.5,        // strzał, gdy celownik ≤ tyle od punktu celowania (z rozrzutem)
+    reacquireTime: 0.6,     // s — utrata celu krótsza niż to nie resetuje czasu reakcji
+    hitAwareTime: 1.0,      // s — po trafieniu bot „zna" napastnika (bez sprawdzania FOV)
+    engageRange: [6, 18],   // m — preferowany dystans walki (bliżej → cofanie, dalej → podejście)
+    sprintStartStamina: 0.4, // D-023: bot zaczyna sprint (odwrót/pościg) tylko przy stamina > tyle
+    sprintStopStamina: 0.15, // … i przerywa poniżej (rezerwa na skok przy utknięciu)
+    engageRepath: 0.8,      // s — odświeżanie ścieżki do celu w walce
+    strafeSwitch: [0.45, 1.2], // s — zmiana kierunku strafe
+    coverHold: 2.0,         // s w osłonie (dłużej, jeśli przegrzany)
+    coverCooldown: 5.0,     // s przerwy przed kolejnym szukaniem osłony
+    coverRadius: 12,        // m — promień szukania węzła osłony
+    coverChecks: 24,        // maks. testów linii wzroku przy szukaniu osłony
+    // zasadzki (HOLD) — level.holdChance / holdTime [s]
+    holdCooldown: 6,        // s po zasadzce, zanim bot znów jej szuka
+    holdCandidates: 8,      // kandydaci (węzły nav.cover) na pozycję zasadzki
+    holdViewSamples: 6,     // próbki widoku na kandydata (linia wzroku do losowych węzłów)
+    holdView: [6, 25],      // m — zakres odległości widocznych węzłów liczonych jako „widok na przejście"
+    holdRange: [4, 20],     // m — odległość pozycji zasadzki od bota
+    holdSweep: 0.35,        // rad — amplituda rozglądania się w zasadzce
+    halfCover: [1.05, 1.4], // m — wysokość osłony połówkowej nad podłogą węzła (min > player.crouchEyeHeight)
+    halfCoverBase: 0.2,     // m — maks. wysokość spodu osłony nad podłogą węzła
+    halfCoverDist: 1.2,     // m — maks. odległość krawędzi osłony od węzła
+    doorStopDist: 1.0,      // m — drzwi przesuwne zamykają się: bot dalej niż to od węzła przejścia porzuca ścieżkę
+    // słuch: strzały w promieniu → podejście (z flanki: level.flankChance)
+    hearRadius: 15,
+    hearMemory: 1.0,        // s — jak długo usłyszany strzał jest „świeży"
+    investigateTime: 8,     // s — limit podchodzenia do źródła dźwięku
+    flankOffset: 6,         // m — boczne przesunięcie węzła pośredniego flanki
+    adapt: {
+      evalInterval: 30,
+      window: 60,
+      maxOffset: 0.25,
+      step: 0.05,
+      decay: 0.025,
+      highRatio: 1.5,
+      lowRatio: 0.67,
+    },
+  },
+
+  // Elementy map rozwijane przez mapgen z MapData.walls (kind: window | barrel | tires | net) i MapData.doors.
+  elements: {
+    window: { sill: 1.1, lintel: 1.85, top: 2.4 },   // parapet 0..sill, otwór sill..lintel (oko stojącego 1.65 widzi), nadproże lintel..top
+    barrel: { r: 0.32, h: 1.05, k: 0.86 },          // beczka: promień, wysokość (> oko kucającego 1.0 → osłona); kolizja = gwiazda 2 kwadratów o połowie boku r·k
+    tires: { r: 0.55, h: 1.05, k: 0.86 },           // stos opon (4 × 0.26 m), szerszy niż beczka (sylwetka odróżnialna)
+    net: { h: 2.2, t: 0.08 },                       // siatka maskująca: wysokość, grubość (blokuje ruch, przepuszcza wzrok i strzał)
+    door: { h: 2.4, t: 0.3, pass: 0.98, safety: 0.05 },   // drzwi przesuwne (MapData.doors): wysokość, grubość; nav przepuszcza przy otwarciu ≥ pass; zapas czujnika (m)
+    propCoverExtra: 0.3,    // m — beczki/opony: większy zasięg flagi cover (nav) i kucania (bots.halfCoverDist) — mały obrys, węzły dalej od krawędzi
+  },
+
+  nav: {
+    cell: 1.0,              // rozdzielczość próbkowania węzłów
+    clearance: 0.45,        // min. odległość węzła od ściany
+    maxClimb: 0.45,
+    linkDiagonal: true,
+  },
+
+  render: {
+    near: 0.05,
+    far: 120,
+    toneMapping: 'neutral', // 'neutral' | 'aces' (patrz graphics.js)
+    toneMappingExposure: 0.95,
+    fogDensity: 0.055,
+    fogDensityMap: { neonhive: 0.068, orbita: 0.072 },   // gęstość mgły per mapa (głębia w dali przy ciemnej mgle)
+    fogTint: 0.07,          // kolor mgły = lerp(palette.fog, palette.uv, fogTint)
+    fogTintMap: { reactor: 0.0, orbita: 0.0 },   // Reactor: mgła bez turkusu (ciemny strop w overview)
+    clearColor: '#05030a',
+    msaaSamples: 4,
+    hdrMax: 64,             // strażnik HDR przed bloomem: clamp jasności, NaN/Inf → 0
+    bloomFactors: [1.0, 0.5, 0.2, 0.07, 0.02],  // wagi 5 mipów UnrealBloomPass (domyślnie 1/.8/.6/.4/.2); szersze halo w rundzie renderu cofnięte (D-034: brudne halo Hive, przepalony rdzeń Reactora)
+    // Oświetlenie (render/graphics.js): ciemność dominuje — ambient/hemi bardzo słabe.
+    lights: {
+      hemiIntensity: 0.3,     // HemisphereLight w kolorze palette.ambient
+      hemiGround: 0.35,       // ziemia = ambient × to
+      hemiMap: { reactor: 0.5, neonhive: 0.4 },   // mnożnik HemisphereLight per mapa (Reactor: niższe czernie)
+      defaultRange: 12,       // zasięg światła, gdy dane mapy go nie podają (graphics + smoke)
+      pointScale: 0.65,       // intensywność PointLight = light.intensity × to (decay 2)
+      pointScaleMap: { neonhive: 0.2 },   // dodatkowy mnożnik PointLight per mapa
+      rangeScale: 1.0,
+      drop: 0.9,              // PointLight pod oprawą lampy (m) — niżej: mniejsza plama na stropie
+    },
+    // Tekstury proceduralne (render/textures.js)
+    textures: {
+      paintMeters: [6, 2.4],  // kafel farby UV = 6 × 2.4 m
+      floorMeters: 2,         // kafel podłogi (linia siatki co 2 m)
+      floorLine: 0.012,       // grubość linii siatki podłogi (m)
+      smokeSize: 256,
+      wallMeters: 2.44,       // kafel faktury ściany (2 płyty 1.22 m)
+      paintWide: 2.5,         // szerokość kafla farby = S × to (S ≥ paintWideFrom), inaczej 2 × S
+      paintWideFrom: 1024,
+      accentShare: 0.08,      // udział akcentu wśród drobnych elementów farby
+      netSize: 256,           // tekstura siatki maskującej
+      net: { cells: 6, rope: 0.1, strips: 70, holes: 9 },   // oczka na kafel, grubość linki (× oczko), pasy maskujące
+      paintVJitter: ['neonhive', 'reactor', 'orbita', 'uvmaze'],   // losowe przesunięcie farby w pionie per ściana
+      bandSplit: ['neonhive', 'reactor', 'orbita', 'uvmaze'],      // styl stripes: poziome taśmy w odcinkach (nie przez cały kafel)
+      paintBlur: [1.0, 0.0004], // rozmycie masek farby σ = max([0] px, szer. kafla × [1]) — shader wyostrza (SDF-lite)
+      // wyostrzanie maski w shaderze ściany: w = max(fwidth(maska)·k, min); przy texel/px rawFrom..rawTo → surowa maska
+      paintSharpen: { k: 0.7, min: 0.015, rawFrom: 1.2, rawTo: 2.0 },
+    },
+    // Dekoracje (render/decor.js)
+    decor: {
+      steelColor: '#2c2c36',
+      core: {
+        coverScale: 1.21,           // promień wizualu = r × to (ośmiokąt pokrywa gwiazdę 2 kwadratów kolizji)
+        columnRadius: 0.55,         // walec energii = R × to
+        intensity: 1.1,
+        plinth: 1.2,                // cokół stalowy (m)
+        collar: 0.6,                // kołnierz pod sufitem (m)
+        cageRings: [2.4, 4.4, 6.2],
+        glowRings: [1.6, 3.0, 3.8, 5.2, 6.8],
+        ringIntensity: 1.6,
+        warnIntensity: 1.4,
+        bandWhite: 0.6,
+        rodWhite: 0.0, rodK: 0.6, bandK: 0.65,   // pręt/pasma jądra: nasycona zieleń (bez białej plamy)             // wędrujące pasmo płaszcza rdzenia: zieleń → biel (zamiast czerwieni → pomarańcz)
+        steelGlow: 0.015,
+        glassOpacity: 0.12,
+        collarIntensity: 1.1,
+        pipes: 6,
+        pipeRing: 0.7,              // promień okręgu rur = R × to
+        pipeRadius: 0.12,
+      },
+    },
+    // Arena (render/arenaBuilder.js)
+    arena: {
+      seedSalt: 0xa11ce,            // sól ziarna RNG areny (offsety farby, kolory per bryła)
+      wallColor: '#090a18',         // prawie czarny granat (× faktura sklejki)
+      wallRoughness: 0.85,
+      paintIntensity: 0.62,         // runda renderu: farba ciemniejsza od listew (hierarchia jasności; było 0.75) — emisja farby UV (maski × kolor bryły; HDR → bloom)
+      paintIntensityMap: { neonhive: 0.7, reactor: 1.21 },   // mnożnik emisji farby per mapa (Reactor: 0.62 × 1.21 ≈ 0.75 sprzed rundy renderu — farba „nie świeciła”)
+      paintScale: 1.0,              // skala motywów farby dla map bez wpisu w paintScaleMap (0.8 cofnięte: moiré w dali — D-034)
+      paintScaleMap: { neonhive: 0.75 },      // skala motywów farby per mapa (< 1 → mniejsze motywy)
+      accentPaintMap: { neonhive: 0.5, orbita: 0.5 },      // róż w Hive tylko jako drobne, ciemniejsze akcenty
+      accentPaintScale: 0.8,        // akcent (limonka) tylko w drobnych elementach farby
+      boundaryPaintScale: 1.4,      // ściany obwodowe: kafel 8.4 × 3.36 m (duże murale, ostre z bliska)
+      boundaryPaintIntensityMap: { neonhive: 0.85 },   // Hive: bursztyn na obwodzie jaśniejszy (nie matowy)
+      boundaryPaintScaleMap: { neonhive: 0.6 },        // Hive: mniejsze motywy na ścianach obwodowych
+      boundaryPaintIntensity: 0.6,  // farba na ścianach obwodowych przygaszona (nie dominuje kadru)
+      wallUScale: [0.85, 1.2],      // losowa skala farby wzdłuż ściany per bryła (mniej powtórzeń)
+      boundaryCycle: ['reactor'],   // mapy, w których ściany obwodowe dostają różne style farby per strona
+      topLine: { maps: ['neonhive'], width: 0.06, height: 0.012, k: 0.8, post: 0.045, postK: 1.2, postKey: 'uv' },   // neon na wierzchu ścian (plaster czytelny z góry)
+      boundaryPanel: 9,             // szerokość panelu farby na ścianie obwodowej (m) przy boundaryCycle
+      washMap: { neonhive: 0.45 },   // mnożnik poświaty lica od listew per mapa (Hive: bez pomarańczowej łuny)
+      trimClip: ['neonhive', 'orbita'],       // listwy przycinane do zewnętrznego obrysu nachodzących brył
+      doorFrame: { maps: ['neonhive'], gap: [1.8, 2.8], size: 0.05, k: 0.9 },   // listwa nad przejściem
+      accentWash: 0.12,             // poświata lica bryły z listwą akcentu (czerwień) — czarna bryła z czerwoną krawędzią
+      // kolory lamp (klucz palety → klucz palety): bez czerwonych/różowych stożków, plam i nalotu na podłodze
+      lampRemap: { reactor: { accent: 'primary' }, neonhive: { accent: 'uv', secondary: 'primary' } },
+      uvRemap: { reactor: 'secondary' },   // mapy bez fioletu w palecie: kolor 'uv' (listwy, lampy, stożki, sufit) → ten klucz
+      coneTint: { neonhive: { key: 'primary', mix: 0.55 } }, // stożki światła podbarwione kolorem przewodnim mapy
+      // poświata UV/neonu na licu ściany (× kolor listwy bryły × faktura): mocna przy listwie, gaśnie w dół
+      wash: { top: 0.06, fall: 0.38, bottom: 0.035, base: 0.0, edge: 0.03, edgeWidth: 0.03 },
+      capWash: 0.08,                // poświata na wierzchu brył (× wash); runda renderu: prawie czarne (było 0.2 — turkusowe „dachy”)
+      trimSize: 0.05,
+      trimGap: 0.006,               // odsunięcie listwy od ściany (bez z-fightingu)
+      trimBottomLift: 0.05,
+      trimIntensity: 1.1,           // vertexColors HDR (> 1 → bloom); rdzeń nasycony, nie biały
+      trimLumRef: 0.35,             // listwy: intensywność × sqrt(ref / luminancja koloru), zakres lumNormRange
+      lumNormRange: [0.55, 1.7],
+      trimSaturation: 1.35,         // podbicie nasycenia listew/lamp (tone mapping wybiela jasne kolory)
+      lampClearance: 0.7,           // oprawa lampy min. tyle od bryły sięgającej sufitu (filar)
+      // filar: pionowe listwy na narożnikach (cieńsze) + obrys pod stropem; kolor nasycony (bez lawendy)
+      pillar: { trimScale: 0.6, topGap: 0.05, intensity: 0.85, lumMax: 1.15, saturation: 1.6 },
+      boundaryTrimHeights: [0.12, 2.6],
+      rubber: { color: '#0d0c1c', roughness: 0.85, glow: 0.03, baseHeight: 0.1, baseDepth: 0.022,
+        cornerSize: 0.05, cornerInset: 0.012, topGap: 0.04, junctionProbe: 0.08, lineSize: 0.014, lineIntensity: 0.3 },
+      paintMargin: { edge: 0.09, bottom: 0.17, strip: 0.09, maxY: 4.4 },   // farba nie dochodzi do krawędzi/listew (m)
+      // przygaszenie bliskich listew; udział mgły; cieniowanie „rurki" (boki ciemniejsze → gradient rdzeń/brzeg)
+      neon: { nearMin: 0.6, near: [0.6, 3.5], fog: 0.65, tubeEdge: 0.55, tubePow: 0.6 },
+      ceilingPool: { radius: 2.8, strength: 0.06, panelRef: 0.006, desat: { neonhive: 0.75, reactor: 0.5 }, gain: { neonhive: 0.3, reactor: 0.7 } },            // plamy światła lamp na stropie
+      spawnPanel: { width: 1.6, height: 0.9, depth: 0.04, y: 1.45, intensity: 0.9, marker: 0.16, trimScale: 0.8 },
+      rampWarn: { inset: 0.08, lift: 0.01, width: 0.06, height: 0.012, k: 0.8 },   // pasy ostrzegawcze na końcach ramp
+      platformWarn: { spacing: 1.8, length: 0.32, k: 0.75 },   // krótkie skośne pasy ostrzegawcze na czołach galerii
+      props: { segments: 32, trimScale: 0.9, ringK: 1.6, barrelVisual: 0.82, barrelBands: [0.28, 0.72], lidInner: 0.9, lidDrop: 0.03,   // beczki / opony
+        tireCount: 4, tireInner: 0.45, tireShoulder: 0.7, tireBevel: 0.38, tireGap: 0.06, tireJitter: 0.04, treadDashes: 24 },
+      window: { jambIn: 0.04 },   // okno strzeleckie: ościeża (pionowe neony) cofnięte od końców otworu
+      door: { body: { r: 0.012, g: 0.012, b: 0.03 }, trimOff: 0.01, dim: 0.45, inset: 0.01, hideOpen: 0.999,   // drzwi przesuwne: ciemny korpus (HDR liniowy), neon krawędzi
+        hazard: { inset: 0.06, width: 0.26, step: 0.22, slant: 0.7, w: 0.05, k: 1.3 },   // pas ostrzegawczy przy krawędzi natarcia
+        handle: { gap: 0.08, out: 0.045, y0: 0.85, y1: 1.45, size: 0.045, k: 1.4 },     // uchwyt (pionowy pręt)
+        rail: { w: 0.12, h: 0.1, lift: 0.14, over: 0.1, k: 0.0, hangers: 0.6 } },   // szyna nad listwą (lift), na wieszakach co hangers m                  // szyna-prowadnica nad przejściem i kieszenią
+      net: { post: 0.07, tile: 0.9, bottomGap: 0.04, color: '#2a2648', opacity: 0.9, glow: 0.9, frameDim: 0.5, segs: 8, sag: 0.18 },   // segs/sag: obwisła górna krawędź (bez sztywnej ramy)   // siatka maskująca: słupki, kafel tekstury (m), materiał (przezroczysty, emisja uv)
+      rail: { kick: 0.25, postSpacing: 1.2, post: 0.06, rail: 0.05, midY: 0.5, meshAlphaTest: 0.35 },   // barierki: ażur
+      floorRoughnessMap: { neonhive: 1.3, reactor: 0.55 },   // Hive: szersze, miękkie pobłyski PointLight (bez owalnych „decali”)
+      floorRoughness: 0.75,         // × roughnessMap (≈0.6) → ~0.45 (półpołysk)
+      floorMetalness: 0.2,
+      floorEmissiveIntensity: 0.16,
+      floorEmissiveMap: { reactor: 0 },   // Reactor: fugi bez własnej emisji
+      floorGrid: { neonhive: '#2a6670', reactor: '#2f7a78' },   // kolor siatki podłogi (domyślnie palette.uv)
+      floorEnvIntensity: 0.25,      // PMREM (ogólny połysk); odbicia neonów robi RT (reflect)
+      // odbicie planarne podłogi (preset.envReflections): RT w skali rozdz., rozmycie mipmapą + smuga pionowa (taps),
+      // zanik z odległością od podłogi (głębia RT), farba przygaszona w odbiciu (odbijają się głównie listwy)
+      // odbicie podłogi: smuga rośnie z drogą za lustrem (blurGrow/m, mipGrow/m ≤ mipMax), zanik fadeLen (m) per próbka
+      reflect: { scale: 0.5, mipBias: 2.4, streak: 7, taps: 9, strength: 0.24, f0: 0.25, maskSoft: 0.9,
+        strengthMap: { reactor: 0.52, neonhive: 0.17 }, redDampMap: { reactor: 1.0 }, fadeLenMap: { reactor: 4.0 },
+        fadeLen: 2.2, blurGrow: 0.7, mipGrow: 0.6, mipMax: 2.5, sideSpread: 0.7, paintInReflection: 0.25, maxValue: 16 },
+      accentPolicy: { default: 'full', uvmaze: 'paint' },   // 'paint' = akcent tylko w farbie; 'full' = też listwy/światła
+      darkNormRef: 0.15,            // emisja tła w kolorze uv × min(1, ref / luminancja uv) (jasny uv → ciemniej)
+      darkNormMin: 0.25,
+      steelMinY: 1.5,               // bryły z y0 > tego (galerie, barierki na galerii) → stalowa konstrukcja
+      steelMap: { reactor: { color: '#34343e', metalness: 0.55, roughness: 0.42, glow: 0.05, farFade: [2, 7] } },   // Reactor: ciemna stal z połyskiem
+      steel: { color: '#5a5a68', metalness: 0.3, roughness: 0.62, glow: 0.12, tile: 1.0,
+        beam: { spacing: 1.6, width: 0.1, depth: 0.16 } },
+      envBakeHeight: 1.6,
+      envBlur: 0.02,
+      envNear: 0.05,
+      envFarScale: 1.5,             // far PMREM = max(szer., gł. areny) × to
+      bakeSearch: { maxRadius: 12, step: 0.5, margin: 0.6 },   // szukanie punktu bake envMap poza bryłami
+      ceilingTile: 4.8,
+      ceilingGlowMap: { reactor: 0.35, orbita: 0.45 },
+      ceilingAlbedoMap: { reactor: 0.3, orbita: 0.4 },   // Reactor: strop ciemniejszy (lampy pod stropem nie dają płaskiej turkusowej strefy)   // Reactor: ciemniejszy strop (bez płaskiej turkusowej strefy)
+      ceilingGlow: 1.8,             // emisja paneli sufitu (tekstura × palette.uv)
+      ceilingRoughness: 0.95,
+      trussColor: '#2a2638',
+      trussGlowMap: { reactor: 0.3 },
+      trussColorMap: { reactor: '#15151c' },   // Reactor: ciemny metal kratownicy
+      trussGlow: 0.035,             // emisja kratownicy (palette.uv × darkNorm) — sylwetki belek czytelne w ciemności
+      trussRoughness: 0.5,
+      trussMetalness: 0.6,
+      trussBrace: 0.6,              // przekrój krzyżulców × pas
+      trussHanger: 0.035,           // zawiesia do stropu (m)
+      trussCross: [1.2, 1.6],       // poprzeczne belki stropowe (× pas)
+      trussEdge: 0.5,               // min. odstęp dźwigara od ściany obwodowej (m)
+      trussSpacing: 4,
+      trussWidth: 0.4,
+      trussDepth: 0.4,
+      trussDrop: 0.15,
+      trussChord: 0.06,
+      trussBay: 0.8,
+      lampSize: [0.9, 0.14, 0.05],  // długość, szerokość, grubość (m)
+      lampIntensity: 1.7,
+      lampIntensityMap: { reactor: 0.7 },
+      lampMountMap: { neonhive: { housingHeight: 0.04, housingPad: 0.01 } },   // Hive: płaska oprawa (bez ciemnego bloku w poświacie)
+      lampMount: { minSpan: 0.5, crossbar: 0.08, housingHeight: 0.12, housingPad: 0.06 },
+      // świetlówki UV pod osią dźwigara: oprawa na 2 wspornikach, regularny rytm
+      uvTube: { length: 1.2, thickness: 0.035, spacing: 8,   // runda renderu: rzadziej (było 4 — „deszcz kresek” bez widocznych mocowań)
+        housing: 0.06, housingWidth: 0.1, housingPad: 0.05,
+        drop: 0.12, bracket: 0.03, bracketInset: 0.15, intensity: 1.1, lampClear: [1.5, 2.5] },
+      uvTubeMap: { reactor: { spacing: 8, length: 0.7, intensity: 0.8, skipTall: true }, neonhive: { drop: 0.0 }, uvmaze: { drop: 0.0 }, orbita: { drop: 0.0, spacing: 6 } },   // Hive: tuba tuż pod pasem dźwigara   // Reactor: mniej „deszczu kresek” w mgle
+      conesMinSmoke: 48,            // stożki światła tylko gdy preset.smoke ≥ (High/Ultra)
+      coneSegments: 24,
+      coneTopRadius: 0.22,
+      coneBottomRadius: 1.7,
+      coneBottom: 0.0,
+      coneOpacity: 0.45,
+      coneOpacityMap: { neonhive: 0.15, reactor: 0.33 },   // mnożnik krycia stożków per mapa
+      coneFadeTo: 0.6,              // stożek gaśnie do zera na tej części drogi lampa → podłoga
+      coneEdge: [0.3, 1.0],         // fresnel boków stożka (smoothstep facing)
+      coneMargin: 0.15,             // stożek ≥ tyle od brył (brak twardych przecięć)
+      coneMinHeight: 0.8,
+      coneCheckRadius: 1.0,         // promień sprawdzania kolizji stożka z bryłami (m)
+      // tablice (decale) na ścianach obwodowych: symbol sektora + znaki — orientacja w hali
+      signs: { maps: ['reactor', 'neonhive'], size: 2.2, y: 2.6, intensity: 1.1, texSize: 512 },
+    },
+    // Ruchome głowice pod kratownicą (render/ceilingLights.js, D-040): liczba głowic = preset.heads, plamy = preset.headSpots.
+    // 2 draw calle (głowice + snopy), poza odbiciem planarnym; plamy na podłodze/ścianach w shaderach powierzchni.
+    movingHeads: {
+      maxHeads: 8,                  // rozmiar tablic uniformów (podłoga/ściany/dym)
+      spacing: 8,                   // rozstaw kandydatów wzdłuż dźwigara (m); co drugi rząd przesunięty o ½
+      edge: 2.5,                    // min. odstęp od granic areny (m)
+      minGap: 6,                    // min. odstęp między wybranymi głowicami (m)
+      centerBias: 0.35,             // wybór: odległość od wybranych − to × odległość od środka hali
+      lampClear: [1.6, 2.2],        // odstęp od opraw lamp (|dx|, |dz|)
+      tubeClear: 0.5,               // odstęp od świetlówek UV (m, poza ½ długości tuby)
+      tallClear: 0.6,               // bryła sięgająca wyżej niż soczewka − to (m) blokuje miejsce (filar, rdzeń; nie zwykłe ściany)
+      solidClear: 0.6,              // m — odstęp w XZ od takiej bryły
+      colors: ['primary', 'secondary', 'uv'],   // klucze palety (przez lightColorHex; bez akcentu — D-008)
+      colorsMap: { neonhive: ['primary', 'uv'], reactor: ['primary', 'secondary'] },
+      halfAngle: 0.1,               // kąt połówkowy snopu (rad)
+      tiltBase: 0.5, tiltAmp: 0.28, tiltSpeed: 0.31,   // odchylenie od pionu (rad) = base + amp·sin(speed·t + φ)
+      panAmp: 1.1, panSpeed: 0.37,  // omiatanie: wahadło wokół kierunku do środka hali
+      spin: 0.42,                   // tryb krąg (co 3. głowica): ciągły obrót (rad/s)
+      phaseStep: 2.399,             // faza kolejnych głowic (złoty kąt)
+      // wygląd głowicy (m): obejma, trzpień, jarzmo, głowa, soczewka
+      geo: { clamp: [0.14, 0.06, 0.14], rod: 0.02, rodLen: 0.1, yokeW: 0.3, yokeT: 0.03, yokeD: 0.08, armLen: 0.22,
+        headR: 0.09, headLen: 0.28, lensR: 0.07 },
+      bodyColor: '#141420',
+      bodyTint: 0.06,               // odbłysk koloru soczewki na korpusie
+      lensIntensity: 3.2,           // HDR → bloom
+      lensFogKeep: 0.6,             // soczewka mniej tonie we mgle
+      beamSegments: 16, beamRows: 6,
+      beamOpacity: 0.36,
+      beamNoSmoke: 0.6,             // × krycie snopu bez dymu (Low)
+      beamIntensity: 1.0,
+      beamIntensityMap: { neonhive: 0.5, reactor: 0.9 },   // Hive: bursztyn w bliskich snopach szybko się „wylewa”
+      beamEdge: [0.1, 1.0],         // fresnel boków stożka (smoothstep facing)^beamEdgePow
+      beamEdgePow: 3,
+      beamFalloff: 0.1,             // 1/(1 + d·k)
+      beamStart: 0.25,              // m od soczewki — miękki początek
+      beamEndFade: 0.6, beamEndDim: 0.6,
+      beamNoise: 0.55,
+      beamNear: [1.0, 3.5],         // m od kamery — snop nie oślepia
+      beamFog: 0.5,
+      spotIntensity: 1.15,          // plamy na powierzchniach (emisja, × kolor głowicy)
+      spotIntensityMap: { neonhive: 0.7, reactor: 0.85 },
+      spotWall: 0.35,               // × plamy na ścianach (farba UV nie jest zalewana)
+      spotFloor: 1.0,
+      spotEdge: 0.55,               // r (0 oś … 1 krawędź), od którego plama miękko gaśnie
+      goboBase: 0.55, goboRing: [0.45, 0.75],   // gobo: środek przygaszony, jaśniejszy pierścień
+      spotSlack: [0.12, 0.35],      // m za punktem trafienia — plama tylko na pierwszej przeszkodzie
+      spotRef: 3.0,                 // m — osłabienie 1/d powyżej tej odległości
+      smokeGain: 2.2,               // dym: ile koloru snopu łapie kłąb w snopie
+      smokeWidth: 0.35,             // × rozmiar kłębu dodawany do promienia snopu (kłąb częściowo w snopie)
+    },
+  },
+
+  presets: {
+    low: {
+      pixelRatio: 0.75, aa: 'none', bloom: null,
+      smoke: 0, heads: 4, headSpots: false, pointLights: 0, envReflections: false, texSize: 256, anisotropy: 1,
+    },
+    medium: {
+      pixelRatio: 1.0, aa: 'fxaa', bloom: { strength: 0.75, radius: 0.0, threshold: 0.42, scale: 0.5 },
+      smoke: 40, heads: 6, headSpots: true, pointLights: 2, envReflections: false, texSize: 512, anisotropy: 2,
+    },
+    high: {
+      pixelRatio: 1.5, aa: 'msaa', bloom: { strength: 0.82, radius: 0.0, threshold: 0.4, scale: 1.0 },
+      smoke: 104, heads: 8, headSpots: true, pointLights: 4, envReflections: true, texSize: 1024, anisotropy: 4,
+    },
+    ultra: {
+      pixelRatio: 2.0, aa: 'msaa', bloom: { strength: 0.9, radius: 0.0, threshold: 0.4, scale: 1.0 },
+      smoke: 192, heads: 8, headSpots: true, pointLights: 6, envReflections: true, texSize: 1024, anisotropy: 8,
+    },
+  },
+
+  budget: {
+    low:    { calls: 60,  triangles: 120000, textures: 20, geometries: 80 },
+    medium: { calls: 90,  triangles: 200000, textures: 28, geometries: 80 },
+    high:   { calls: 120, triangles: 350000, textures: 36, geometries: 90 },
+    ultra:  { calls: 160, triangles: 600000, textures: 44, geometries: 100 },
+  },
+
+  smoke: {
+    sizeMin: 3.5,
+    sizeMax: 7.0,
+    opacity: 0.11,          // D-040: 0.085 → 0.11 (gęstsza atmosfera; wcześniej 0.07 → 0.085 w D-034)
+    drift: 0.18,            // m/s
+    heightMin: 0.4,
+    heightMax: 3.2,
+    driftRadius: 1.4,       // promień wolnej orbity kłębu (m); prędkość = drift
+    spin: 0.05,             // maks. prędkość obrotu tekstury (rad/s)
+    baseGlow: 2.2,          // jasność bazowa (× darkNorm mapy)
+    lightGain: 1.8,
+    lightGainMap: { neonhive: 0.35 },   // Hive: dym przy podłodze nie tworzy owalnych plam w kolorze lamp         // ile koloru lampy łapie dym
+    lightRangeScale: 0.9,
+    lightDrop: 1.0,
+    nearFade: [1.2, 3.5],   // zanik przy kamerze (m, głębia środka kłębu)
+    margin: 1.0,
+    wallClearance: 0.6,     // min. odstęp środka kłębu od bryły
+    planeFade: 0.6,         // zanik kłębu przy podłodze i suficie (m)
+    hiFade: [2.0, 3.0, 0.3], // powyżej ścian: przejście (m) do odbarwionej, ciemniejszej mgiełki (× jasność)
+    sizeFloor: 0.9,         // min. rozmiar kłębu w ciasnych miejscach
+    sizePerClearance: 2.4,  // rozmiar ≤ (prześwit − dryf) × to (brak przecięć ze ścianami)
+    lowBand: [0.25, 1.0],   // warstwa dolna (m) — równomierna przyziemna mgiełka
+    highBand: [2.6, 4.2],   // warstwa podsufitowa (m); górna granica = sufit − highCeilGap (snopy głowic widoczne w dymie)
+    highCeilGap: 0.8,
+    highOpacity: 0.8,       // × krycie warstwy podsufitowej
+    lowShare: 0.2,
+    lowOpacity: 0.4,        // × krycie płacht przyziemnych (czytane jako płaskie plamy-decale na podłodze)
+    midBand: [1.0, 2.4],    // warstwa środkowa (m) — kłęby na wysokości oka/listew, łapią kolor lamp
+    midShare: 0.55,
+    midAspect: [1.3, 2.0],  // bliżej kuli niż płachty przyziemne
+    midSize: 0.75,          // × zakres rozmiaru (mniejsze niż płachty, większe niż podsufitowe)
+    midOpacity: 2.9,        // × krycie warstwy środkowej (addytywny ciemny odcień — inaczej niewidoczna poza stożkami lamp)
+    midGlow: 1.8,           // × jasność bazowa warstwy środkowej
+    highShare: 0.17,        // D-040: warstwa podsufitowa wraca (snopy głowic i lamp przecinają dym); reszta do 1 — losowo w [heightMin, heightMax]
+    aspect: [2.2, 3.6],     // kłęby jako poziome smugi (szerokość / wysokość)
+    tilt: 0.25,             // maks. przechył smugi (rad)
+    fogMix: 0.6,            // odcień bazowy = lerp(uv palety, mgła, fogMix) — ciemny, chłodny
+    maxLights: 8,           // lampy łapane przez dym (uniform array)
+    seedSalt: 0x5307e,
+    countMap: { reactor: 1.35 },   // × liczba kłębów presetu per mapa (Reactor: strop 8 m — większa objętość)
+    beamGainMap: {},               // × render.movingHeads.smokeGain per mapa
+  },
+
+  // Efekty strzału (render/beams.js). Jasności > 1 = HDR → bloom.
+  fx: {
+    beamWidth: 0.11,          // szerokość wstęgi poświaty (m)
+    beamCore: 0.15,           // względna szerokość białego rdzenia (0..1 szerokości)
+    beamCoreIntensity: 3.0,
+    beamGlowIntensity: 1.5,       // poświata nasycona (Neutral TM wybiela wartości ≫ 1)
+    beamTaper: 1.6,           // m od lufy, na których wstęga rośnie od beamTaperMin do pełnej szerokości
+    beamTaperMin: 0.15,
+    beamRows: [0.3, 0.7],     // m od lufy: dodatkowe wiersze geometrii wstęgi w strefie zwężenia (< beamTaper)
+    beamNearFade: [0.4, 2.5], // m od kamery: wstęga przygaszona przy samej kamerze (własne strzały nie oślepiają)
+    beamNearMin: 0.3,         // jasność wstęgi przy samej kamerze (× pełnej)
+    muzzleFlashSize: 0.16,    // m
+    muzzleFlashTime: 0.06,    // s
+    flashNearDist: 2.5,       // m — bliżej kamery błyski maleją (do flashNearMin przy samej lufie FPP)
+    flashNearMin: 0.3,
+    muzzleFlashGrow: [0.7, 0.6], // rozmiar błysku lufy w czasie życia k: size × (a + b·k)
+    endFlashGrow: [0.8, 0.6],    // jw. dla poświaty końca wiązki
+    muzzleFlashIntensity: 2.2,
+    endFlashSize: 0.22,       // poświata w punkcie końca wiązki (ściana)
+    endFlashIntensity: 1.4,
+    hitFlashSize: 0.6,        // m — rozbłysk w punkcie trafienia
+    hitFlashTime: 0.16,
+    hitFlashIntensity: 2.6,
+    wallPower: 0.45,          // rozbłysk przy trafieniu w ścianę/odbiciu względem trafienia w uczestnika (rozmiar, jasność)
+    // Odłamki lasera (render/beams.js, ta sama pula co rozbłyski trafień; D-037): przy trafieniu w ścianę/przeszkodę/podłogę
+    // lecą od punktu wzdłuż kierunku odbitego od normalnej (+ rozrzut), opadają pod grawitacją, raz słabo odbijają się
+    // od podłogi i gasną. Lot liczony w shaderze (zero pracy CPU na odłamek). Trafienie uczestnika: kierunek ku strzelcowi.
+    shards: {
+      count: 16,              // odłamków na zdarzenie (geometria instancji)
+      life: [0.6, 1.2],       // s — czas życia odłamka (losowy per odłamek)
+      speed: [1.4, 5.0],      // m/s
+      spread: 0.75,           // rozrzut kierunku (× losowy wektor jednostkowy, dodawany do kierunku odbicia)
+      gravity: 9.0,           // m/s²
+      restitution: 0.3,       // odbicie od podłogi: składowa pionowa × to
+      friction: 0.5,          // … pozioma × to
+      streak: 0.03,           // s — długość smugi = prędkość × to
+      width: 0.02,            // m
+      intensity: 3.0,
+      hitLife: 0.6,           // × life dla trafienia w uczestnika (krótsze iskry)
+    },
+    // Pocisk wyrzutni (render/projectiles.js): świecąca kula + ślad, 1 draw call (instancje = aktywne pociski).
+    projectile: {
+      size: 0.13,             // m — promień poświaty kuli
+      coreIntensity: 3.2,
+      glowIntensity: 2.0,
+      pulseHz: 9,             // pulsowanie kuli
+      pulse: 0.18,            // amplituda pulsowania (× rozmiar)
+      trail: 1.6,             // m — długość śladu (≤ droga od startu / odbicia)
+      trailWidth: 0.07,       // m
+      trailIntensity: 1.6,
+      muzzleBlend: 0.12,      // s — własny pocisk: start wizualny z lufy FPP zbiega do pozycji z symulacji
+    },
+  },
+
+  // Awatary uczestników (render/avatars.js).
+  avatar: {
+    bodyColor: '#0c0a14',     // ciemny matowy korpus (× kolor drużyny przez instanceColor)
+    bodyTint: 0.1,            // ile koloru drużyny w diffuse korpusu (0 = sam bodyColor, 1 = bodyColor × kolor)
+    roughness: 0.8,
+    rimIntensity: 0.3,        // poświata krawędzi (fresnel) w kolorze drużyny
+    rimPower: 4.0,
+    visorIntensity: 1.3,      // wizjer/końcówka lufy — nasycone, bez przepalenia do bieli z bliska
+    trimIntensity: 0.8,       // pasek na broni (pas = × 0.6)
+    sensorLit: 1.8,
+    sensorOff: 0.035,
+    sensorFlash: 4.0,
+    shoulderTilt: 0.75,       // rad — pochylenie padów na ramionach ku górze
+    hideDist: 0.6,            // m (XZ) — kamera bliżej osi awatara → awatar pominięty (bot przechodzi przez gracza)
+    hideMarginY: 0.3,         // m — zapas pionowy zakresu ukrywania (stopy − to … głowa + to)
+    headBase: 1.6,            // m — powyżej: hełm przesuwany sztywno przy kucaniu
+    hipHeight: 0.86,          // m — staw biodrowy (piwot ud)
+    kneeHeight: 0.47,         // m — staw kolanowy (piwot łydek)
+    ankleHeight: 0.09,        // m — kostka (długość nogi = hip − ankle)
+    shoulderPivot: [1.45, 0.0], // [y, z] m — piwot ramion i broni (opuszczenie przy sprincie, kołysanie)
+    crouchThigh: 0.95,        // rad — pochylenie ud przy pełnym kucnięciu (łydki −2×; biodra opadają, stopy zostają)
+    // cykl kroku (faza z przebytego dystansu; 1 krok = pół cyklu)
+    stepWalk: 0.72,           // m na krok przy chodzie
+    stepSprint: 0.95,         // m na krok przy sprincie
+    stepCrouch: 0.42,         // m na krok w pełnym kucu
+    swingWalk: 0.42,          // rad — wymach uda przy prędkości chodu
+    swingSprint: 0.68,        // rad — przy sprincie
+    swingCrouch: 0.5,         // mnożnik wymachu w pełnym kucu
+    kneeWalk: 1.5,            // zgięcie kolana nogi wykrocznej (× wymach)
+    kneeBase: 0.08,           // rad — stałe lekkie zgięcie kolan w ruchu (× amplituda względna)
+    swingSmooth: 10,          // 1/s — wygładzanie amplitudy (start/stop)
+    sprintSmooth: 6,          // 1/s — wygładzanie pozy sprintu
+    teleportDist: 1.0,        // m/klatkę — większy skok pozycji = respawn/teleport (faza nie rośnie)
+    armBob: 0.05,             // rad — kołysanie ramion/broni w rytmie kroku (× amplituda względna)
+    sprintArmPitch: 0.55,     // rad — opuszczenie broni przy sprincie
+    bodyBob: 1.0,             // mnożnik opadania ciała przy wykroku (geometrycznie: noga × (1 − cos wymachu))
+    elimBlinkHz: 6,
+    elimDim: 0.12,            // jasność w fazie „zgaszonej” mrugania
+    protectPulseHz: 3,
+    protectBoost: 1.2,        // amplituda pulsowania ochrony
+  },
+
+  // Ciało gracza w FPP (render/avatars.js, instancja lokalna): tors + nogi widoczne przy patrzeniu w dół.
+  // Ten sam model co awatary bez hełmu, ramion i broni (te rysuje viewModel); przesunięte do tyłu względem oka.
+  fpBody: {
+    back: 0.29,               // m — przesunięcie ciała do tyłu (stojąc): kamera przed torsem, nie w nim
+    crouchBack: 0.36,         // m — w pełnym kucu (tors wyżej względem oka)
+    lean: 0.3,                // m/m — tors odchylony do tyłu (ścięcie z ∝ wysokość nad hip − leanBase): przy patrzeniu
+                              //        w dół widać dół kamizelki, pas i nogi, a nie samą górę torsu tuż pod okiem
+    leanBase: 0.2,            // m — ścięcie zaczyna się tyle poniżej bioder (pas i biodra też cofnięte)
+    legForward: 0.3,          // m — stopy wysunięte do przodu (ścięcie nóg: 0 w biodrze → to przy podłodze); inaczej z oka zasłania je pas
+    emit: 0.45,               // mnożnik emisji (pas, listwy) — z bliska pełna jasność przepala kadr
+    rim: 0.5,                 // mnożnik poświaty krawędzi
+    sensors: ['front'],      // sensory kamizelki widoczne w FPP (reszta poza kadrem / przy kamerze)
+  },
+
+  // Broń FPP + ręce (render/viewModel.js). Lufa kończy się w CONFIG.weapon.muzzleOffset.
+  viewModel: {
+    // D-037: model per broń; muzzle = wylot lufy w układzie kamery (x prawo, y góra, z przód = −), scale = skala modelu,
+    // recoil = × recoilKick/recoilPitch. Broń bliżej twarzy (bliżej osi wzroku niż dawne [0.237, −0.2, −0.55]) — bez celownika
+    // lufa wskazuje kierunek strzału; viewModel.muzzleWorld() zwraca faktyczny wylot (start wiązki gracza).
+    weapons: {
+      phaser: { muzzle: [0.13, -0.125, -0.5], scale: 0.72, recoil: 1 },
+      pistol: { muzzle: [0.11, -0.11, -0.4], scale: 0.72, recoil: 0.7 },
+      bouncer: { muzzle: [0.13, -0.13, -0.5], scale: 0.72, recoil: 1.5 },
+    },
+    bodyColor: '#0e0c16',
+    roughness: 0.75,
+    metalness: 0.1,
+    darkColor: '#07060c',     // ciemne części metalowe (lufa, szyna, chwyt)
+    gloveColor: '#141119',    // rękawice / rękawy (ciemny strój)
+    gloveAccent: 0.35,        // jasność akcentów rękawic/mankietów (× kolor gracza)
+    trimIntensity: 0.6,       // cienkie akcenty — nasycone, nie białe
+    rimIntensity: 0.08,       // fresnel w kolorze gracza
+    fillColor: '#110b20',     // sztuczne światło wypełniające (emisja, układ kamery) — liniowe ≈ 0.01–0.03
+    heatIntensity: 0.9,
+    hotColor: '#ff2a12',
+    flashIntensity: 2.0,
+    lensIntensity: 1.1,       // soczewka emitera (× kolor gracza; × (1 + błysk))
+    flashTime: 0.07,
+    recoilKick: 0.03,         // m do tyłu
+    recoilPitch: 0.09,        // rad
+    recoilReturn: 18,         // 1/s
+    bobAmp: 0.012,            // m — opadanie w rytmie kroku (sin² fazy kroku)
+    bobFreq: 1.6,             // Hz — tylko gdy brak fazy kroku (gait) z awatarów
+    bobSprint: 1.6,           // mnożnik kołysania przy sprincie
+    overheatBlinkHz: 5,
+    overheatBlink: [1.4, 0.25],   // jasność paska ciepła w fazie on/off mrugania
+    rimPower: 2.0,
+    fillBase: 0.35,           // światło wypełniające: część bezkierunkowa (reszta zależna od normal.y)
+    trimFlashBoost: 0.4,      // akcenty × (1 + to × błysk strzału)
+    heatRamp: [0.45, 0.95],   // ciepło, przy którym pasek przechodzi z koloru gracza w hotColor
+    barOff: 0.03,             // jasność zgaszonej części paska ciepła (× kolor gracza)
+    flashWhite: 0.35,         // domieszka bieli w błysku wylotu
+    flashIdle: 0.12,          // jasność pierścienia wylotu bez strzału (× flashIntensity)
+    bobSmooth: 8,             // 1/s — wygładzanie amplitudy kołysania
+    bobMinRate: 0.2,          // min. tempo fazy kołysania (× bobFreq)
+    bobSide: 0.6,             // amplituda boczna kołysania (× bobAmp)
+    sprintPitch: 0.32,        // rad — broń opuszczona przy sprincie
+    sprintYaw: 0.28,          // rad — lufa skręcona do środka
+    sprintRoll: 0.22,         // rad — przechył
+    sprintDrop: [-0.02, -0.035, 0.03], // m — przesunięcie broni przy sprincie (układ kamery)
+    stunDim: 0.15,            // jasność akcentów broni podczas hit stun (P.stunTimer > 0)
+    stunFade: 20,             // 1/s — tempo przejścia do/z przygaszenia
+    depthRange: 0.05,         // broń zajmuje przednie depthRange zakresu głębi NDC (nie wbija się w ściany)
+  },
+
+  // HUD (ui/hud.js).
+  hud: {
+    hitmarkerTime: 0.2,
+    dmgDirTime: 1.1,
+    hpFlashTime: 0.3,
+    heatWarn: 0.8,
+    feedSize: 4,
+    feedTime: 4.0,
+    feedFade: 0.6,
+    staminaHide: 2.0,         // s pełnej staminy, po których pasek znika (fade)
+    staminaLow: 0.25,         // poniżej — pasek ostrzegawczy
+  },
+
+  pools: {
+    beams: 48,
+    sparks: 64,
+  },
+
+  defaults: {
+    map: 'uvmaze',
+    preset: 'high',
+    mode: 'ffa',
+    diff: 'normal',
+    bots: null,             // null → liczba z trybu (CONFIG.modes)
+    weapon: 'phaser',       // broń gracza (menu BROŃ / ?weapon=phaser|pistol|bouncer)
+  },
+});

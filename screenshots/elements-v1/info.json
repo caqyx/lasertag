@@ -1,0 +1,124 @@
+{
+  "uvmaze/ultra/overview": {
+    "file": "screenshots/elements-v1/uvmaze-ultra-0-overview.png",
+    "info": {
+      "calls": 44,
+      "triangles": 52451,
+      "points": 0,
+      "lines": 0,
+      "textures": 28,
+      "geometries": 23,
+      "programs": 32
+    }
+  },
+  "uvmaze/ultra/corridor": {
+    "file": "screenshots/elements-v1/uvmaze-ultra-1-corridor.png",
+    "info": {
+      "calls": 44,
+      "triangles": 52451,
+      "points": 0,
+      "lines": 0,
+      "textures": 28,
+      "geometries": 23,
+      "programs": 32
+    }
+  },
+  "uvmaze/ultra/plaza": {
+    "file": "screenshots/elements-v1/uvmaze-ultra-2-plaza.png",
+    "info": {
+      "calls": 44,
+      "triangles": 52451,
+      "points": 0,
+      "lines": 0,
+      "textures": 28,
+      "geometries": 23,
+      "programs": 32
+    }
+  },
+  "uvmaze/ultra/spawn": {
+    "file": "screenshots/elements-v1/uvmaze-ultra-3-spawn.png",
+    "info": {
+      "calls": 44,
+      "triangles": 52451,
+      "points": 0,
+      "lines": 0,
+      "textures": 28,
+      "geometries": 23,
+      "programs": 32
+    }
+  },
+  "uvmaze/ultra/corner": {
+    "file": "screenshots/elements-v1/uvmaze-ultra-4-corner.png",
+    "info": {
+      "calls": 44,
+      "triangles": 52451,
+      "points": 0,
+      "lines": 0,
+      "textures": 28,
+      "geometries": 23,
+      "programs": 32
+    }
+  },
+  "uvmaze/ultra/console": [],
+  "orbita/ultra/overview": {
+    "file": "screenshots/elements-v1/orbita-ultra-0-overview.png",
+    "info": {
+      "calls": 44,
+      "triangles": 63155,
+      "points": 0,
+      "lines": 0,
+      "textures": 28,
+      "geometries": 27,
+      "programs": 32
+    }
+  },
+  "orbita/ultra/corridor": {
+    "file": "screenshots/elements-v1/orbita-ultra-1-corridor.png",
+    "info": {
+      "calls": 44,
+      "triangles": 63155,
+      "points": 0,
+      "lines": 0,
+      "textures": 28,
+      "geometries": 27,
+      "programs": 32
+    }
+  },
+  "orbita/ultra/plaza": {
+    "file": "screenshots/elements-v1/orbita-ultra-2-plaza.png",
+    "info": {
+      "calls": 44,
+      "triangles": 63155,
+      "points": 0,
+      "lines": 0,
+      "textures": 28,
+      "geometries": 27,
+      "programs": 32
+    }
+  },
+  "orbita/ultra/spawn": {
+    "file": "screenshots/elements-v1/orbita-ultra-3-spawn.png",
+    "info": {
+      "calls": 44,
+      "triangles": 63155,
+      "points": 0,
+      "lines": 0,
+      "textures": 28,
+      "geometries": 27,
+      "programs": 32
+    }
+  },
+  "orbita/ultra/corner": {
+    "file": "screenshots/elements-v1/orbita-ultra-4-corner.png",
+    "info": {
+      "calls": 44,
+      "triangles": 63155,
+      "points": 0,
+      "lines": 0,
+      "textures": 28,
+      "geometries": 27,
+      "programs": 32
+    }
+  },
+  "orbita/ultra/console": []
+}

@@ -1,0 +1,87 @@
+{
+  "reactor/ultra/overview": {
+    "file": "screenshots/iter8b/reactor-ultra-0-overview.png",
+    "info": {
+      "calls": 52,
+      "triangles": 49419,
+      "points": 0,
+      "lines": 0,
+      "textures": 28,
+      "geometries": 24,
+      "programs": 35
+    }
+  },
+  "reactor/ultra/corridor": {
+    "file": "screenshots/iter8b/reactor-ultra-1-corridor.png",
+    "info": {
+      "calls": 52,
+      "triangles": 49419,
+      "points": 0,
+      "lines": 0,
+      "textures": 28,
+      "geometries": 24,
+      "programs": 35
+    }
+  },
+  "reactor/ultra/plaza": {
+    "file": "screenshots/iter8b/reactor-ultra-2-plaza.png",
+    "info": {
+      "calls": 52,
+      "triangles": 49419,
+      "points": 0,
+      "lines": 0,
+      "textures": 28,
+      "geometries": 24,
+      "programs": 35
+    }
+  },
+  "reactor/ultra/spawn": {
+    "file": "screenshots/iter8b/reactor-ultra-3-spawn.png",
+    "info": {
+      "calls": 52,
+      "triangles": 49419,
+      "points": 0,
+      "lines": 0,
+      "textures": 28,
+      "geometries": 24,
+      "programs": 35
+    }
+  },
+  "reactor/ultra/corner": {
+    "file": "screenshots/iter8b/reactor-ultra-4-corner.png",
+    "info": {
+      "calls": 52,
+      "triangles": 49419,
+      "points": 0,
+      "lines": 0,
+      "textures": 28,
+      "geometries": 24,
+      "programs": 35
+    }
+  },
+  "reactor/ultra/upper": {
+    "file": "screenshots/iter8b/reactor-ultra-5-upper.png",
+    "info": {
+      "calls": 52,
+      "triangles": 49419,
+      "points": 0,
+      "lines": 0,
+      "textures": 28,
+      "geometries": 24,
+      "programs": 35
+    }
+  },
+  "reactor/ultra/core": {
+    "file": "screenshots/iter8b/reactor-ultra-6-core.png",
+    "info": {
+      "calls": 52,
+      "triangles": 49419,
+      "points": 0,
+      "lines": 0,
+      "textures": 28,
+      "geometries": 24,
+      "programs": 35
+    }
+  },
+  "reactor/ultra/console": []
+}

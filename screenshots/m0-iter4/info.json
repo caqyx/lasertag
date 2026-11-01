@@ -1,0 +1,63 @@
+{
+  "uvmaze/ultra/overview": {
+    "file": "screenshots/m0-iter4/uvmaze-ultra-0-overview.png",
+    "info": {
+      "calls": 37,
+      "triangles": 48306,
+      "points": 0,
+      "lines": 0,
+      "textures": 26,
+      "geometries": 17,
+      "programs": 25
+    }
+  },
+  "uvmaze/ultra/corridor": {
+    "file": "screenshots/m0-iter4/uvmaze-ultra-1-corridor.png",
+    "info": {
+      "calls": 37,
+      "triangles": 48306,
+      "points": 0,
+      "lines": 0,
+      "textures": 26,
+      "geometries": 17,
+      "programs": 25
+    }
+  },
+  "uvmaze/ultra/plaza": {
+    "file": "screenshots/m0-iter4/uvmaze-ultra-2-plaza.png",
+    "info": {
+      "calls": 37,
+      "triangles": 48306,
+      "points": 0,
+      "lines": 0,
+      "textures": 26,
+      "geometries": 17,
+      "programs": 25
+    }
+  },
+  "uvmaze/ultra/spawn": {
+    "file": "screenshots/m0-iter4/uvmaze-ultra-3-spawn.png",
+    "info": {
+      "calls": 37,
+      "triangles": 48306,
+      "points": 0,
+      "lines": 0,
+      "textures": 26,
+      "geometries": 17,
+      "programs": 25
+    }
+  },
+  "uvmaze/ultra/corner": {
+    "file": "screenshots/m0-iter4/uvmaze-ultra-4-corner.png",
+    "info": {
+      "calls": 37,
+      "triangles": 48306,
+      "points": 0,
+      "lines": 0,
+      "textures": 26,
+      "geometries": 17,
+      "programs": 25
+    }
+  },
+  "uvmaze/ultra/console": []
+}
