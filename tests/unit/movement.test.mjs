@@ -1,11 +1,13 @@
 // Testy src/game/movement.js (+ inputState): przyspieszenie do walk/sprint (dokładnie, bez przekroczenia), przekątne,
-// tarcie, skok tylko na ziemi, konwencja yaw (0 → −Z, π/2 → −X), sprint tylko do przodu, sterowanie w powietrzu.
+// tarcie, skok tylko na ziemi, konwencja yaw (0 → −Z, π/2 → −X), sprint tylko do przodu, sterowanie w powietrzu,
+// kucanie, stamina (D-023: drain/regen/exhausted/koszt skoku/respawn).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildWorld } from '../../src/world/mapgen.js';
 import { createBody, stepMovement } from '../../src/game/movement.js';
 import { createInputState, resetInputState } from '../../src/game/input/inputState.js';
 import { CONFIG } from '../../src/config.js';
+import { createParticipant, placeAt } from '../../src/game/participant.js';
 
 const P = CONFIG.player;
 const DT = 1 / CONFIG.sim.hz;
@@ -237,4 +239,130 @@ test('kuc: nie można wstać pod przeszkodą (spód bryły nad głową); po wyj�
   for (let i = 0; i < 200; i++) stepMovement(body, input, DT, w);
   assert.equal(body.crouch, 0);
   assert.equal(body.height, P.height);
+});
+
+// ------------------------------------------------------------------------------------------------ stamina (D-023, CONFIG.player.stamina)
+
+const S = P.stamina;
+const near = (a, b, eps = 1e-9) => Math.abs(a - b) < eps;
+/** Sprint do przodu aż do wyczerpania; zwraca liczbę kroków. */
+function sprintToEmpty(body, input) {
+  input.moveZ = 1; input.moveX = 0; input.sprint = true; input.crouch = false; input.jump = false;
+  let n = 0;
+  while (!body.exhausted && n < 10000) { stepMovement(body, input, DT, world); n++; }
+  return n;
+}
+
+test('stamina: kontrakt pól — pełna na starcie, double 0..1, sprinting/exhausted boolean', () => {
+  const b = createBody();
+  assert.equal(b.stamina, 1);
+  assert.equal(b.sprinting, false);
+  assert.equal(b.exhausted, false);
+  assert.ok(S.drain > 0 && S.regen > 0 && S.exhaustedRecover > 0 && S.exhaustedRecover < 1 && S.jumpCost > 0 && S.jumpCost < S.exhaustedRecover);
+});
+
+test('stamina: sprint zużywa drain/s (pełny pasek ≈ 1/drain s), potem exhausted i chód', () => {
+  const { body, input } = setup({ moveZ: 1, sprint: true });
+  run(body, input, 60);
+  assert.equal(body.sprinting, true);
+  assert.ok(near(body.stamina, 1 - S.drain * 60 * DT), `po 1 s: ${body.stamina}`);
+  const n = 60 + sprintToEmpty(body, input);
+  assert.ok(Math.abs(n * DT - 1 / S.drain) <= 2 * DT, `sprint trwał ${n * DT} s`);
+  assert.equal(body.stamina, 0);
+  assert.equal(body.exhausted, true);
+  const sp = run(body, input, 30); // sprint wciśnięty, ale zablokowany
+  assert.equal(body.sprinting, false);
+  assert.equal(sp.at(-1), P.walkSpeed);
+});
+
+test('stamina: brak sprintu (tył/strafe/kuc/bez ruchu) nie zużywa staminy', () => {
+  for (const inp of [{ moveZ: -1 }, { moveX: 1 }, { moveZ: 1, crouch: true }, {}]) {
+    const { body, input } = setup({ ...inp, sprint: true });
+    run(body, input, 120);
+    assert.equal(body.sprinting, false, JSON.stringify(inp));
+    assert.equal(body.stamina, 1, JSON.stringify(inp));
+  }
+});
+
+test('stamina: exhausted — regeneracja po regenDelay (regen/s w ruchu), sprint wraca dopiero przy exhaustedRecover', () => {
+  const { body, input } = setup();
+  sprintToEmpty(body, input);
+  // dalej idzie z wciśniętym sprintem
+  assert.equal(body.sprinting, true, 'krok wyczerpania jeszcze sprintem');
+  let n = 0;
+  do { stepMovement(body, input, DT, world); n++; } while (!body.sprinting && n < 10000);
+  n--; // kroki bez sprintu
+  const expect = S.regenDelay + S.exhaustedRecover / S.regen;
+  assert.ok(Math.abs(n * DT - expect) <= 2 * DT, `blokada ${n * DT} s, oczekiwane ${expect} s`);
+  assert.equal(body.exhausted, false);
+  assert.ok(body.stamina > S.exhaustedRecover - S.drain * DT - 1e-9 && body.stamina <= S.exhaustedRecover + S.regen * DT + 1e-9);
+  // w trakcie opóźnienia stamina stoi na 0
+  const b2 = setup().body; sprintToEmpty(b2, input);
+  input.sprint = false;
+  run(b2, input, Math.floor(S.regenDelay / DT) - 1);
+  assert.equal(b2.stamina, 0, 'regeneracja przed regenDelay');
+});
+
+test('stamina: stojąc i w kucu regeneracja × regenIdleMul; puszczenie sprintu przed 0 nie blokuje', () => {
+  const rate = (inp) => {
+    const { body, input } = setup({ moveZ: 1, sprint: true });
+    run(body, input, 120); // 2 s sprintu → 0.5
+    assert.equal(body.exhausted, false);
+    Object.assign(input, { moveZ: 0, moveX: 0, sprint: false, crouch: false }, inp);
+    run(body, input, Math.ceil(S.regenDelay / DT) + 1);
+    const s0 = body.stamina;
+    run(body, input, 30);
+    return (body.stamina - s0) / (30 * DT);
+  };
+  assert.ok(near(rate({ moveZ: 1 }), S.regen, 1e-6), 'w ruchu');
+  assert.ok(near(rate({}), S.regen * S.regenIdleMul, 1e-6), 'stojąc');
+  assert.ok(near(rate({ crouch: true }), S.regen * S.regenIdleMul, 1e-6), 'w kucu');
+  assert.ok(near(rate({ crouch: true, moveZ: 1 }), S.regen * S.regenIdleMul, 1e-6), 'w kucu w ruchu');
+  // pełna regeneracja kończy się dokładnie na 1
+  const { body, input } = setup({ moveZ: 1, sprint: true });
+  run(body, input, 60);
+  input.sprint = false; input.moveZ = 0;
+  run(body, input, 600);
+  assert.equal(body.stamina, 1);
+});
+
+test('stamina: skok kosztuje jumpCost i resetuje opóźnienie regeneracji; poniżej jumpCost skok niedostępny', () => {
+  const { body, input } = setup({ jump: true });
+  stepMovement(body, input, DT, world);
+  assert.ok(body.vy > 0, 'skok przy pełnej staminie');
+  assert.ok(near(body.stamina, 1 - S.jumpCost));
+  // niski poziom: sprint do stamina < jumpCost (bez wyczerpania)
+  const b = setup({ moveZ: 1, sprint: true }).body;
+  const inp = Object.assign(createInputState(), { moveZ: 1, sprint: true });
+  while (b.stamina >= S.jumpCost * 0.5) stepMovement(b, inp, DT, world);
+  assert.equal(b.exhausted, false);
+  inp.sprint = false; inp.moveZ = 0; inp.jump = true;
+  const s0 = b.stamina;
+  stepMovement(b, inp, DT, world);
+  assert.equal(b.onGround, true, 'skok przy stamina < jumpCost');
+  assert.equal(b.y, 0);
+  assert.equal(b.stamina, s0, 'nieudany skok nie zmienia staminy');
+  // skok w trakcie regeneracji: opóźnienie liczone od nowa
+  const { body: c, input: ci } = setup({ moveZ: 1, sprint: true });
+  run(c, ci, 120);
+  ci.sprint = false; ci.moveZ = 0;
+  run(c, ci, Math.ceil(S.regenDelay / DT) + 30);
+  ci.jump = true; stepMovement(c, ci, DT, world); ci.jump = false;
+  const s1 = c.stamina;
+  run(c, ci, Math.floor(S.regenDelay / DT) - 2);
+  assert.equal(c.stamina, s1, 'regeneracja zaraz po skoku');
+});
+
+test('stamina: placeAt (respawn) przywraca pełną staminę i zdejmuje exhausted', () => {
+  const Pp = createParticipant({ id: 1 });
+  const input = createInputState();
+  stepMovement(Pp.body, input, DT, world);
+  sprintToEmpty(Pp.body, input);
+  assert.equal(Pp.body.exhausted, true);
+  placeAt(Pp, 1, 0, 1, 0);
+  assert.equal(Pp.body.stamina, 1);
+  assert.equal(Pp.body.exhausted, false);
+  assert.equal(Pp.body.sprinting, false);
+  stepMovement(Pp.body, Object.assign(input, { moveZ: 1, sprint: true }), DT, world);
+  assert.equal(Pp.body.sprinting, true, 'sprint od razu po respawnie');
 });

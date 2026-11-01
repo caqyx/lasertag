@@ -61,3 +61,12 @@ Symulacja: 8 botów 8–11 µs/krok; `stepSim` z 8 botami na 3 mapach: 0 GC / 10
 High/Ultra: +1 pełnoekranowy pass NaN-guard przed bloomem; odbicie planarne ≈ +12 calli i ~+40% trójkątów (największy koszt GPU).
 Programy shaderów: 12–36 (Reactor ultra 36).
 Wycieki: po powrocie na mapę geometrie/tekstury = wartości startowe (g16→16, t11→11).
+
+## Postać + broń FPP (D-024, uvmaze, 8 uczestników)
+
+| Preset | przed (calls / tris) | po (calls / tris) | budżet |
+|---|---|---|---|
+| high | 43 / 69.5k | 45 / 91.9k | 120 / 350k |
+| low | 16 / 42.7k | 18 / 56.2k | 60 / 120k |
+
+Awatar 2492 tris, broń + ręce 2144 tris. `avatars.sync` i `viewModel.update`: 0 GC / 100k klatek.

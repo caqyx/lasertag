@@ -27,6 +27,14 @@ export const CONFIG = Object.freeze({
     mouseSensitivity: 0.0022,
     pitchLimit: 1.45,       // rad
     fov: 78,
+    stamina: {              // D-023: ograniczony sprint (body.stamina 0..1, body.sprinting, body.exhausted)
+      drain: 0.25,          // /s sprintu → pełny pasek ≈ 4 s ciągłego sprintu
+      regen: 0.2,           // /s (w ruchu, bez sprintu) → 0 → 1 w 5 s
+      regenDelay: 1.0,      // s bez sprintu/skoku, zanim zacznie się regeneracja
+      regenIdleMul: 1.5,    // mnożnik regeneracji stojąc (bez wejścia ruchu) lub w kucu
+      exhaustedRecover: 0.35, // po wyczerpaniu (0) sprint zablokowany, dopóki stamina < tyle
+      jumpCost: 0.12,       // skok kosztuje; przy stamina < jumpCost skok niedostępny
+    },
   },
 
   physics: {
@@ -138,6 +146,8 @@ export const CONFIG = Object.freeze({
     reacquireTime: 0.6,     // s — utrata celu krótsza niż to nie resetuje czasu reakcji
     hitAwareTime: 1.0,      // s — po trafieniu bot „zna" napastnika (bez sprawdzania FOV)
     engageRange: [6, 18],   // m — preferowany dystans walki (bliżej → cofanie, dalej → podejście)
+    sprintStartStamina: 0.4, // D-023: bot zaczyna sprint (odwrót/pościg) tylko przy stamina > tyle
+    sprintStopStamina: 0.15, // … i przerywa poniżej (rezerwa na skok przy utknięciu)
     engageRepath: 0.8,      // s — odświeżanie ścieżki do celu w walce
     strafeSwitch: [0.45, 1.2], // s — zmiana kierunku strafe
     coverHold: 2.0,         // s w osłonie (dłużej, jeśli przegrzany)
@@ -200,7 +210,7 @@ export const CONFIG = Object.freeze({
     clearColor: '#05030a',
     msaaSamples: 4,
     hdrMax: 64,             // strażnik HDR przed bloomem: clamp jasności, NaN/Inf → 0
-    bloomFactors: [1.0, 0.5, 0.2, 0.07, 0.02],  // wagi 5 mipów UnrealBloomPass (domyślnie 1/.8/.6/.4/.2); szersze halo w rundzie renderu cofnięte (D-032: brudne halo Hive, przepalony rdzeń Reactora)
+    bloomFactors: [1.0, 0.5, 0.2, 0.07, 0.02],  // wagi 5 mipów UnrealBloomPass (domyślnie 1/.8/.6/.4/.2); szersze halo w rundzie renderu cofnięte (D-034: brudne halo Hive, przepalony rdzeń Reactora)
     // Oświetlenie (render/graphics.js): ciemność dominuje — ambient/hemi bardzo słabe.
     lights: {
       hemiIntensity: 0.3,     // HemisphereLight w kolorze palette.ambient
@@ -260,7 +270,7 @@ export const CONFIG = Object.freeze({
       wallRoughness: 0.85,
       paintIntensity: 0.62,         // runda renderu: farba ciemniejsza od listew (hierarchia jasności; było 0.75) — emisja farby UV (maski × kolor bryły; HDR → bloom)
       paintIntensityMap: { neonhive: 0.7, reactor: 1.21 },   // mnożnik emisji farby per mapa (Reactor: 0.62 × 1.21 ≈ 0.75 sprzed rundy renderu — farba „nie świeciła”)
-      paintScale: 1.0,              // skala motywów farby dla map bez wpisu w paintScaleMap (0.8 cofnięte: moiré w dali — D-032)
+      paintScale: 1.0,              // skala motywów farby dla map bez wpisu w paintScaleMap (0.8 cofnięte: moiré w dali — D-034)
       paintScaleMap: { neonhive: 0.75 },      // skala motywów farby per mapa (< 1 → mniejsze motywy)
       accentPaintMap: { neonhive: 0.5, orbita: 0.5 },      // róż w Hive tylko jako drobne, ciemniejsze akcenty
       accentPaintScale: 0.8,        // akcent (limonka) tylko w drobnych elementach farby
@@ -414,7 +424,7 @@ export const CONFIG = Object.freeze({
   smoke: {
     sizeMin: 3.5,
     sizeMax: 7.0,
-    opacity: 0.085,          // runda renderu 2026-10-31: 0.07 → 0.085 (dym widoczny w powietrzu, D-032)
+    opacity: 0.085,          // runda renderu 2026-10-31: 0.07 → 0.085 (dym widoczny w powietrzu, D-034)
     drift: 0.18,            // m/s
     heightMin: 0.4,
     heightMax: 3.2,
@@ -498,34 +508,71 @@ export const CONFIG = Object.freeze({
     shoulderTilt: 0.75,       // rad — pochylenie padów na ramionach ku górze
     hideDist: 0.6,            // m (XZ) — kamera bliżej osi awatara → awatar pominięty (bot przechodzi przez gracza)
     hideMarginY: 0.3,         // m — zapas pionowy zakresu ukrywania (stopy − to … głowa + to)
-    headBase: 1.6,            // m — powyżej: hełm przesuwany sztywno przy kucaniu; poniżej: skalowanie w pionie
-    hipHeight: 0.86,          // m — biodra (kolana wypychane poniżej)
-    kneeBend: 0.16,           // m — wypchnięcie kolan do przodu przy pełnym kucnięciu
+    headBase: 1.6,            // m — powyżej: hełm przesuwany sztywno przy kucaniu
+    hipHeight: 0.86,          // m — staw biodrowy (piwot ud)
+    kneeHeight: 0.47,         // m — staw kolanowy (piwot łydek)
+    ankleHeight: 0.09,        // m — kostka (długość nogi = hip − ankle)
+    shoulderPivot: [1.45, 0.0], // [y, z] m — piwot ramion i broni (opuszczenie przy sprincie, kołysanie)
+    crouchThigh: 0.95,        // rad — pochylenie ud przy pełnym kucnięciu (łydki −2×; biodra opadają, stopy zostają)
+    // cykl kroku (faza z przebytego dystansu; 1 krok = pół cyklu)
+    stepWalk: 0.72,           // m na krok przy chodzie
+    stepSprint: 0.95,         // m na krok przy sprincie
+    stepCrouch: 0.42,         // m na krok w pełnym kucu
+    swingWalk: 0.42,          // rad — wymach uda przy prędkości chodu
+    swingSprint: 0.68,        // rad — przy sprincie
+    swingCrouch: 0.5,         // mnożnik wymachu w pełnym kucu
+    kneeWalk: 1.5,            // zgięcie kolana nogi wykrocznej (× wymach)
+    kneeBase: 0.08,           // rad — stałe lekkie zgięcie kolan w ruchu (× amplituda względna)
+    swingSmooth: 10,          // 1/s — wygładzanie amplitudy (start/stop)
+    sprintSmooth: 6,          // 1/s — wygładzanie pozy sprintu
+    teleportDist: 1.0,        // m/klatkę — większy skok pozycji = respawn/teleport (faza nie rośnie)
+    armBob: 0.05,             // rad — kołysanie ramion/broni w rytmie kroku (× amplituda względna)
+    sprintArmPitch: 0.55,     // rad — opuszczenie broni przy sprincie
+    bodyBob: 1.0,             // mnożnik opadania ciała przy wykroku (geometrycznie: noga × (1 − cos wymachu))
     elimBlinkHz: 6,
     elimDim: 0.12,            // jasność w fazie „zgaszonej” mrugania
     protectPulseHz: 3,
     protectBoost: 1.2,        // amplituda pulsowania ochrony
   },
 
-  // Broń FPP (render/viewModel.js). Lufa kończy się w CONFIG.weapon.muzzleOffset.
+  // Ciało gracza w FPP (render/avatars.js, instancja lokalna): tors + nogi widoczne przy patrzeniu w dół.
+  // Ten sam model co awatary bez hełmu, ramion i broni (te rysuje viewModel); przesunięte do tyłu względem oka.
+  fpBody: {
+    back: 0.29,               // m — przesunięcie ciała do tyłu (stojąc): kamera przed torsem, nie w nim
+    crouchBack: 0.36,         // m — w pełnym kucu (tors wyżej względem oka)
+    lean: 0.3,                // m/m — tors odchylony do tyłu (ścięcie z ∝ wysokość nad hip − leanBase): przy patrzeniu
+                              //        w dół widać dół kamizelki, pas i nogi, a nie samą górę torsu tuż pod okiem
+    leanBase: 0.2,            // m — ścięcie zaczyna się tyle poniżej bioder (pas i biodra też cofnięte)
+    legForward: 0.3,          // m — stopy wysunięte do przodu (ścięcie nóg: 0 w biodrze → to przy podłodze); inaczej z oka zasłania je pas
+    emit: 0.45,               // mnożnik emisji (pas, listwy) — z bliska pełna jasność przepala kadr
+    rim: 0.5,                 // mnożnik poświaty krawędzi
+    sensors: ['front'],      // sensory kamizelki widoczne w FPP (reszta poza kadrem / przy kamerze)
+  },
+
+  // Broń FPP + ręce (render/viewModel.js). Lufa kończy się w CONFIG.weapon.muzzleOffset.
   viewModel: {
-    scale: 0.42,              // skala względem wylotu lufy
-    offset: [0.015, -0.035, 0.0], // przesunięcie broni względem CONFIG.weapon.muzzleOffset (niżej w kadrze); viewModel.muzzleWorld() zwraca faktyczny wylot
+    scale: 0.72,              // skala względem wylotu lufy (było 0.42; wylot dalej od oka → broń większa w kadrze o ~1.5×)
+    offset: [0.017, -0.02, -0.1], // przesunięcie broni względem CONFIG.weapon.muzzleOffset (niżej w kadrze); viewModel.muzzleWorld() zwraca faktyczny wylot
     bodyColor: '#0e0c16',
     roughness: 0.75,
     metalness: 0.1,
-    trimIntensity: 0.45,      // cienkie akcenty — nasycone, nie białe
-    rimIntensity: 0.06,       // fresnel w kolorze gracza
-    fillColor: '#0b0816',     // sztuczne światło wypełniające (emisja, układ kamery) — liniowe ≈ 0.01–0.03
+    darkColor: '#07060c',     // ciemne części metalowe (lufa, szyna, chwyt)
+    gloveColor: '#141119',    // rękawice / rękawy (ciemny strój)
+    gloveAccent: 0.35,        // jasność akcentów rękawic/mankietów (× kolor gracza)
+    trimIntensity: 0.6,       // cienkie akcenty — nasycone, nie białe
+    rimIntensity: 0.08,       // fresnel w kolorze gracza
+    fillColor: '#110b20',     // sztuczne światło wypełniające (emisja, układ kamery) — liniowe ≈ 0.01–0.03
     heatIntensity: 0.9,
     hotColor: '#ff2a12',
     flashIntensity: 2.0,
+    lensIntensity: 1.1,       // soczewka emitera (× kolor gracza; × (1 + błysk))
     flashTime: 0.07,
     recoilKick: 0.03,         // m do tyłu
     recoilPitch: 0.09,        // rad
     recoilReturn: 18,         // 1/s
-    bobAmp: 0.012,
-    bobFreq: 1.6,             // Hz przy prędkości chodu
+    bobAmp: 0.012,            // m — opadanie w rytmie kroku (sin² fazy kroku)
+    bobFreq: 1.6,             // Hz — tylko gdy brak fazy kroku (gait) z awatarów
+    bobSprint: 1.6,           // mnożnik kołysania przy sprincie
     overheatBlinkHz: 5,
     overheatBlink: [1.4, 0.25],   // jasność paska ciepła w fazie on/off mrugania
     rimPower: 2.0,
@@ -538,6 +585,10 @@ export const CONFIG = Object.freeze({
     bobSmooth: 8,             // 1/s — wygładzanie amplitudy kołysania
     bobMinRate: 0.2,          // min. tempo fazy kołysania (× bobFreq)
     bobSide: 0.6,             // amplituda boczna kołysania (× bobAmp)
+    sprintPitch: 0.32,        // rad — broń opuszczona przy sprincie
+    sprintYaw: 0.28,          // rad — lufa skręcona do środka
+    sprintRoll: 0.22,         // rad — przechył
+    sprintDrop: [-0.02, -0.035, 0.03], // m — przesunięcie broni przy sprincie (układ kamery)
     stunDim: 0.15,            // jasność akcentów broni podczas hit stun (P.stunTimer > 0)
     stunFade: 20,             // 1/s — tempo przejścia do/z przygaszenia
     depthRange: 0.05,         // broń zajmuje przednie depthRange zakresu głębi NDC (nie wbija się w ściany)
@@ -552,6 +603,8 @@ export const CONFIG = Object.freeze({
     feedSize: 4,
     feedTime: 4.0,
     feedFade: 0.6,
+    staminaHide: 2.0,         // s pełnej staminy, po których pasek znika (fade)
+    staminaLow: 0.25,         // poniżej — pasek ostrzegawczy
   },
 
   pools: {

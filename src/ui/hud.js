@@ -3,7 +3,8 @@
 // tylko przy zmianie. Zdarzenia czytane z sim.events (count/at(i)) — kolejkę czyści main po klatce.
 // Elementy: 4 segmenty HP (kolor gracza, błysk przy utracie), pasek ciepła (+ ostrzeżenie, PRZEGRZANIE),
 // hitmarker, wskaźnik kierunku obrażeń (łuk wokół celownika), ekran eliminacji z odliczaniem,
-// wskaźnik ochrony, feed eliminacji (ostatnie N, znikają), wynik gracza, hit stun (P.stunTimer > 0 → „FAZER OFF”).
+// wskaźnik ochrony, feed eliminacji (ostatnie N, znikają), wynik gracza, hit stun (P.stunTimer > 0 → „FAZER OFF”),
+// stamina (body.stamina 0..1 pod segmentami HP; body.exhausted → szary + miganie; pełna > hud.staminaHide s → zanika).
 import { CONFIG } from '../config.js';
 import { EV } from '../core/events.js';
 import { findParticipant } from '../game/sim.js';
@@ -38,6 +39,8 @@ export function createHud(rootEl) {
   const segWrap = el(vitals, 'lt-segs');
   const segs = [];
   for (let i = 0; i < MAX_HP; i++) segs.push(el(segWrap, 'lt-seg'));
+  const stam = el(vitals, 'lt-stam hide');
+  const stamFill = el(el(stam, 'lt-stam-track'), 'lt-stam-fill');
   const scoreRow = el(vitals, 'lt-score');
   el(scoreRow, 'lt-label', 'WYNIK');
   const scoreVal = el(scoreRow, 'lt-score-val', '0');
@@ -77,6 +80,7 @@ export function createHud(rootEl) {
   let cDead = -1, cElimBy = -2, cCount = -1, cProt = -1, cProtW = -1;
   let cHitOp = -1, cHitKill = -1, cDmgOp = -1, cDmgAng = 1e9;
   let cStun = -1, cStunW = -1, stunPeak = 0;
+  let cStam = -1, cStamHide = 1, cStamExh = -1, cStamLow = -1, stamFullT = 1e9;
   let hitT = 0, hitKill = 0, dmgT = 0, lastHitTime = -1e9;
   const segFlashT = new Float32Array(MAX_HP);
   const segState = new Int8Array(MAX_HP).fill(-1); // 0 off, 1 on, 2 błysk
@@ -142,6 +146,20 @@ export function createHud(rootEl) {
     const warn = !over && h > H.heatWarn ? 1 : 0;
     if (warn !== cWarn) { cWarn = warn; heat.classList.toggle('warn', warn === 1); }
     if (over !== cOver) { cOver = over; heat.classList.toggle('over', over === 1); }
+  }
+
+  /** Stamina: pasek tylko przy zmianie (cache), ukryty po hud.staminaHide s pełnego paska; brak pola → pełna. */
+  function updateStamina(player, dt) {
+    const b = player.body;
+    const v = typeof b.stamina === 'number' ? q(Math.min(1, Math.max(0, b.stamina)), 0.01) : 1;
+    if (v !== cStam) { cStam = v; stamFill.style.transform = 'scaleX(' + v + ')'; }
+    const exh = b.exhausted === true ? 1 : 0;
+    if (exh !== cStamExh) { cStamExh = exh; stam.classList.toggle('exh', exh === 1); }
+    const low = !exh && v < H.staminaLow ? 1 : 0;
+    if (low !== cStamLow) { cStamLow = low; stam.classList.toggle('low', low === 1); }
+    stamFullT = v >= 1 && !exh ? stamFullT + dt : 0;
+    const hide = stamFullT > H.staminaHide || player.state !== 'alive' ? 1 : 0;
+    if (hide !== cStamHide) { cStamHide = hide; stam.classList.toggle('hide', hide === 1); }
   }
 
   function updateStun(player) {
@@ -248,6 +266,7 @@ export function createHud(rootEl) {
     readEvents(player, sim);
     updateVitals(player);
     updateHeat(player);
+    updateStamina(player, dt);
     updateStun(player);
     updateCenter(player);
     updateElim(player, sim);
