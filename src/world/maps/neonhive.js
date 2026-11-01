@@ -333,10 +333,9 @@ export default {
     spawn(-18.9, 3.9, 3), spawn(-18.9, -3.9, 3),
   ],
   cams: [
-    { name: 'top', pos: [0, 26, 0.01], look: [0, 0, 0] }, // TMP-TOP
     { name: 'overview', pos: [-2.5, 4.2, -11], look: [0, 0, -3.7] },
     { name: 'corridor', pos: [16.9, 1.65, -2.4], look: [9.6, 1.3, 1.2] },
-    { name: 'plaza', pos: [0, 1.65, -4.3], look: [4.5, 1.3, 2.6] },
+    { name: 'plaza', pos: [1.6, 1.65, -3.6], look: [4.5, 1.3, 2.6] },
     { name: 'spawn', pos: [-18.9, 1.65, 3.9], look: [-13.5, 1.4, 0] },
     { name: 'corner', pos: [19.4, 1.65, -18.7], look: [11, 1.3, -12.5] },
     // okno strzeleckie komora centralna ↔ R ENE (widok z centrum przez otwór na filar R ENE i okno szprychy)

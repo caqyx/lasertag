@@ -113,7 +113,8 @@ createGraphics({ canvas, presetName }) → Graphics = {
 ```js
 createEventQueue(capacity) → Q = { push(type) → Rec, count, at(i) → Rec, clear() }   // pierścień prealokowanych rekordów
 Rec = { type, time, a, b, team, sensor, x, y, z, x2, y2, z2, value }   // a = sprawca (id), b = cel (id) lub -1
-EV = { SHOT:1, HIT:2, ELIM:3, RESPAWN:4, OVERHEAT:5, PROTECT_END:6 }   // stałe typów (eksport)
+EV = { SHOT:1, HIT:2, ELIM:3, RESPAWN:4, OVERHEAT:5, PROTECT_END:6, LAUNCH:7, BOUNCE:8, PROJ_END:9 }   // stałe typów (eksport)
+// D-037: Rec += { nx, ny, nz } — normalna powierzchni (SHOT w ścianę, BOUNCE, PROJ_END); pola wg typu: core/events.js
 ```
 Symulacja czyści kolejkę na początku `stepSim`? **Nie** — kolejka jest czyszczona przez właściciela pętli raz na klatkę renderu
 (po tym, jak render/HUD ją przeczytały), bo w jednej klatce może być kilka kroków symulacji.
@@ -134,8 +135,12 @@ SENSOR = { FRONT:0, BACK:1, LEFT:2, RIGHT:3 }
 
 ### 7.3 Broń (`src/game/weapon.js`)
 ```js
-createWeapon() → W = { heat, cooldown, sinceShot, overheated }
-stepWeapon(W, wantFire, dt) → boolean fired       // SPEC §2.3, CONFIG.weapon
+createWeapon(type = 'phaser') → W = { type, C /* CONFIG.weapons[type] */, heat, cooldown, sinceShot, overheated, burstLeft, burstTimer, held }
+stepWeapon(W, wantFire, dt) → boolean fired       // SPEC §2.3, CONFIG.weapons; seria (C.burst), semi-auto (C.semiAuto)
+randomWeaponType(rng), weaponType(id), WEAPON_TYPES, cancelBurst(W)   // D-037
+// src/game/projectiles.js (D-037): sim.proj = createProjectiles() (typed arrays: active, owner, bounces, x/y/z, vx/vy/vz,
+//   px/py/pz, sx/sy/sz, age, birth, count); launchProjectile(sim, P) (fireOne dla C.kind 'projectile'), stepProjectiles(sim, dt)
+//   (po fazie strzałów). Uczestnik: P.dmg = punkty HP utracone w bieżącym segmencie (CONFIG.combat.segmentPoints).
 ```
 
 ### 7.4 Walka (`src/game/combat.js`)

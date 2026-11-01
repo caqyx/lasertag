@@ -84,7 +84,7 @@ test('UV Maze: liczby i rodzaje brył, wysokości wg legendy', () => {
     assert.ok(s.hx > 0 && s.hz > 0);
     assert.equal(s.rot, 0);
   }
-  // 76 = układ „trzy linie” otwarty (D-037, 2026-11-01): 4 obwodowe, z siatki 32 ściany, 6 połówek, 4 filary,
+  // 76 = układ „trzy linie” otwarty (D-038, 2026-11-01): 4 obwodowe, z siatki 32 ściany, 6 połówek, 4 filary,
   // 4 okna 'ww' (N/S placu + lane W/E; parapet + nadproże = 8); z walls: 2 siatki, 4 stosy opon i 4 beczki (po 2 bryły
   // kolizji = 16); 4 drzwi przesuwne (doors). Było 74 (38 ścian, 2 okna, 2 stosy opon). Zmiana mapy = świadoma aktualizacja.
   assert.equal(world.solids.filter((s) => s.prop).length, 16);

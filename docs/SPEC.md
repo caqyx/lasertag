@@ -96,8 +96,11 @@ Jednostka = 1 m. Oś Y w górę. Oko gracza 1.65 m.
 ### 3.1 UV Maze (M0)
 - 36 × 36 m, jeden poziom, sufit 4.5 m (kratownica techniczna).
 - Labirynt na siatce 2 m: ściany pełne 2.4 m, osłony połówkowe 1.1 m, filary.
-- Układ „trzy linie” (od 2026-10-31, D-025): lane W, lane środkowy (przez okna 'hh' i plac), lane E; pasma poprzeczne N/S.
-- Korytarze 2–4 m, plac centralny 16×12 m z osłonami i 2 filarami, 2 małe place (NE/SW, z filarem) przy spawnach E/W.
+- Układ „trzy linie” (od 2026-10-31, D-025; otwarty 2026-11-01, D-038): lane W, lane środkowy (przez okna 'ww' i plac),
+  lane E; szerokie pasma poprzeczne N/S z wysepkami ścian.
+- Lane W/E i bramy pierścienia 4 m, plac centralny ~20×12 m (osłony, 2 filary, 2 stosy opon, okna 'ww' w ścianach N/S
+  oraz od lane W/E), 2 małe place (NE/SW, z filarem i beczkami) przy spawnach E/W.
+- 76 brył (z siatki 32 ściany, 6 osłon, 4 filary, 4 okna; 2 siatki, 4 stosy opon, 4 beczki, 4 drzwi, 4 obwodowe), 960 węzłów nav.
 - Zero ślepych zaułków; filary bez brył w sąsiedztwie 8 komórek (inaczej szczelina 0.7 m).
 - 8 spawnów po obwodzie (2 na stronę), drużynowe wg stron świata.
 - Paleta: magenta `#ff2bd6`, cyjan `#22e8ff`, fiolet UV `#7a3cff`, akcent kwaśna zieleń `#a6ff00`.
@@ -105,11 +108,15 @@ Jednostka = 1 m. Oś Y w górę. Oko gracza 1.65 m.
 ### 3.2 Neon Hive (M4)
 - ~40 m średnicy, plaster miodu: heksagonalne komory (promień ~4.5 m) połączone przejściami,
   większa komora centralna. Ściany pod kątami 0/60/120°.
+- Elementy (D-038): 3 pary okien strzeleckich w pełnych bokach (centrum ↔ R ENE/WSW, R N/S ↔ V NE/SW, szprychy
+  R ENE↔ESE / WSW↔WNW) i 2 pary stosów opon (oś N–S komory centralnej, narożniki NE/SW). 211 brył, 1065 węzłów nav.
 - Paleta: bursztyn `#ffb000`, pomarańcz `#ff5a1f`, cyjan `#18e0ff`, akcent róż `#ff3d9a`.
 
 ### 3.3 Reactor (M4)
 - 40 × 32 m, **2 poziomy**: parter + galeria/kładki na 3.2 m wokół centralnego rdzenia reaktora
   (świecący walec), 4 rampy, sufit 8 m.
+- Elementy (D-038, parter): okna strzeleckie w ścianie przed galerią N/S (2.4 m) i w ścianach lane E/W (1.6 m),
+  2 pary stosów opon (przy podstawie ramp N/S, przy galerii W/E). 80 brył, 1354 węzły nav.
 - Paleta: toksyczna zieleń `#39ff14`, cyjan `#00e5ff`, akcent czerwony ostrzegawczy `#ff2a2a`.
 
 ### 3.4 Orbita
@@ -290,3 +297,4 @@ tests/                unit/*.test.mjs (node --test), smoke/*.mjs (Playwright), t
 | D-036 | 2026-10-31 | `Target crashed` w smoke (2 z 8 pełnych przebiegów) = OOM-kill cgroup (dmesg: chrome-headless 5 GB RSS); RSS pojedynczej strony jak przed sesją (UV Maze 889 vs 891 MB, Hive 933 vs 968, Reactor 906 vs 905). Test bez zmian. | Ograniczenie środowiska (wiele przeglądarek SwiftShader równolegle), nie regresja aplikacji; ewentualnie `--jobs 2` przy uruchamianiu smoke w tym kontenerze. |
 | D-037 | 2026-11-01 | **Bronie + model obrażeń + brak celownika.** (1) Obrażenia w punktach: `combat.segmentPoints` = 4 punkty na segment; `P.hp` nadal = liczba segmentów (kontrakt HUD/botów/testów bez zmian), nowe `P.dmg` = punkty utracone w bieżącym segmencie (pełne 4 → −1 segment). Fazer zadaje 4 pkt (= dawne −1 HP), pistolet 2 pkt (½ segmentu), wyrzutnia 4. Punkty za trafienie proporcjonalne: `scoring.hit × dmg / segmentPoints` (seria pistoletu = 10 jak fazer); hit stun × `stunScale` broni. (2) Wyrzutnia: pocisk w sim (pula typed arrays, zero alokacji, deterministyczny), lot prostoliniowy bez grawitacji; **każda powierzchnia** (ściana, przeszkoda, rampa, podłoga, sufit) liczy się jako kontakt — 1. kontakt = odbicie lustrzane v − 2(v·n)n, 2. = znika; siatki maskujące przepuszczają (jak hitscan). Start z wylotu lufy awatara w kierunku punktu celowania z oka; strzelec nie trafia sam siebie, sojusznicy przepuszczani. Nowe zdarzenia LAUNCH/BOUNCE/PROJ_END i pola rekordu nx/ny/nz (normalna powierzchni, także w SHOT przy trafieniu w ścianę → odłamki). (3) Celownik usunięty całkowicie (bez zamiennika); broń FPP bliżej osi wzroku (`viewModel.weapons[typ].muzzle`), bez zmiany FOV. (4) Odłamki lasera = rozbudowane iskry z beams.js (ta sama pula, 1 draw call): kierunek odbity od normalnej + rozrzut, grawitacja, jedno słabe odbicie od podłogi (analitycznie w shaderze), życie 0.6–1.2 s. | Ułamkowe HP przez osobne pole zamiast skali `hp` × 4 — istniejące testy/boty/HUD ustawiają i czytają `hp` jako segmenty. Podłoga jako kontakt: jedna, przewidywalna reguła („drugi kontakt z czymkolwiek”) i strzały odbijane od podłogi pod przeszkodą; pocisk bez grawitacji, bo to impuls lasera, a tor prosty ułatwia odbicia zza rogu. Pozostałe bronie hitscan liczone w sim jak fazer (te same sensory/kapsuły). |
 | D-039 | 2026-11-01 | Menu: zakładki SOLO / MULTIPLAYER; MULTIPLAYER → **Custom** (lokalnie z botami): 2–4 drużyny × 1…⌊16/drużyny⌋ osób, jedna liczebność dla wszystkich drużyn (`CONFIG.modes.custom`); sloty `{ team, kind: local/bot/remote }` (remote = typ pod M5, do czasu sieci bot). Spawny: 2 drużyny `sp.team % 2`, 3–4 drużyny `sp.team === team`. Punkt przesunięty od zajętego spawnu wolny przy luzie `combat.spawnOffsetClear` 0.8 m (zamiast `spawnOccupiedRadius` 1.5 m) i szukany wokół kolejnych dozwolonych spawnów. Numer D-037/D-038 zajęty w kodzie przez równoległe prace (bronie, mapy, render). | Jedna wartość „osób w drużynie” = prostszy, czytelny UI i równe drużyny; per-drużyna niepotrzebne bez sieci. Przy 3 drużynach % 3 dawało drużynie 0 dwie strony (N+W) — nierówno. `spawnOccupiedRadius` > `spawnOffset` sprawiał, że uczestnik stojący na spawnie blokował każdy punkt przesunięty: przy 16 osobach na 8 spawnach kilka ciał startowało w tym samym punkcie (test custom: min. odstęp ≥ 2 × promień ciała na wszystkich mapach). |
+| D-038 | 2026-11-01 | Mapy: okna strzeleckie i stosy opon w Neon Hive (6 okien w pełnych bokach heksów pod 0/60°, tabela `WINDOWS` z przesunięciem jak `DOORS`; 4 opony), Reactor (4 okna na parterze w miejsce części ścian, 4 opony) i UV Maze (2 nowe okna 'ww' lane W/E, 2 nowe stosy opon). UV Maze otwarty: 20 komórek ścian mniej (78 → 58; 2 → osłony, 4 → okna), szersze bramy pierścienia i lane W/E 4 m, plac ~20×12 m; ściana r3 c3 (r14 c14) zostaje, bo bez niej lane W/E dawał linię spawn N ↔ spawn S przez okno. Bryły: UV Maze 74 → 76 (test mapgen), Hive 185 → 211, Reactor 60 → 80; węzły nav 912 → 960, 1081 → 1065, 1368 → 1354. Makro `window` z mapgen bez zmian (obsługuje `rot`). | Decyzja użytkownika („więcej wolnych korytarzy i przestrzeni”, więcej elementów). Bramki PROMPT-MAPY + nowa: żadna linia wzroku z otoczenia spawnu (±1.5 m, oko 1.65) na spawn wrogiej drużyny nie przechodzi przez otwór nowego okna — w Hive wymusiło to przesunięcie okna centrum ↔ R ENE ku narożnikowi (w środku boku tworzyło linię spawn E ↔ spawn W przez całą mapę). Reactor: okna tylko na parterze — makro okna nie ma `y` (galeria wymagałaby zmiany mapgen). |

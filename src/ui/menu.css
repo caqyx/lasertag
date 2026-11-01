@@ -497,7 +497,7 @@
 }
 
 /* --- BROŃ (D-037): 3 kompaktowe karty broni gracza --- */
-.lt-mn-weaponcard { --c: var(--neon-magenta); padding: 9px 12px; }
-.lt-mn-weaponcard .lt-mn-card-top { margin-bottom: 4px; }
+.lt-mn-weaponcard { --c: var(--neon-magenta); padding: 8px 12px; }
+.lt-mn-weaponcard .lt-mn-card-top { margin-bottom: 2px; }
 .lt-mn-weaponcard .lt-mn-card-tag { color: var(--neon-magenta); border-color: rgba(255, 43, 214, 0.45); }
 .lt-mn-weaponcard .lt-mn-card-desc { margin-top: 3px; font-size: 11px; }

@@ -163,7 +163,6 @@ export default {
     spawn(-18.5, 5.5, 3, DECK), spawn(-18.5, -5.5, 3, DECK),
   ],
   cams: [
-    { name: 'top', pos: [0, 26, 0.01], look: [0, 0, 0] }, // TMP-TOP
     // pod sufitem (0.4 m) nad ćwiartką NW, ukośnie: rdzeń, galeria N/E/W/S, rampy N i W
     { name: 'overview', pos: [-15, 7.6, -14], look: [2, 0, 2] },
     // przejście pod balkonem W, kładką i galerią W, widok wzdłuż osi na rdzeń

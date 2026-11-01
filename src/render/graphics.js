@@ -15,6 +15,7 @@ import { createRng } from '../core/rng.js';
 import { buildArena, lightColorHex, lampPosition, darkNormFor, paletteFor, LAYER_NO_REFLECT } from './arenaBuilder.js';
 import { createSmoke } from './smoke.js';
 import { createDecor } from './decor.js';
+import { createAtmoUniforms, createCeilingLights } from './ceilingLights.js';
 
 const R = CONFIG.render;
 
@@ -60,6 +61,8 @@ export function createGraphics({ canvas, presetName = CONFIG.defaults.preset }) 
   let arena = null;
   let decor = null;
   let smoke = null;
+  let heads = null;
+  const atmo = createAtmoUniforms();   // snopy ruchomych głowic: wspólne uniformy podłogi/ścian/dymu (D-038)
   let composer = null, bloomPass = null, fxaaPass = null, outputPass = null, renderPass = null, guardPass = null;
   const size = new THREE.Vector2();
   const fogTintColor = new THREE.Color();
@@ -140,6 +143,7 @@ export function createGraphics({ canvas, presetName = CONFIG.defaults.preset }) 
 
   function disposeWorldContent() {
     if (smoke) { smoke.dispose(); smoke = null; }
+    if (heads) { heads.dispose(); heads = null; }
     if (arena) { arena.dispose(); arena = null; }
     if (decor) { decor.dispose(); decor = null; }
     if (textures) { textures.disposeAll(); textures = null; }
@@ -155,13 +159,15 @@ export function createGraphics({ canvas, presetName = CONFIG.defaults.preset }) 
     });
     decor = createDecor(world, preset);
     scene.add(decor.group);
-    arena = buildArena(world, preset, textures, { renderer, covers: decor.covers });
+    arena = buildArena(world, preset, textures, { renderer, covers: decor.covers, atmo });
     scene.add(arena.group);
     renderer.getDrawingBufferSize(size);
     arena.setSize(size.x, size.y);
     smoke = createSmoke(world, preset.smoke, createRng((world.seed ^ CONFIG.smoke.seedSalt) >>> 0),
-      { texture: preset.smoke > 0 ? textures.get('smoke') : null });
+      { texture: preset.smoke > 0 ? textures.get('smoke') : null, atmo });
     if (smoke.mesh) { smoke.mesh.layers.set(LAYER_NO_REFLECT); scene.add(smoke.mesh); }
+    heads = createCeilingLights(world, preset, atmo);
+    if (heads.group) scene.add(heads.group);
   }
 
   function applyFog() {
@@ -218,6 +224,7 @@ export function createGraphics({ canvas, presetName = CONFIG.defaults.preset }) 
     if (smoke) smoke.update(dt, camera);
     if (arena) arena.update(time);
     if (decor) decor.update(time);
+    if (heads) heads.update(time);
   }
 
   function render() {

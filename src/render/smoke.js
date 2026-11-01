@@ -2,15 +2,18 @@
 // createSmoke(world, count, rng, opts?) → { mesh, update(dt, camera), dispose() }
 //   rng: funkcja () → [0,1) albo obiekt { next() } (src/core/rng.js).
 //   opts.texture: tekstura 'smoke' z textures.js (gdy brak — moduł tworzy własną i ją zwalnia).
+//   opts.atmo: wspólne uniformy snopów ruchomych głowic (ceilingLights.js) — kłąb w snopie łapie jego kolor (D-038).
 // Jeden draw call: InstancedMesh quadów; billboard, dryf i rotacja w vertex shaderze (zero pracy CPU w update).
 // Mieszanie addytywne (dym rozprasza światło UV — w ciemnej scenie daje „świecącą mgiełkę", nigdy szarą zasłonę).
 import * as THREE from 'three';
 import { CONFIG } from '../config.js';
 import { createTextures } from './textures.js';
 import { lightColorHex, lampPosition, paletteFor, darkNormFor } from './arenaBuilder.js';
+import { MAX_SPOTS } from './ceilingLights.js';
 
 const SM = CONFIG.smoke;
 const MAX_LIGHTS = SM.maxLights;
+const MH = CONFIG.render.movingHeads;
 
 const VERT = /* glsl */`
 attribute vec4 aParams;   // x faza, y prędkość obrotu (rad/s, ze znakiem), z rozmiar, w mieszanie odcienia
@@ -24,8 +27,14 @@ uniform vec3 lightPos[${MAX_LIGHTS}];
 uniform vec3 lightCol[${MAX_LIGHTS}];
 uniform float lightRange[${MAX_LIGHTS}];
 uniform int lightCount;
+uniform vec4 spotPos[${MAX_SPOTS}];   // snopy głowic: xyz początek, w długość
+uniform vec4 spotDir[${MAX_SPOTS}];   // xyz kierunek, w cos kąta połówkowego
+uniform vec3 spotCol[${MAX_SPOTS}];
+uniform int spotCount;
+uniform float beamGain;
 varying vec2 vUv;
 varying vec3 vColor;
+varying vec3 vBeam;
 varying float vDepth;
 varying float vCenterDepth;
 varying float vWorldY;
@@ -49,6 +58,20 @@ void main() {
     col += lightCol[i] * k * k;
   }
   vColor = col;
+  // snopy ruchomych głowic: odległość środka kłębu od osi snopu (do przeszkody) → kolor snopu (snop „rysuje się" w dymie)
+  float size0 = aParams.z;
+  vec3 bc = vec3(0.0);
+  for (int i = 0; i < ${MAX_SPOTS}; i++) {
+    if (i >= spotCount) break;
+    vec3 v = pos - spotPos[i].xyz;
+    float t = clamp(dot(v, spotDir[i].xyz), 0.0, spotPos[i].w);
+    float perp = length(v - spotDir[i].xyz * t);
+    float co = spotDir[i].w;
+    float r = sqrt(max(1.0 - co * co, 0.0)) / co * t + size0 * ${MH.smokeWidth.toFixed(3)};
+    float k = 1.0 - smoothstep(r * 0.4, r + size0 * 0.25, perp);
+    bc += spotCol[i] * k * k / (1.0 + t * ${MH.beamFalloff.toFixed(3)});
+  }
+  vBeam = bc * beamGain;
   vec4 mvC = modelViewMatrix * vec4(pos, 1.0);
   vCenterDepth = -mvC.z;
   float size = aParams.z * (1.0 + 0.08 * sin(time * 0.11 + ph * 9.0));
@@ -81,6 +104,7 @@ varying float vWorldY;
 uniform float ceilY;
 uniform float planeFade;
 varying float vAlpha;
+varying vec3 vBeam;
 uniform vec3 hiFade;   // x..y: wysokość przejścia (m), z: jasność powyżej
 void main() {
   float d = texture2D(map, vUv).r;
@@ -91,7 +115,7 @@ void main() {
   float a = d * opacity * vAlpha * near * fogF;
   // powyżej wysokości ścian: ciemniej i bez koloru (brak barwnej „zupy" pod sufitem)
   float hi = smoothstep(hiFade.x, hiFade.y, vWorldY);
-  vec3 col = mix(vColor, vec3(dot(vColor, vec3(0.2126, 0.7152, 0.0722))) * hiFade.z, hi);
+  vec3 col = mix(vColor, vec3(dot(vColor, vec3(0.2126, 0.7152, 0.0722))) * hiFade.z, hi) + vBeam;
   gl_FragColor = vec4(col * a, 1.0);
 }`;
 
@@ -106,6 +130,8 @@ export function createSmoke(world, count, rng, opts = {}) {
     texture = ownTextures.get('smoke');
   }
 
+  count = Math.round(count * (SM.countMap[world.id] ?? 1));
+  const atmo = opts.atmo || null;
   const geo = new THREE.PlaneGeometry(1, 1);
   const params = new Float32Array(count * 4);
   const pal = world.palette;
@@ -139,6 +165,12 @@ export function createSmoke(world, count, rng, opts = {}) {
       ceilY: { value: world.ceiling },
       planeFade: { value: SM.planeFade },
       hiFade: { value: new THREE.Vector3(SM.hiFade[0], SM.hiFade[1], SM.hiFade[2]) },
+      // snopy: wspólne obiekty uniformów (wartości zmienia ceilingLights.update); bez głowic — spotCount 0
+      spotPos: atmo ? atmo.spotPos : { value: emptyV4() },
+      spotDir: atmo ? atmo.spotDir : { value: emptyV4() },
+      spotCol: atmo ? atmo.spotCol : { value: emptyV3() },
+      spotCount: atmo ? atmo.spotCount : { value: 0 },
+      beamGain: { value: MH.smokeGain * (SM.beamGainMap[world.id] ?? 1) },
     },
     vertexShader: VERT,
     fragmentShader: FRAG,
@@ -164,7 +196,7 @@ export function createSmoke(world, count, rng, opts = {}) {
     const band = r0 < SM.lowShare ? SM.lowBand
       : r0 < SM.lowShare + SM.midShare ? SM.midBand
         : r0 < SM.lowShare + SM.midShare + SM.highShare ? SM.highBand : [SM.heightMin, SM.heightMax];
-    const top = Math.min(band[1], world.ceiling - 0.45);
+    const top = Math.min(band === SM.highBand ? world.ceiling - SM.highCeilGap : band[1], world.ceiling - 0.45);
     const layer = rnd();
     const y = band[0] + layer * Math.max(0, top - band[0]);
     // środek kłębu w wolnej przestrzeni (nie w bryle) — inaczej marnuje się w ścianie
@@ -188,7 +220,7 @@ export function createSmoke(world, count, rng, opts = {}) {
     mtx.elements[0] = amp;    // amplituda dryfu w instanceMatrix[0][0] (translacja w [3])
     mtx.elements[5] = aspect; // proporcje smugi w [1][1]
     const mid = band === SM.midBand;
-    mtx.elements[10] = mid ? SM.midOpacity : band === SM.lowBand ? SM.lowOpacity : 1;   // mnożnik krycia w [2][2]
+    mtx.elements[10] = mid ? SM.midOpacity : band === SM.lowBand ? SM.lowOpacity : band === SM.highBand ? SM.highOpacity : 1;   // mnożnik krycia w [2][2]
     mtx.elements[1] = mid ? SM.midGlow : 1;       // mnożnik jasności bazowej w [0][1]
     mesh.setMatrixAt(i, mtx);
     params[i * 4 + 2] = size;
@@ -211,6 +243,9 @@ export function createSmoke(world, count, rng, opts = {}) {
     },
   };
 }
+
+function emptyV4() { const a = []; for (let i = 0; i < MAX_SPOTS; i++) a.push(new THREE.Vector4()); return a; }
+function emptyV3() { const a = []; for (let i = 0; i < MAX_SPOTS; i++) a.push(new THREE.Vector3()); return a; }
 
 function insideAnySolid(world, x, y, z, margin) {
   for (const s of world.solids) {

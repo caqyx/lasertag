@@ -472,26 +472,27 @@ export const CONFIG = Object.freeze({
       lensIntensity: 3.2,           // HDR → bloom
       lensFogKeep: 0.6,             // soczewka mniej tonie we mgle
       beamSegments: 16, beamRows: 6,
-      beamOpacity: 0.32,
+      beamOpacity: 0.36,
       beamNoSmoke: 0.6,             // × krycie snopu bez dymu (Low)
       beamIntensity: 1.0,
       beamIntensityMap: { neonhive: 0.75, reactor: 0.9 },
-      beamEdge: [0.15, 1.0],        // fresnel boków stożka
-      beamFalloff: 0.18,            // 1/(1 + d·k)
+      beamEdge: [0.1, 1.0],         // fresnel boków stożka (smoothstep facing)^beamEdgePow
+      beamEdgePow: 3,
+      beamFalloff: 0.1,             // 1/(1 + d·k)
       beamStart: 0.25,              // m od soczewki — miękki początek
       beamEndFade: 0.6, beamEndDim: 0.6,
-      beamNoise: 0.4,
+      beamNoise: 0.55,
       beamNear: [0.5, 2.5],         // m od kamery — snop nie oślepia
       beamFog: 0.5,
-      spotIntensity: 0.55,          // plamy na powierzchniach (emisja, × kolor głowicy)
+      spotIntensity: 1.15,          // plamy na powierzchniach (emisja, × kolor głowicy)
       spotIntensityMap: { neonhive: 0.7, reactor: 0.85 },
-      spotWall: 0.45,               // × plamy na ścianach (farba UV nie jest zalewana)
+      spotWall: 0.35,               // × plamy na ścianach (farba UV nie jest zalewana)
       spotFloor: 1.0,
       spotEdge: 0.55,               // r (0 oś … 1 krawędź), od którego plama miękko gaśnie
       goboBase: 0.55, goboRing: [0.45, 0.75],   // gobo: środek przygaszony, jaśniejszy pierścień
       spotSlack: [0.12, 0.35],      // m za punktem trafienia — plama tylko na pierwszej przeszkodzie
       spotRef: 3.0,                 // m — osłabienie 1/d powyżej tej odległości
-      smokeGain: 0.9,               // dym: ile koloru snopu łapie kłąb w snopie
+      smokeGain: 2.2,               // dym: ile koloru snopu łapie kłąb w snopie
       smokeWidth: 0.35,             // × rozmiar kłębu dodawany do promienia snopu (kłąb częściowo w snopie)
     },
   },
@@ -503,15 +504,15 @@ export const CONFIG = Object.freeze({
     },
     medium: {
       pixelRatio: 1.0, aa: 'fxaa', bloom: { strength: 0.75, radius: 0.0, threshold: 0.42, scale: 0.5 },
-      smoke: 24, heads: 6, headSpots: true, pointLights: 2, envReflections: false, texSize: 512, anisotropy: 2,
+      smoke: 40, heads: 6, headSpots: true, pointLights: 2, envReflections: false, texSize: 512, anisotropy: 2,
     },
     high: {
       pixelRatio: 1.5, aa: 'msaa', bloom: { strength: 0.82, radius: 0.0, threshold: 0.4, scale: 1.0 },
-      smoke: 64, heads: 8, headSpots: true, pointLights: 4, envReflections: true, texSize: 1024, anisotropy: 4,
+      smoke: 104, heads: 8, headSpots: true, pointLights: 4, envReflections: true, texSize: 1024, anisotropy: 4,
     },
     ultra: {
       pixelRatio: 2.0, aa: 'msaa', bloom: { strength: 0.9, radius: 0.0, threshold: 0.4, scale: 1.0 },
-      smoke: 128, heads: 8, headSpots: true, pointLights: 6, envReflections: true, texSize: 1024, anisotropy: 8,
+      smoke: 192, heads: 8, headSpots: true, pointLights: 6, envReflections: true, texSize: 1024, anisotropy: 8,
     },
   },
 
@@ -525,7 +526,7 @@ export const CONFIG = Object.freeze({
   smoke: {
     sizeMin: 3.5,
     sizeMax: 7.0,
-    opacity: 0.085,          // runda renderu 2026-10-31: 0.07 → 0.085 (dym widoczny w powietrzu, D-034)
+    opacity: 0.11,          // D-038: 0.085 → 0.11 (gęstsza atmosfera; wcześniej 0.07 → 0.085 w D-034)
     drift: 0.18,            // m/s
     heightMin: 0.4,
     heightMax: 3.2,
@@ -544,21 +545,25 @@ export const CONFIG = Object.freeze({
     sizeFloor: 0.9,         // min. rozmiar kłębu w ciasnych miejscach
     sizePerClearance: 2.4,  // rozmiar ≤ (prześwit − dryf) × to (brak przecięć ze ścianami)
     lowBand: [0.25, 1.0],   // warstwa dolna (m) — równomierna przyziemna mgiełka
-    highBand: [3.0, 4.2],   // warstwa podsufitowa (m)
-    lowShare: 0.3,
+    highBand: [2.6, 4.2],   // warstwa podsufitowa (m); górna granica = sufit − highCeilGap (snopy głowic widoczne w dymie)
+    highCeilGap: 0.8,
+    highOpacity: 0.8,       // × krycie warstwy podsufitowej
+    lowShare: 0.25,
     lowOpacity: 0.6,        // × krycie płacht przyziemnych (czytane jako płaskie plamy-decale na podłodze)
     midBand: [1.0, 2.4],    // warstwa środkowa (m) — kłęby na wysokości oka/listew, łapią kolor lamp
-    midShare: 0.6,
+    midShare: 0.5,
     midAspect: [1.3, 2.0],  // bliżej kuli niż płachty przyziemne
     midSize: 0.75,          // × zakres rozmiaru (mniejsze niż płachty, większe niż podsufitowe)
-    midOpacity: 2.6,        // × krycie warstwy środkowej (addytywny ciemny odcień — inaczej niewidoczna poza stożkami lamp)
+    midOpacity: 2.9,        // × krycie warstwy środkowej (addytywny ciemny odcień — inaczej niewidoczna poza stożkami lamp)
     midGlow: 1.8,           // × jasność bazowa warstwy środkowej
-    highShare: 0.0,         // bez warstwy podsufitowej (lokalne kule przy lampach)
+    highShare: 0.17,        // D-038: warstwa podsufitowa wraca (snopy głowic i lamp przecinają dym); reszta do 1 — losowo w [heightMin, heightMax]
     aspect: [2.2, 3.6],     // kłęby jako poziome smugi (szerokość / wysokość)
     tilt: 0.25,             // maks. przechył smugi (rad)
     fogMix: 0.6,            // odcień bazowy = lerp(uv palety, mgła, fogMix) — ciemny, chłodny
     maxLights: 8,           // lampy łapane przez dym (uniform array)
     seedSalt: 0x5307e,
+    countMap: { reactor: 1.35 },   // × liczba kłębów presetu per mapa (Reactor: strop 8 m — większa objętość)
+    beamGainMap: {},               // × render.movingHeads.smokeGain per mapa
   },
 
   // Efekty strzału (render/beams.js). Jasności > 1 = HDR → bloom.
@@ -597,7 +602,7 @@ export const CONFIG = Object.freeze({
       restitution: 0.3,       // odbicie od podłogi: składowa pionowa × to
       friction: 0.5,          // … pozioma × to
       streak: 0.03,           // s — długość smugi = prędkość × to
-      width: 0.016,           // m
+      width: 0.02,            // m
       intensity: 3.0,
       hitLife: 0.6,           // × life dla trafienia w uczestnika (krótsze iskry)
     },
@@ -677,9 +682,9 @@ export const CONFIG = Object.freeze({
     // recoil = × recoilKick/recoilPitch. Broń bliżej twarzy (bliżej osi wzroku niż dawne [0.237, −0.2, −0.55]) — bez celownika
     // lufa wskazuje kierunek strzału; viewModel.muzzleWorld() zwraca faktyczny wylot (start wiązki gracza).
     weapons: {
-      phaser: { muzzle: [0.15, -0.145, -0.52], scale: 0.72, recoil: 1 },
-      pistol: { muzzle: [0.13, -0.13, -0.42], scale: 0.72, recoil: 0.7 },
-      bouncer: { muzzle: [0.15, -0.15, -0.52], scale: 0.72, recoil: 1.5 },
+      phaser: { muzzle: [0.13, -0.125, -0.5], scale: 0.72, recoil: 1 },
+      pistol: { muzzle: [0.11, -0.11, -0.4], scale: 0.72, recoil: 0.7 },
+      bouncer: { muzzle: [0.13, -0.13, -0.5], scale: 0.72, recoil: 1.5 },
     },
     bodyColor: '#0e0c16',
     roughness: 0.75,

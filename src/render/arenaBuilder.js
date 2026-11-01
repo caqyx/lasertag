@@ -8,6 +8,7 @@
 //   setSize(w, h),                              // rozmiar bufora rysowania (px) — dla odbicia
 // }
 //   opts.renderer — gdy podany i preset.envReflections: envMap podłogi z PMREMGenerator.fromScene (raz, przy budowie).
+//   opts.atmo — wspólne uniformy snopów ruchomych głowic (ceilingLights.createAtmoUniforms): plamy na podłodze i ścianach.
 //
 // Konwencja obrotu brył (jak Object3D.rotation.y = rot):
 //   world.x = cx + lx·cos + lz·sin,   world.z = cz − lx·sin + lz·cos   (cos = cos(rot), sin = sin(rot))
@@ -18,6 +19,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { CONFIG } from '../config.js';
 import { PAINT_STYLES, SIGN_CELLS } from './textures.js';
 import { createRng } from '../core/rng.js';
+import { SPOT_FRAG_DECL, SPOT_VERT_DECL, SPOT_VERT_MAIN, bindSpotUniforms } from './ceilingLights.js';
 
 const A = CONFIG.render.arena;
 const TX = CONFIG.render.textures;
@@ -756,11 +758,12 @@ function addSteelRamp(steelBuf, paintBuf, trimBuf, r, warnCol, sideCol) {
 // ---------------------------------------------------------------- shadery
 
 // ściany: maski farby (R/G/B) → kolory per bryła; poświata UV od listwy gasnąca w dół; delikatne krawędzie pionowe
-function patchWallMaterial(mat, accentLin, reflPass) {
+function patchWallMaterial(mat, accentLin, reflPass, atmo) {
   const TS = TX.paintSharpen;
   mat.onBeforeCompile = (sh) => {
     sh.uniforms.uAccent = { value: accentLin };
     sh.uniforms.uPaintK = reflPass;
+    if (atmo) bindSpotUniforms(sh, atmo);
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', `#include <common>
 attribute vec3 aPaintA;
@@ -771,10 +774,12 @@ varying vec3 vPaintA;
 varying vec3 vPaintB;
 varying vec3 vWash;
 varying vec4 vWall;
-varying float vWY;`)
+varying float vWY;
+${atmo ? SPOT_VERT_DECL : ''}`)
       .replace('#include <fog_vertex>', `#include <fog_vertex>
 vPaintA = aPaintA; vPaintB = aPaintB; vWash = aWash; vWall = aWall;
-vWY = (modelMatrix * vec4(transformed, 1.0)).y;`);
+vWY = (modelMatrix * vec4(transformed, 1.0)).y;
+${atmo ? SPOT_VERT_MAIN : ''}`);
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', `#include <common>
 uniform vec3 uAccent;
@@ -783,7 +788,8 @@ varying vec3 vPaintA;
 varying vec3 vPaintB;
 varying vec3 vWash;
 varying vec4 vWall;
-varying float vWY;`)
+varying float vWY;
+${atmo ? SPOT_FRAG_DECL : ''}`)
       .replace('#include <emissivemap_fragment>', `
 #ifdef USE_EMISSIVEMAP
   vec3 pm = texture2D( emissiveMap, vEmissiveMapUv ).rgb;
@@ -821,18 +827,20 @@ varying float vWY;`)
 #endif
     totalEmissiveRadiance += vWash * wash * wtex;
   }
+  ${atmo ? `totalEmissiveRadiance += spotLight( ${CONFIG.render.movingHeads.spotWall.toFixed(3)} );` : ''}
 `);
   };
-  mat.customProgramCacheKey = () => 'lt-wall';
+  mat.customProgramCacheKey = () => (atmo ? 'lt-wall-s' : 'lt-wall');
 }
 
 // podłoga: odbicie planarne (RT z kamerą odbitą, mipmapy + smuga pionowa) × połysk × Fresnel; bez odbicia gdy brak RT
-function patchFloorMaterial(mat, uniforms) {
+function patchFloorMaterial(mat, uniforms, atmo) {
   mat.onBeforeCompile = (sh) => {
     Object.assign(sh.uniforms, uniforms);
+    if (atmo) bindSpotUniforms(sh, atmo);
     sh.vertexShader = sh.vertexShader
-      .replace('#include <common>', '#include <common>\nvarying vec2 vFW;')
-      .replace('#include <fog_vertex>', '#include <fog_vertex>\n  vFW = ( modelMatrix * vec4( transformed, 1.0 ) ).xz;');
+      .replace('#include <common>', '#include <common>\nvarying vec2 vFW;\n' + (atmo ? SPOT_VERT_DECL : ''))
+      .replace('#include <fog_vertex>', '#include <fog_vertex>\n  vFW = ( modelMatrix * vec4( transformed, 1.0 ) ).xz;\n' + (atmo ? SPOT_VERT_MAIN : ''));
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', `#include <common>
 uniform sampler2D tReflect;
@@ -847,6 +855,7 @@ uniform float reflFade;      // droga zaniku odbicia (m), per mapa   // czerwone
 uniform vec4 maskRect[ ${MAX_MASK} ];   // cx, cz, hx, hz
 uniform vec2 maskRot[ ${MAX_MASK} ];    // cos, sin
 varying vec2 vFW;
+${atmo ? SPOT_FRAG_DECL : ''}
 // 1 pod platformą (z miękkim brzegiem) — tam lustro y=0 dawałoby błędne odbicia
 float floorMask() {
   float m = 0.0;
@@ -891,9 +900,10 @@ float floorMask() {
     float fres = ${A.reflect.f0.toFixed(3)} + ( 1.0 - ${A.reflect.f0.toFixed(3)} ) * pow( 1.0 - ndv, 5.0 );
     totalEmissiveRadiance += rc * reflStrength * fres * ( 1.0 - floorMask() );
   }
+  ${atmo ? `totalEmissiveRadiance += spotLight( ${CONFIG.render.movingHeads.spotFloor.toFixed(3)} );` : ''}
 `);
   };
-  mat.customProgramCacheKey = () => 'lt-floor';
+  mat.customProgramCacheKey = () => (atmo ? 'lt-floor-s' : 'lt-floor');
 }
 
 // neon: bliskie listwy przygaszone (bez płaskiej, grubej plamy bloomu), mgła działa częściowo (zarys w oddali)
@@ -1269,7 +1279,7 @@ export function buildArena(world, preset, textures, opts = {}) {
       color: wallColor, map: wallMap, roughness: A.wallRoughness, metalness: 0,
       emissive: 0xffffff, emissiveIntensity: 1, emissiveMap: emap || null,
     }));
-    patchWallMaterial(mat, accentLin, reflPassU);
+    patchWallMaterial(mat, accentLin, reflPassU, opts.atmo);
     return mat;
   };
   for (const st of PAINT_STYLES) {
@@ -1566,7 +1576,7 @@ export function buildArena(world, preset, textures, opts = {}) {
       emissive: new THREE.Color(A.floorGrid[world.id] || world.palette.uv), emissiveMap: textures.get('floor:emissive'),
       emissiveIntensity: A.floorEmissiveIntensity * (A.floorEmissiveMap[world.id] ?? 1) * darkNorm,
     }));
-    patchFloorMaterial(floorMat, floorUniforms);
+    patchFloorMaterial(floorMat, floorUniforms, opts.atmo);
     floorMesh = new THREE.Mesh(geo, floorMat);
     floorMesh.name = 'floor';
     floorMesh.layers.set(LAYER_NO_REFLECT);

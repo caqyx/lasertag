@@ -6,7 +6,7 @@
 // (parapet 1.1 m + nadproże od 1.85 m — CONFIG.elements.window), '.' pusto. Elementy poza siatką: walls (opony, beczki, siatki).
 //
 // Układ „trzy linie" (symetria obrotowa 180° wokół środka — (r, c) ↔ (17−r, 17−c); uczciwe strony N↔S i E↔W).
-// Od D-037 otwarty: 20 komórek ścian mniej (78 → 58), z czego 2 → osłony 'h', 4 → okna 'w', reszta wolna:
+// Od D-038 otwarty: 20 komórek ścian mniej (78 → 58), z czego 2 → osłony 'h', 4 → okna 'w', reszta wolna:
 //  - pierścień zewnętrzny (wiersze/kolumny 0 i 17) = korytarz spawnów; siatki N/S (x = 0) dzielą go na połowy,
 //    ściany pierścienia (wiersze 1/16, kolumny 1/16) mają szerokie bramy (4 m przy narożnikach, 4–6 m w kolumnach 1/16),
 //  - 3 linie N–S: lane W (kolumny 2–3, okno 'ww' w c3 przy placu), lane środkowy (c8–9: okno 'ww' → plac → okno 'ww'),
@@ -69,7 +69,7 @@ export default {
     pillarSize: 0.6,
   },
   // Elementy (CONFIG.elements), każdy z obrazem 180°: siatki zamiast ostróg N/S (połowy pasa spawnów widzą się, nie przejdą),
-  // stosy opon na placu centralnym (zamiast osłon 'h') i w lane W/E przy bramie pierścienia (r6–7 / r10–11, D-037),
+  // stosy opon na placu centralnym (zamiast osłon 'h') i w lane W/E przy bramie pierścienia (r6–7 / r10–11, D-038),
   // para beczek na placu NE (i SW).
   walls: [
     { kind: 'net', x: 0, z: -17, w: 0.08, d: 2, rot: 0 }, { kind: 'net', x: 0, z: 17, w: 0.08, d: 2, rot: 0 },
@@ -109,7 +109,6 @@ export default {
   ],
   // Kamery debug (pozycje sprawdzone skryptem: poza bryłami, widok na ≥ 12 m sceny).
   cams: [
-    { name: 'top', pos: [0, 26, 0.01], look: [0, 0, 0] }, // TMP-TOP
     // wysoko pod sufitem w rogu NW, ukośnie nad szczytami ścian przez całą arenę
     { name: 'overview', pos: [-17.2, 4.3, -17.2], look: [4, 0, 4] },
     // długi korytarz północny (wiersz 2) na wysokości oka, patrzy na zachód

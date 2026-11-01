@@ -220,8 +220,8 @@ export function createMenu(rootEl, opts, onStart) {
     const lab = WEAPON_LABELS[id] || [id.toUpperCase(), ''];
     const card = el(rWeapon.list, 'lt-mn-card lt-mn-modecard lt-mn-weaponcard');
     const top = el(card, 'lt-mn-card-top');
+    el(top, 'lt-mn-card-name', CONFIG.weapons[id].name);
     el(top, 'lt-mn-card-tag', lab[0]);
-    el(card, 'lt-mn-card-name', CONFIG.weapons[id].name);
     el(card, 'lt-mn-card-desc', lab[1]);
     addItem(rWeapon, id, card);
   }

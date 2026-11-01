@@ -170,7 +170,7 @@ varying vec3 vWP;
 varying float vFogDepth;
 void main() {
   float facing = clamp( abs( dot( vN, vV ) ), 0.0, 1.0 );
-  float edge = smoothstep( ${H.beamEdge[0].toFixed(2)}, ${H.beamEdge[1].toFixed(2)}, facing ); edge *= edge;
+  float edge = pow( smoothstep( ${H.beamEdge[0].toFixed(2)}, ${H.beamEdge[1].toFixed(2)}, facing ), ${H.beamEdgePow.toFixed(1)} );
   // jasno przy soczewce, słabiej dalej (rozpraszanie w dymie); miękki początek i koniec
   float dist = vT * vLen;
   float fall = 1.0 / ( 1.0 + dist * ${H.beamFalloff.toFixed(3)} );
