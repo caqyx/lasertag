@@ -638,7 +638,14 @@ function steerAim(B, P) {
   const T = B.target;
   if ((B.state === BOT_STATE.ENGAGE || B.state === BOT_STATE.COVER || B.state === BOT_STATE.HOLD) && T !== null && B.targetVisible) {
     const ex = b.x, ey = b.y + b.eyeHeight, ez = b.z;
-    const dx = T.body.x - ex, dy = T.body.y + CONFIG.bots.aimHeight * heightScale(T.body) - ey, dz = T.body.z - ez;
+    let dx = T.body.x - ex, dz = T.body.z - ez;
+    const dy = T.body.y + CONFIG.bots.aimHeight * heightScale(T.body) - ey;
+    const WC = P.weapon.C;
+    if (WC.bot.lead) {
+      // D-037: wyrzutnia — wyprzedzenie celu o czas lotu pocisku (prędkość pozioma celu)
+      const tl = Math.sqrt(dx * dx + dz * dz) / WC.speed;
+      dx += T.body.vx * tl; dz += T.body.vz * tl;
+    }
     B.desYaw = Math.atan2(-dx, -dz) + B.errYaw;
     B.desPitch = Math.atan2(dy, Math.sqrt(dx * dx + dz * dz)) + B.errPitch;
   } else if (B.state === BOT_STATE.CHASE && B.pathIdx >= B.pathLen) {
@@ -730,7 +737,7 @@ function steerMove(B, P, sim) {
     const T = B.target.body;
     const dx = T.x - b.x, dz = T.z - b.z;
     const d = Math.sqrt(dx * dx + dz * dz);
-    const R = C.engageRange;
+    const R = P.weapon.C.bot.engage || C.engageRange;   // D-037: pistolet — walka z bliska
     if (d > 1e-3 && B.targetVisible) {
       if (d < R[0]) { B.moveWX = -dx / d; B.moveWZ = -dz / d; followPath = false; }
       else if (d <= R[1] || (B.fromHold && d <= B.L.maxFireDist)) followPath = false;   // z zasadzki: trzyma pozycję
@@ -802,12 +809,15 @@ function steerFire(B, P, sim, out) {
   if (T === null || !B.targetVisible || T.state !== 'alive' || T.protectTimer > 0) return;
   if (B.state !== BOT_STATE.ENGAGE && !(B.state === BOT_STATE.COVER && B.pathIdx >= B.pathLen)) return;
   if (B.reactTimer > 0 || W.overheated || B.pauseTimer > 0 || P.stunTimer > 0) return;
-  // brak „nawalania" na dystans
+  const WC = W.C;
+  if (WC.semiAuto && W.held) return;   // D-037: broń półautomatyczna — puść spust, żeby nacisnąć ponownie
+  // brak „nawalania" na dystans (pistolet: własny, mniejszy zasięg)
   const tdx = T.body.x - P.body.x, tdz = T.body.z - P.body.z;
-  if (tdx * tdx + tdz * tdz > B.L.maxFireDist * B.L.maxFireDist) return;
+  const maxD = WC.bot.maxFireDist > 0 && WC.bot.maxFireDist < B.L.maxFireDist ? WC.bot.maxFireDist : B.L.maxFireDist;
+  if (tdx * tdx + tdz * tdz > maxD * maxD) return;
   if (B.shotsLeft <= 0) {
     // nowa seria tylko przy rozsądnym cieple
-    if (W.heat > B.L.heatLimit - CONFIG.weapon.heatPerShot) return;
+    if (W.heat > B.L.heatLimit - WC.heatPerShot * WC.burst) return;
     B.shotsLeft = sim.rng.int(C.burstShots[0], C.burstShots[1]);
   }
   let dy = B.desYaw - B.yaw;

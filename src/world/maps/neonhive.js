@@ -107,6 +107,16 @@ const DOORS = [
   [0, -4, -1, -5, 2.2, -0.8],
   [-1, -3, -1, -5, 2.2, 0],
 ];
+// Okna strzeleckie (CONFIG.elements.window: parapet 1.1 m + nadproże od 1.85 m) w środku pełnego boku:
+// [a1, r1, a2, r2, szerokość okna, przesunięcie od środka boku (m, + ku końcowi o większym x)]; reszta boku = ściana. Każde z obrazem 180°. Okna leżą na liniach ruchu między
+// sąsiednimi komorami pierścienia/centrum — dają wgląd i strzał, ale nie skracają drogi (bez linii spawn ↔ spawn).
+const WINDOWS = [
+  // komora centralna ↔ R ENE (bok 6 m pod 60°): wgląd z centrum na flankę E bez wejścia; okno przesunięte ku narożnikowi
+  // przy szewronie E — w środku boku tworzyło linię spawn E ↔ spawn W przez całą mapę (przejście centrum ↔ R NW)
+  [0, 0, 1, -1, 1.6, 1.3],
+  [0, -2, 1, -3, 1.8, 0],  // R N ↔ V NE (bok 4.5 m pod 60°): krzyżowy ogień na wyjściu drużyny N ku centrum
+  [1, -1, 1, 1, 1.6, 0.25],   // szprycha R ENE ↔ R ESE (3 m, 0°): pierścień E widzi się przez okno, przejście tylko przez centrum
+];
 const OPEN = [
   [2, -4, 3, -5],   // ćwiartki w narożnikach scalone z komorami narożnymi
   [-2, -4, -3, -5],
@@ -129,7 +139,12 @@ function doorTable() {
     open.add(pairKey(a1, r1, a2, r2));
     open.add(pairKey(-a1, -r1, -a2, -r2));
   }
-  return { doors, open };
+  const windows = new Map();
+  for (const [a1, r1, a2, r2, w, off] of WINDOWS) {
+    windows.set(pairKey(a1, r1, a2, r2), { w, off });
+    windows.set(pairKey(-a1, -r1, -a2, -r2), { w, off: -off });
+  }
+  return { doors, open, windows };
 }
 
 /** Odcinek przycięty do hali (Liang–Barsky); null gdy poza / leży na obwodzie. */
@@ -161,7 +176,7 @@ function seg(e, s0, s1, extra) {
 
 /** Ściany plastra: unikalne krawędzie komórek, przycięte do hali, z przejściami z DOORS. */
 function hiveWalls() {
-  const { doors, open } = doorTable();
+  const { doors, open, windows } = doorTable();
   const edges = new Map();
   const rk = (v) => Math.round(v * 1000);
   for (const [a, r] of cells()) {
@@ -182,16 +197,28 @@ function hiveWalls() {
     const c = clip(E.x0, E.z0, E.x1, E.z1);
     if (!c) continue;
     let door = null;
+    let win = null;
     if (E.cells.length === 2) {
       const pk = pairKey(...E.cells[0], ...E.cells[1]);
       if (open.has(pk)) continue;
       door = doors.get(pk) || null;
+      win = windows.get(pk) || null;
     }
     const central = E.cells.some(([a, r]) => a === 0 && r === 0);
     const extra = central ? { paint: 'geo' } : undefined;
     const len = Math.hypot(c.bx - c.ax, c.bz - c.az);
     const s0 = c.cutA ? -EXT_BOUND : -EXT;
     const s1 = len + (c.cutB ? EXT_BOUND : EXT);
+    if (win) {
+      // okno w boku (boki z oknami nie są przycinane obwodem): ściana | okno | ściana, styk bez szczeliny
+      const dir = c.bx - c.ax > 1e-6 || (Math.abs(c.bx - c.ax) <= 1e-6 && c.bz > c.az) ? 1 : -1;
+      const m = len / 2 + win.off * dir;
+      const g0 = m - win.w / 2; const g1 = m + win.w / 2;
+      out.push(seg(c, s0, g0, extra));
+      out.push({ ...seg(c, g0, g1, extra), kind: 'window', h: undefined });
+      out.push(seg(c, g1, s1, extra));
+      continue;
+    }
     if (!door) { out.push(seg(c, s0, s1, extra)); continue; }
     // środek przejścia: środek pełnego boku (przed przycięciem) + przesunięcie
     const fullMidX = (E.x0 + E.x1) / 2; const fullMidZ = (E.z0 + E.z1) / 2;
@@ -256,6 +283,10 @@ function buildWalls() {
   sym(walls, [box(cx(-2), cz(-2), 2.0, 0.45, HALF_H, 'half', -60 * DEG)]); // WNW
   sym(walls, [box(cx(2) + 0.4, cz(-4), 0.7, 0.7, CEILING, 'pillar', 30 * DEG)]);  // narożnik NE
   sym(walls, [box(cx(-2), cz(-4) + 0.3, 2.0, 0.45, HALF_H, 'half', 0)]);   // narożnik NW
+
+  // stosy opon (CONFIG.elements.tires) w miejscach bez osłon: oś N–S komory centralnej przed przejściem z R N
+  // (szewrony osłaniają tylko E/W) i otwarty narożnik NE (sam filar); ≥ 1.4 m od innych brył (bez strefy zahaczania)
+  sym(walls, [{ kind: 'tires', x: 0, z: -3.25 }, { kind: 'tires', x: 16, z: -17.25 }]);
   return walls;
 }
 
@@ -302,11 +333,14 @@ export default {
     spawn(-18.9, 3.9, 3), spawn(-18.9, -3.9, 3),
   ],
   cams: [
+    { name: 'top', pos: [0, 26, 0.01], look: [0, 0, 0] }, // TMP-TOP
     { name: 'overview', pos: [-2.5, 4.2, -11], look: [0, 0, -3.7] },
     { name: 'corridor', pos: [16.9, 1.65, -2.4], look: [9.6, 1.3, 1.2] },
     { name: 'plaza', pos: [0, 1.65, -4.3], look: [4.5, 1.3, 2.6] },
     { name: 'spawn', pos: [-18.9, 1.65, 3.9], look: [-13.5, 1.4, 0] },
     { name: 'corner', pos: [19.4, 1.65, -18.7], look: [11, 1.3, -12.5] },
+    // okno strzeleckie komora centralna ↔ R ENE (widok z centrum przez otwór na filar R ENE i okno szprychy)
+    { name: 'window', pos: [2.4, 1.65, 0.1], look: [8.5, 1.3, -3.6] },
   ],
 };
 

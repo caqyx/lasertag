@@ -86,14 +86,25 @@ function buildWalls() {
   sym(w, box(-3.0, -5.25, 0.5, 1.8, DECK - DECK_T, 'wall'));
 
   // parter: osłony i ściany tworzące „lanes"
-  sym(w, box(0, -11.0, 5.0, 0.5, WALL_H, 'wall'));          // ściana przed galerią N (zasłania spawn N od rdzenia)
+  // ściana przed galerią N (zasłania spawn N od rdzenia): środek 2.4 m to okno strzeleckie (CONFIG.elements.window) —
+  // stojący widzi z pasa N parter pod galerią i rdzeń, kucający za parapetem schowany; linia spawn ↔ spawn zasłonięta rdzeniem
+  sym(w, box(-1.85, -11.0, 1.3, 0.5, WALL_H, 'wall'));
+  sym(w, { kind: 'window', x: 0, z: -11.0, w: 2.4, d: 0.5, rot: 0 });
+  sym(w, box(1.85, -11.0, 1.3, 0.5, WALL_H, 'wall'));
   sym(w, box(-14.5, -10.0, 2.4, 0.5, HALF_H, 'half'));      // osłona przy spawnie NW
-  sym(w, box(13.0, -11.5, 0.5, 3.0, WALL_H, 'wall'));       // ściana NE (lane E)
+  // ściana NE (lane E) z oknem 1.6 m: drużyna N widzi zeskok z balkonu E do lane E (i odwrotnie), przejścia bez zmian
+  sym(w, box(13.0, -12.65, 0.5, 0.7, WALL_H, 'wall'));
+  sym(w, { kind: 'window', x: 13.0, z: -11.5, w: 0.5, d: 1.6, rot: 0 });
+  sym(w, box(13.0, -10.35, 0.5, 0.7, WALL_H, 'wall'));
   sym(w, box(14.2, -5.0, 0.5, 2.6, HALF_H, 'half'));        // osłona pod balkonem E
   sym(w, box(-1.5, -14.5, 2.0, 0.5, HALF_H, 'half'));       // osłona w pasie N
   sym(w, box(4.0, -14.6, 0.5, 2.8, WALL_H, 'wall'));        // ściana w pasie N (przecina linię wzdłuż ściany)
   sym(w, box(7.0, -13.5, 1.2, 1.2, HALF_H, 'half'));        // skrzynia NE
   sym(w, box(-17.5, -1.8, 1.2, 1.2, HALF_H, 'half'));       // skrzynia pod balkonem W
+  // stosy opon (CONFIG.elements.tires) na pustym parterze: przed galerią N przy podstawie rampy N (≥ 2.2 m od rampy)
+  // i przy galerii W na południe od kładki — osłona na drodze z zeskoku balkonu do rdzenia
+  sym(w, { kind: 'tires', x: -9.0, z: -9.5 });
+  sym(w, { kind: 'tires', x: -10.5, z: 2.5 });
   return w;
 }
 
@@ -152,6 +163,7 @@ export default {
     spawn(-18.5, 5.5, 3, DECK), spawn(-18.5, -5.5, 3, DECK),
   ],
   cams: [
+    { name: 'top', pos: [0, 26, 0.01], look: [0, 0, 0] }, // TMP-TOP
     // pod sufitem (0.4 m) nad ćwiartką NW, ukośnie: rdzeń, galeria N/E/W/S, rampy N i W
     { name: 'overview', pos: [-15, 7.6, -14], look: [2, 0, 2] },
     // przejście pod balkonem W, kładką i galerią W, widok wzdłuż osi na rdzeń
@@ -164,5 +176,7 @@ export default {
     { name: 'upper', pos: [-7.5, DECK + 1.65, 5.6], look: [6, DECK + 0.8, -5] },
     // rdzeń z kładki W
     { name: 'core', pos: [-14.5, DECK + 1.65, 0.3], look: [0, 3.5, 0] },
+    // okno strzeleckie w ścianie przed galerią N: z pasa N przez otwór na parter pod galerią i rdzeń
+    { name: 'window', pos: [0.6, 1.65, -13.4], look: [0, 1.5, -3] },
   ],
 };

@@ -84,14 +84,14 @@ test('UV Maze: liczby i rodzaje brył, wysokości wg legendy', () => {
     assert.ok(s.hx > 0 && s.hz > 0);
     assert.equal(s.rot, 0);
   }
-  // 74 = układ „trzy linie” + elementy (2026-10-31): 4 obwodowe, z siatki 38 ścian, 6 połówek, 4 filary, 2 okna 'ww'
-  // (parapet + nadproże = 4); z walls: 2 siatki, 2 stosy opon i 4 beczki (po 2 bryły kolizji = 12); 4 drzwi przesuwne (doors).
-  // Zmiana mapy = świadoma aktualizacja.
-  assert.equal(world.solids.filter((s) => s.prop).length, 12);
+  // 76 = układ „trzy linie” otwarty (D-037, 2026-11-01): 4 obwodowe, z siatki 32 ściany, 6 połówek, 4 filary,
+  // 4 okna 'ww' (N/S placu + lane W/E; parapet + nadproże = 8); z walls: 2 siatki, 4 stosy opon i 4 beczki (po 2 bryły
+  // kolizji = 16); 4 drzwi przesuwne (doors). Było 74 (38 ścian, 2 okna, 2 stosy opon). Zmiana mapy = świadoma aktualizacja.
+  assert.equal(world.solids.filter((s) => s.prop).length, 16);
   assert.equal(world.solids.filter((s) => s.kind === 'net').length, 2);
-  assert.equal(world.solids.filter((s) => s.window).length, 4);   // 2 okna 'ww' × (parapet + nadproże)
+  assert.equal(world.solids.filter((s) => s.window).length, 8);   // 4 okna 'ww' × (parapet + nadproże)
   assert.equal(world.solids.filter((s) => s.kind === 'door').length, 4);
-  assert.equal(world.solids.length, 74);
+  assert.equal(world.solids.length, 76);
 });
 
 test('obwód: dokładnie 4 bryły boundary, na zewnątrz bounds, szczelne narożniki, wysokość = sufit', () => {

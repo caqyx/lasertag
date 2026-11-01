@@ -11,7 +11,7 @@ import { CONFIG } from '../config.js';
 import { raycastWorldBuf, RAYARG, segmentClearSeg, SEG, createHit, groundHeight } from '../world/physics.js';
 import { EV } from '../core/events.js';
 import { SENSOR_OFFSETS, resetVitals, placeAt } from './participant.js';
-import { resetWeapon } from './weapon.js';
+import { resetWeapon, cancelBurst } from './weapon.js';
 import { awardHit, awardElim } from './scoring.js';
 import { eyeHeightOf } from './movement.js';
 
@@ -192,28 +192,18 @@ export function nearestSensor(P, x, y, z) {
  * sojuszników przy !friendlyFire). Zawsze emituje SHOT; przy trafieniu applyHit (HIT/ELIM). Strzał kończy ochronę strzelca.
  */
 export function resolveShot(sim, shooter) {
-  if (shooter.protectTimer > 0) {
-    shooter.protectTimer = 0;
-    const pe = emit(sim, EV.PROTECT_END, shooter.id, -1, shooter.team);
-    pe.value = 1;
-  }
-  shooter.stats.shots++;
+  onFire(sim, shooter);
 
   eyeRay(shooter, ER);
   S[S_OX] = ER.ox; S[S_OY] = ER.oy; S[S_OZ] = ER.oz;
   S[S_DX] = ER.dx; S[S_DY] = ER.dy; S[S_DZ] = ER.dz;
-  S[S_MAX] = CONFIG.weapon.range;
+  S[S_MAX] = shooter.weapon.C.range;
   RAYARG[0] = ER.ox; RAYARG[1] = ER.oy; RAYARG[2] = ER.oz;
   RAYARG[3] = ER.dx; RAYARG[4] = ER.dy; RAYARG[5] = ER.dz; RAYARG[6] = S[S_MAX];
-  if (raycastWorldBuf(sim.world, WHIT)) S[S_MAX] = WHIT.dist;
+  const wallHit = raycastWorldBuf(sim.world, WHIT);
+  if (wallHit) S[S_MAX] = WHIT.dist;
 
-  let target = null;
-  const ps = sim.participants;
-  for (let i = 0; i < ps.length; i++) {
-    const P = ps[i];
-    if (P === shooter || P.state !== 'alive' || passesThrough(sim, shooter, P)) continue;
-    if (capsuleHitS(P) && S[S_T] < S[S_MAX]) { S[S_MAX] = S[S_T]; target = P; }
-  }
+  const target = firstParticipantS(sim, shooter);
 
   HP3[0] = S[S_OX] + S[S_DX] * S[S_MAX];
   HP3[1] = S[S_OY] + S[S_DY] * S[S_MAX];
@@ -223,7 +213,10 @@ export function resolveShot(sim, shooter) {
   const r = emit(sim, EV.SHOT, shooter.id, target === null ? -1 : target.id, shooter.team);
   r.x = MZ.x; r.y = MZ.y; r.z = MZ.z;
   r.x2 = HP3[0]; r.y2 = HP3[1]; r.z2 = HP3[2];
-  if (target === null) return;
+  if (target === null) {
+    if (wallHit) { r.nx = WHIT.nx; r.ny = WHIT.ny; r.nz = WHIT.nz; }   // normalna powierzchni → odłamki (render)
+    return;
+  }
   const sensor = nearestSensorS(target);
   r.sensor = sensor;
   if (target.protectTimer > 0) {
@@ -232,6 +225,68 @@ export function resolveShot(sim, shooter) {
   }
   r.value = 1;
   applyHitS(sim, shooter, target, sensor);
+}
+
+/** Najbliższy uczestnik na promieniu S (do S[S_MAX], skraca S[S_MAX]); pomija strzelca, wyeliminowanych, sojuszników. */
+function firstParticipantS(sim, shooter) {
+  let target = null;
+  const ps = sim.participants;
+  for (let i = 0; i < ps.length; i++) {
+    const P = ps[i];
+    if (P === shooter || P.state !== 'alive' || passesThrough(sim, shooter, P)) continue;
+    if (capsuleHitS(P) && S[S_T] < S[S_MAX]) { S[S_MAX] = S[S_T]; target = P; }
+  }
+  return target;
+}
+
+// --- pociski (game/projectiles.js): argumenty przez bufory (D-012)
+/** PROJ_RAY = [ox, oy, oz, dx, dy, dz, maxDist] (d jednostkowy) → projRayParticipant; PROJ_RAY[6] = odległość trafienia. */
+export const PROJ_RAY = new Float64Array(7);
+
+/** Najbliższy uczestnik trafiony odcinkiem PROJ_RAY (reguły jak hitscan) lub null; PROJ_RAY[6] skracane do trafienia. */
+export function projRayParticipant(sim, shooter) {
+  S[S_OX] = PROJ_RAY[0]; S[S_OY] = PROJ_RAY[1]; S[S_OZ] = PROJ_RAY[2];
+  S[S_DX] = PROJ_RAY[3]; S[S_DY] = PROJ_RAY[4]; S[S_DZ] = PROJ_RAY[5];
+  S[S_MAX] = PROJ_RAY[6];
+  const t = firstParticipantS(sim, shooter);
+  PROJ_RAY[6] = S[S_MAX];
+  return t;
+}
+
+/**
+ * Trafienie pociskiem w punkcie PROJ_RAY[0..2] + d·PROJ_RAY[6]: chroniony cel → 2 (bez efektu), inaczej applyHit → 1.
+ * Zwraca też trafiony segment w HIT_SENSOR[0].
+ */
+export const HIT_SENSOR = new Int32Array(1);
+export function projHit(sim, shooter, target) {
+  const t = PROJ_RAY[6];
+  HP3[0] = PROJ_RAY[0] + PROJ_RAY[3] * t;
+  HP3[1] = PROJ_RAY[1] + PROJ_RAY[4] * t;
+  HP3[2] = PROJ_RAY[2] + PROJ_RAY[5] * t;
+  const sensor = nearestSensorS(target);
+  HIT_SENSOR[0] = sensor;
+  if (target.protectTimer > 0) return 2;
+  applyHitS(sim, shooter, target, sensor);
+  return 1;
+}
+
+/** Strzał (hitscan lub wystrzał pocisku) kończy ochronę strzelca; liczy oddane strzały. */
+export function onFire(sim, shooter) {
+  if (shooter.protectTimer > 0) {
+    shooter.protectTimer = 0;
+    const pe = emit(sim, EV.PROTECT_END, shooter.id, -1, shooter.team);
+    pe.value = 1;
+  }
+  shooter.stats.shots++;
+}
+
+/** Utrata punktów HP (D-037): P.dmg kumuluje punkty; pełne segmentPoints = −1 segment (P.hp). */
+function takeDamage(target, pts) {
+  const sp = CONFIG.combat.segmentPoints;
+  let d = target.dmg + pts;
+  while (d >= sp && target.hp > 0) { target.hp -= 1; d -= sp; }
+  if (target.hp <= 0) { target.hp = 0; d = 0; }
+  target.dmg = d;
 }
 
 /**
@@ -247,11 +302,14 @@ export function applyHit(sim, shooter, target, sensor, hx, hy, hz) {
 function applyHitS(sim, shooter, target, sensor) {
   const C = CONFIG.combat;
   if (target.state !== 'alive' || target.protectTimer > 0) return false;
-  target.hp -= C.damage;
-  if (target.hp < 0) target.hp = 0;
+  const WC = shooter.weapon.C;
+  takeDamage(target, WC.damage);                     // D-037: fazer = segmentPoints = 1 segment
   target.sensorsLit = target.hp;
   target.sensorFlash[sensor] = C.hitFlashTime;
-  if (target.hp > 0) target.stunTimer = C.hitStun;   // D-016: trafienie dezaktywuje broń celu na chwilę
+  if (target.hp > 0) {                               // D-016: trafienie dezaktywuje broń celu na chwilę
+    target.stunTimer = C.hitStun * WC.stunScale;
+    cancelBurst(target.weapon);
+  }
   target.lastHitBy = shooter.id;
   target.lastHitTime = sim.time;
   const ddx = shooter.body.x - target.body.x;
@@ -264,7 +322,7 @@ function applyHitS(sim, shooter, target, sensor) {
     target.lastHitDirX = 0;
     target.lastHitDirZ = 0;
   }
-  awardHit(sim, shooter, target);
+  awardHit(sim, shooter, target, WC.damage);
 
   const r = emit(sim, EV.HIT, shooter.id, target.id, shooter.team);
   r.sensor = sensor;
@@ -330,8 +388,12 @@ export function respawn(sim, P) {
   r.x = P.body.x; r.y = P.body.y; r.z = P.body.z;
 }
 
+// Spawny drużyn: sp.team = strona (N 0, S 1, E 2, W 3). 2 drużyny → sp.team % 2 (N+E vs S+W, jak tdm2);
+// 3–4 drużyny → sp.team === team (przy 3 strona W wolna — każda drużyna ma tyle samo spawnów; D-039).
 function spawnAllowed(sim, P, sp) {
-  return sim.teamCount <= 0 || P.team < 0 || sp.team % sim.teamCount === P.team;
+  const n = sim.teamCount;
+  if (n <= 0 || P.team < 0) return true;
+  return n >= 3 ? sp.team === P.team : sp.team % n === P.team;
 }
 
 // scratch pickSpawn: [bestVis, bestAny, ties]
@@ -363,8 +425,9 @@ function occupancy(sim, P, x, y, z) {
  * 2) spośród wolnych — najdalszy od żywych wrogów, którzy go widzą (oko→oko); remis/brak widzących → najdalszy
  *    od wszystkich żywych; dalszy remis → losowo (sim.rng);
  * 3) wszystkie dozwolone zajęte → punkt przesunięty o spawnOffset od spawnu (8 kierunków, wolna linia od spawnu,
- *    wolny od uczestników), wybierany od spawnu najdalszego od zajmujących; brak takiego → ten najdalszy spawn.
- * Tryb drużynowy (sim.teamCount > 0, team ≥ 0): tylko spawny z sp.team % teamCount === P.team (brak → wszystkie).
+ *    wolny od uczestników), najpierw wokół spawnu najdalszego od zajmujących, potem wokół pozostałych dozwolonych;
+ *    brak takiego → ten najdalszy spawn.
+ * Tryb drużynowy (sim.teamCount > 0, team ≥ 0): tylko spawny drużyny (spawnAllowed; brak → wszystkie).
  * Zwraca element world.spawns albo współdzielony obiekt zastępczy (czytać od razu); null, gdy mapa nie ma spawnów.
  */
 export function pickSpawn(sim, P) {
@@ -387,7 +450,18 @@ export function pickSpawn(sim, P) {
     if (OCC[0] >= occ2) { anyFree = true; break; }
     if (OCC[0] > PS[0]) { PS[0] = OCC[0]; leastOcc = sp; }
   }
-  if (!anyFree) return spawnOffset(sim, P, leastOcc);
+  if (!anyFree) {
+    // najpierw pierścień wokół spawnu najdalszego od zajmujących, potem wokół pozostałych dozwolonych (D-039)
+    const alt = spawnOffset(sim, P, leastOcc);
+    if (alt !== null) return alt;
+    for (let i = 0; i < spawns.length; i++) {
+      const sp = spawns[i];
+      if (sp === leastOcc || (anyAllowed && !spawnAllowed(sim, P, sp))) continue;
+      const a = spawnOffset(sim, P, sp);
+      if (a !== null) return a;
+    }
+    return leastOcc;
+  }
 
   const eye = CONFIG.player.eyeHeight;
   const ps = sim.participants;
@@ -424,11 +498,13 @@ export function pickSpawn(sim, P) {
 /**
  * Wszystkie spawny zajęte: punkt o spawnOffset od sp w jednym z 8 kierunków — linia od spawnu wolna od brył
  * (na wysokości bioder i oka, z zapasem promienia), podłoga w punkcie ≈ sp.y (±0.05), bez uczestnika
- * w spawnOccupiedRadius. Brak → sp.
+ * w spawnOffsetClear. Brak → null (pickSpawn próbuje kolejnych spawnów, w ostateczności zwraca spawn).
  */
 function spawnOffset(sim, P, sp) {
   const C = CONFIG.combat;
-  const occ2 = C.spawnOccupiedRadius * C.spawnOccupiedRadius;
+  // D-039: luz ciał (spawnOffsetClear), nie spawnOccupiedRadius — ten jest > spawnOffset, więc uczestnik stojący na spawnie
+  // blokował każdy punkt przesunięty i kolejni lądowali w tym samym miejscu (Custom 16 osób na 8 spawnach).
+  const occ2 = C.spawnOffsetClear * C.spawnOffsetClear;
   const off = C.spawnOffset;
   const reach = off + CONFIG.player.radius + 0.05;
   const b = sim.world.bounds;
@@ -451,5 +527,5 @@ function spawnOffset(sim, P, sp) {
     SPAWN_ALT.x = x; SPAWN_ALT.y = sp.y; SPAWN_ALT.z = z; SPAWN_ALT.yaw = sp.yaw; SPAWN_ALT.team = sp.team;
     return SPAWN_ALT;
   }
-  return sp;
+  return null;
 }

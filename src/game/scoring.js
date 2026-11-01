@@ -10,8 +10,10 @@ function teamOf(sim, P) {
   return t >= 0 && t < sim.teams.length ? sim.teams[t] : null;
 }
 
-export function awardHit(sim, shooter, target) {
-  const pts = CONFIG.scoring.hit;
+/** pts HP zadane trafieniem (D-037): punkty = scoring.hit × dmgPts / segmentPoints (zaokrąglone); brak → scoring.hit. */
+export function awardHit(sim, shooter, target, dmgPts) {
+  const pts = dmgPts === undefined ? CONFIG.scoring.hit
+    : (CONFIG.scoring.hit * dmgPts / CONFIG.combat.segmentPoints + 0.5) | 0;   // | 0 → Smi (bez HeapNumber)
   shooter.stats.hits++;
   shooter.stats.score += pts;
   const T = teamOf(sim, shooter);

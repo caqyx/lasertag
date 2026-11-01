@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { createEventQueue, EV } from '../../src/core/events.js';
 
 test('EV: stałe typów zgodne z kontraktem, zamrożone', () => {
-  assert.deepEqual({ ...EV }, { SHOT: 1, HIT: 2, ELIM: 3, RESPAWN: 4, OVERHEAT: 5, PROTECT_END: 6 });
+  assert.deepEqual({ ...EV }, { SHOT: 1, HIT: 2, ELIM: 3, RESPAWN: 4, OVERHEAT: 5, PROTECT_END: 6, LAUNCH: 7, BOUNCE: 8, PROJ_END: 9 });
   assert.ok(Object.isFrozen(EV));
 });
 
@@ -23,7 +23,7 @@ test('push/at: kolejność od najstarszego, pola wyzerowane (a/b/team/sensor = �
   Q.clear();
   const r = Q.push(EV.HIT);
   assert.deepEqual({ ...r }, {
-    type: EV.HIT, time: 0, a: -1, b: -1, team: -1, sensor: -1, x: 0, y: 0, z: 0, x2: 0, y2: 0, z2: 0, value: 0,
+    type: EV.HIT, time: 0, a: -1, b: -1, team: -1, sensor: -1, x: 0, y: 0, z: 0, x2: 0, y2: 0, z2: 0, nx: 0, ny: 0, nz: 0, value: 0,
   });
 });
 

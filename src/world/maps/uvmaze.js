@@ -5,35 +5,38 @@
 // Legenda: '#' ściana pełna 2.4 m, 'h' osłona połówkowa 1.1 m, 'o' filar 0.6×0.6 do sufitu, 'w' okno strzeleckie
 // (parapet 1.1 m + nadproże od 1.85 m — CONFIG.elements.window), '.' pusto. Elementy poza siatką: walls (opony, beczki, siatki).
 //
-// Układ „trzy linie" (symetria obrotowa 180° wokół środka — (r, c) ↔ (17−r, 17−c); uczciwe strony N↔S i E↔W):
+// Układ „trzy linie" (symetria obrotowa 180° wokół środka — (r, c) ↔ (17−r, 17−c); uczciwe strony N↔S i E↔W).
+// Od D-037 otwarty: 20 komórek ścian mniej (78 → 58), z czego 2 → osłony 'h', 4 → okna 'w', reszta wolna:
 //  - pierścień zewnętrzny (wiersze/kolumny 0 i 17) = korytarz spawnów; siatki N/S (x = 0) dzielą go na połowy,
-//    ściany pierścienia (wiersze 1/16, kolumny 1/16) mają bramy co 3–4 komórki,
-//  - 3 linie N–S: lane W (kolumna 2), lane środkowy (c8–9: okno 'ww' → plac → okno 'ww'), lane E (c15),
+//    ściany pierścienia (wiersze 1/16, kolumny 1/16) mają szerokie bramy (4 m przy narożnikach, 4–6 m w kolumnach 1/16),
+//  - 3 linie N–S: lane W (kolumny 2–3, okno 'ww' w c3 przy placu), lane środkowy (c8–9: okno 'ww' → plac → okno 'ww'),
+//    lane E (kolumny 14–15, okno 'ww' w c14); długa linia wzdłuż lane W/E przecięta ścianą r3 c3 (r14 c14),
 //  - drzwi przesuwne w bramach c7/c10 przy ostrogach (doors) — naprzemiennie otwarte,
-//  - 2 pasma poprzeczne (wiersze 2 i 15) z osłoną, łączące wszystkie bramy pierścienia,
-//  - plac centralny 16×12 m (wiersze 6–11, kolumny 5–12): 2 filary, 4 osłony, okna 'hh' w ścianach N/S, wejścia z lane W/E,
+//  - pasma poprzeczne N/S (wiersze 2–4 i 13–15) szerokie na 4–6 m, z wysepkami ścian '##' i osłoną,
+//  - plac centralny ~20×12 m (wiersze 6–11, kolumny 4–13): 2 filary, osłony 'h' (środek + boki W/E), 2 stosy opon,
+//    okna 'ww' w ścianach N/S i W/E (lane W/E widzi plac, kucający za parapetem schowany),
 //  - 2 małe place w parze obrotowej: NE (filar, otwarty na pierścień E przy spawnie E) i SW (filar, przy spawnie W),
 //  - zero ślepych zaułków (każda wolna komórka ma ≥ 2 wolnych sąsiadów), filary bez brył w sąsiedztwie 8 komórek
 //    (inaczej szczelina 0.7 m — PLAN §3, strefa zahaczania 0.7–1.25 m).
 
 const ROWS = [
   '..................', //  0  N (spawny drużyny 0; siatka maskująca w osi x = 0 zamiast ostrogi)
-  '.##.###.##.###.##.', //  1  ściana pierścienia N, bramy c3/c7/c10/c14
-  '.#.......h......#.', //  2  pasmo N (korytarz poprzeczny, osłona)
-  '...#.###..###.....', //  3  plac NE (otwarty na pierścień E)
-  '.#.............o..', //  4  plac NE — filar
-  '.#.###.#ww#.##....', //  5  północna ściana placu z oknem strzeleckim 'ww'
-  '.#..#........#..#.', //  6  plac centralny
-  '.#..h.o.........#.', //  7  plac centralny: filar W (stos opon na E — walls)
-  '.#.#.....h....#...', //  8  plac centralny: osłona środkowa
-  '...#....h.....#.#.', //  9  plac centralny: osłona środkowa
-  '.#.........o.h..#.', // 10  plac centralny: filar E (stos opon na W — walls)
-  '.#..#........#..#.', // 11  plac centralny
-  '....##.#ww#.###.#.', // 12  południowa ściana placu z oknem strzeleckim 'ww'
-  '..o.............#.', // 13  plac SW — filar
-  '.....###..###.#...', // 14  plac SW (otwarty na pierścień W)
-  '.#......h.......#.', // 15  pasmo S (korytarz poprzeczny, osłona)
-  '.##.###.##.###.##.', // 16  ściana pierścienia S
+  '.#..###.##.###..#.', //  1  ściana pierścienia N, bramy c2–3 / c7 (drzwi) / c10 (drzwi) / c14–15
+  '.#.......h......#.', //  2  pasmo N (osłona r2 c9 styka się z drzwiami c10)
+  '...#..##..##......', //  3  pasmo N: wysepki ścian, r3 c3 przecina linię lane W; plac NE (otwarty na pierścień E)
+  '.#.............o..', //  4  pasmo N / plac NE — filar
+  '.#..##.#ww#.##....', //  5  północna ściana placu z oknem strzeleckim 'ww', lane W 4 m
+  '....h........#..#.', //  6  plac centralny (brama pierścienia W r6–7, osłona W)
+  '....h.o.........#.', //  7  plac centralny: filar W (stos opon na E — walls)
+  '.#.w.....h....w...', //  8  plac: osłona środkowa; okna 'w' lane W / lane E (pionowe 'ww' c3 i c14, r8–9)
+  '...w....h.....w.#.', //  9  plac: osłona środkowa; okna lane W / lane E
+  '.#.........o.h....', // 10  plac centralny: filar E (stos opon na W — walls)
+  '.#..#........h....', // 11  plac centralny (brama pierścienia E r10–11, osłona E)
+  '....##.#ww#.##..#.', // 12  południowa ściana placu z oknem strzeleckim 'ww', lane E 4 m
+  '..o.............#.', // 13  pasmo S / plac SW — filar
+  '......##..##..#...', // 14  pasmo S: wysepki ścian, r14 c14 przecina linię lane E; plac SW (otwarty na pierścień W)
+  '.#......h.......#.', // 15  pasmo S
+  '.#..###.##.###..#.', // 16  ściana pierścienia S
   '..................', // 17  S (spawny drużyny 1; siatka maskująca w osi x = 0)
 ];
 
@@ -66,10 +69,12 @@ export default {
     pillarSize: 0.6,
   },
   // Elementy (CONFIG.elements), każdy z obrazem 180°: siatki zamiast ostróg N/S (połowy pasa spawnów widzą się, nie przejdą),
-  // stosy opon na placu centralnym (zamiast osłon 'h'), para beczek na placu NE (i SW).
+  // stosy opon na placu centralnym (zamiast osłon 'h') i w lane W/E przy bramie pierścienia (r6–7 / r10–11, D-037),
+  // para beczek na placu NE (i SW).
   walls: [
     { kind: 'net', x: 0, z: -17, w: 0.08, d: 2, rot: 0 }, { kind: 'net', x: 0, z: 17, w: 0.08, d: 2, rot: 0 },
     { kind: 'tires', x: 5, z: -3 }, { kind: 'tires', x: -5, z: 3 },
+    { kind: 'tires', x: -12.5, z: -4.25 }, { kind: 'tires', x: 12.5, z: 4.25 },
     { kind: 'barrel', x: 10.7, z: -11.2 }, { kind: 'barrel', x: 11.2, z: -10.95 },
     { kind: 'barrel', x: -10.7, z: 11.2 }, { kind: 'barrel', x: -11.2, z: 10.95 },
   ],
@@ -104,6 +109,7 @@ export default {
   ],
   // Kamery debug (pozycje sprawdzone skryptem: poza bryłami, widok na ≥ 12 m sceny).
   cams: [
+    { name: 'top', pos: [0, 26, 0.01], look: [0, 0, 0] }, // TMP-TOP
     // wysoko pod sufitem w rogu NW, ukośnie nad szczytami ścian przez całą arenę
     { name: 'overview', pos: [-17.2, 4.3, -17.2], look: [4, 0, 4] },
     // długi korytarz północny (wiersz 2) na wysokości oka, patrzy na zachód

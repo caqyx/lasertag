@@ -15,12 +15,15 @@ import { resetInputState } from './game/input/inputState.js';
 import { createParticipant } from './game/participant.js';
 import { createSim, addParticipant, stepSim, findParticipant } from './game/sim.js';
 import { resetDoors } from './game/doors.js';
-import { MODES, setupRoster, spawnTeamCount } from './game/modes.js';
+import { MODES, MP_MODES, isModeId, clampCustom, setupRoster, spawnTeamCount } from './game/modes.js';
 import { createMatch, stepMatch, matchRunning } from './game/match.js';
 import { createBotBrain } from './game/bots/ai.js';
 import { createAdapt, recordFromEvents } from './game/bots/adapt.js';
 import { EV } from './core/events.js';
 import { createBeams } from './render/beams.js';
+import { createProjectileFx } from './render/projectiles.js';
+import { createShotFx } from './render/shotFx.js';
+import { weaponType, randomWeaponType } from './game/weapon.js';
 import { createAvatars } from './render/avatars.js';
 import { createViewModel } from './render/viewModel.js';
 import { createHud } from './ui/hud.js';
@@ -79,6 +82,8 @@ function boot(graphics) {
   const avatars = createAvatars(graphics.scene, CONFIG.combat.maxParticipants);
   const viewModel = createViewModel(camera, graphics.scene);
   viewModel.group.visible = false;
+  const projFx = createProjectileFx(graphics.scene);                  // D-037: pociski wyrzutni
+  const shotFx = createShotFx({ beams, projFx, viewModel });          // zdarzenia broni → wiązki, odłamki, pociski
 
   // --- Świat (przebudowa przy zmianie mapy) ---
   let world = null;
@@ -149,8 +154,9 @@ function boot(graphics) {
 
   // --- UI ---
   const menu = createMenu(document.body, {
-    maps: MAPS, modes: MODES, presets: CONFIG.presets, diffs: CONFIG.bots.levels,
-    initial: { map: params.map, mode: params.mode, diff: params.diff, preset: params.preset, bots: params.bots },
+    maps: MAPS, modes: MODES, mpModes: MP_MODES, presets: CONFIG.presets, diffs: CONFIG.bots.levels,
+    initial: { map: params.map, mode: params.mode, diff: params.diff, preset: params.preset, bots: params.bots,
+      teams: params.teams, perTeam: params.perTeam, weapon: params.weapon },
   }, (cfg) => startMatch(cfg));
   const scoreboard = createScoreboard(document.body);
   const endScreen = createEndScreen(document.body, () => startMatch(lastCfg), () => goMenu());
@@ -183,10 +189,13 @@ function boot(graphics) {
     const c = cfg || {};
     return {
       map: has(MAPS, c.map) ? c.map : CONFIG.defaults.map,
-      mode: has(MODES, c.mode) ? c.mode : CONFIG.defaults.mode,
+      mode: isModeId(c.mode) ? c.mode : CONFIG.defaults.mode,
       diff: has(CONFIG.bots.levels, c.diff) ? c.diff : CONFIG.defaults.diff,
       preset: has(CONFIG.presets, c.preset) ? c.preset : graphics.presetName,
       bots: Number.isInteger(c.bots) ? c.bots : null,
+      weapon: weaponType(c.weapon),         // D-037: broń gracza na cały mecz
+      ...clampCustom(c.teams, c.perTeam),   // Custom: { teams, perTeam } (inne tryby ignorują)
+      slots: Array.isArray(c.slots) ? c.slots : null, // Custom: sloty { team, kind } (null → z teams × perTeam)
     };
   }
 
@@ -201,19 +210,21 @@ function boot(graphics) {
     sim = createSim({
       world,
       seed: params.seed === null ? world.seed : params.seed,
-      teamCount: spawnTeamCount(cfg.mode),
+      teamCount: spawnTeamCount(cfg.mode, cfg),
     });
     adapt = createAdapt();
     player = null;
-    const roster = setupRoster(cfg.mode, { bots: cfg.bots, diff: cfg.diff });
+    const roster = setupRoster(cfg.mode, { bots: cfg.bots, diff: cfg.diff, teams: cfg.teams, perTeam: cfg.perTeam, slots: cfg.slots });
     for (const r of roster) {
       const P = addParticipant(sim, createParticipant({
         id: r.id, name: r.name, team: r.team, color: r.color, isPlayer: r.isPlayer,
-        inputSource: r.isPlayer ? playerSource : createBotBrain({ level: r.level, nav, adapt }),
+        weapon: r.isPlayer ? cfg.weapon : randomWeaponType(sim.rng),   // D-037: boty — losowa broń z rng sim
+        // slot 'remote' (M5, online) — do czasu sieci sterowany botem (inputSource wymienny)
+        inputSource: r.kind === 'local' ? playerSource : createBotBrain({ level: r.level, nav, adapt }),
       }));
       if (r.isPlayer) player = P;
     }
-    match = createMatch(sim, cfg.mode);
+    match = createMatch(sim, cfg.mode, { teams: cfg.teams, perTeam: cfg.perTeam });
 
     if (hud !== null) hud.dispose();
     hud = createHud(hudEl);
@@ -273,23 +284,7 @@ function boot(graphics) {
 
   /** Zdarzenia symulacji → efekty; zwraca true, jeśli gracz strzelił w tej klatce. */
   function consumeEvents() {
-    const q = sim.events;
-    let fired = false;
-    for (let i = 0; i < q.count; i++) {
-      const e = q.at(i);
-      if (e.type === EV.SHOT) {
-        const shooter = findParticipant(sim, e.a);
-        if (e.a === player.id && !debugCam) {
-          // wizualnie wiązka gracza startuje z widocznej lufy FPP (sim liczy strzał z oka)
-          viewModel.muzzleWorld(muzzle);
-          beams.spawn(muzzle.x, muzzle.y, muzzle.z, e.x2, e.y2, e.z2, player.color, e.value === 1);
-        } else if (shooter !== null) {
-          beams.spawn(e.x, e.y, e.z, e.x2, e.y2, e.z2, shooter.color, e.value === 1);
-        }
-        if (e.a === player.id) fired = true;
-      }
-    }
-    return fired;
+    return shotFx.consume(sim, player, debugCam);   // render/shotFx.js (D-037): wiązki, odłamki, pociski
   }
 
   /** Tło menu: kolejne kamery debug mapy z powolnym panoramowaniem i najazdem (bez alokacji). */
@@ -379,6 +374,7 @@ function boot(graphics) {
     avatars.sync(sim.participants, alpha, time, debugCam ? -1 : player.id, camera, showHud && !debugCam && !deadCam);
     const b = player.body;
     viewModel.update(frameDt, player.weapon, fired, player.color, Math.hypot(b.vx, b.vz), player.stunTimer > 0, avatars.localGait);
+    shotFx.sync(sim, alpha, player, debugCam);
     if (showHud && !debugCam) {
       hud.update(player, sim, frameDt);
       matchBar.update(match, sim);
@@ -396,8 +392,10 @@ function boot(graphics) {
     else {
       if (!debugCam) menuCamera(frameDt);
       avatars.sync(EMPTY, alpha, time, -1);
+      shotFx.sync(null, alpha, null, debugCam);
     }
     beams.update(frameDt, camera);
+    projFx.update(frameDt);
     graphics.update(frameDt, time);
     graphics.render();
     if (stats) stats.end();

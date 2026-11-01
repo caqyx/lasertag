@@ -6,8 +6,10 @@
 //
 // Grupa jest dzieckiem kamery; aby dzieci kamery były renderowane, kamera musi być w scenie —
 // gdy camera.parent jest pusty i podano `scene`, kamera jest do niej dodawana.
-// Wylot lufy: CONFIG.weapon.muzzleOffset + CONFIG.viewModel.offset (układ kamery); muzzleWorld(out) zwraca go w świecie
+// Wylot lufy: CONFIG.viewModel.weapons[typ].muzzle (układ kamery); muzzleWorld(out) zwraca go w świecie
 // (np. jako start wiązki gracza, żeby wiązka wychodziła z widocznej lufy).
+// D-037: 3 modele (fazer, pistolet dwulufowy, wyrzutnia z komorą-kulą), każdy z rękami; widoczny tylko model broni
+// gracza (typ czytany z weapon.type w update) → 1 draw call. Wspólny materiał i uniformy.
 // 1 draw call: scalona geometria broni i rąk z atrybutem aPart (0 korpus, 1 listwy w kolorze gracza, 2 pasek ciepła,
 // 3 pierścień wylotu, 4 rękawice/rękawy, 5 akcenty rękawic, 6 soczewka emitera, 7 ciemny metal). Ręce są w tej samej
 // grupie co broń → ten sam odrzut i kołysanie. Warstwa LAYER_NO_REFLECT (nie trafia do odbicia podłogi).
@@ -20,13 +22,12 @@ import { hexNumber } from './color.js';
 import { LAYER_NO_REFLECT } from './arenaBuilder.js';
 
 const VM = CONFIG.viewModel;
-const M0 = CONFIG.weapon.muzzleOffset;
-const OFF = VM.offset;
-const MUZZLE = [M0[0] + OFF[0], M0[1] + OFF[1], M0[2] + OFF[2]];
 const TAU = Math.PI * 2;
 
 const P_BODY = 0, P_TRIM = 1, P_HEAT = 2, P_RING = 3, P_GLOVE = 4, P_GACC = 5, P_LENS = 6, P_DARK = 7;
-const HEAT_BACK = 0.29, HEAT_FRONT = 0.115; // zakres Z paska ciepła (aBar 0 z tyłu → 1 z przodu)
+const HEAT_BACK = 0.29, HEAT_FRONT = 0.115; // zakres Z paska ciepła fazera (aBar 0 z tyłu → 1 z przodu)
+// zakres paska ciepła budowanego modelu (ustawiany przed budową geometrii danej broni)
+const HEAT = [HEAT_BACK, HEAT_FRONT];
 
 // ------------------------------------------------------------------ geometria (układ lokalny: wylot = 0,0,0; broń sięga w +Z, ku kamerze)
 
@@ -39,7 +40,7 @@ function finish(geo, kind, m) {
   const pos = geo.attributes.position;
   const n = pos.count;
   const aBar = new Float32Array(n);
-  if (kind === P_HEAT) for (let i = 0; i < n; i++) aBar[i] = (pos.getZ(i) - HEAT_BACK) / (HEAT_FRONT - HEAT_BACK);
+  if (kind === P_HEAT) for (let i = 0; i < n; i++) aBar[i] = (pos.getZ(i) - HEAT[0]) / (HEAT[1] - HEAT[0]);
   geo.setAttribute('aPart', new THREE.BufferAttribute(new Float32Array(n).fill(kind), 1));
   geo.setAttribute('aBar', new THREE.BufferAttribute(aBar, 1));
   return geo;
@@ -135,8 +136,17 @@ function phaserParts() {
   ];
 }
 
-// ręce: prawa na chwycie, lewa pod chwytem przednim; przedramiona schodzą poza kadr (w stronę kamery, w dół)
-function handParts() {
+// ręce: prawa na chwycie, lewa pod chwytem przednim; przedramiona schodzą poza kadr (w stronę kamery, w dół).
+// Pozycje dla fazera; inne bronie przesuwają każdą dłoń (rd/ld = [dx, dy, dz] w układzie broni).
+function handParts(rd = null, ld = null) {
+  const right = rightHandParts();
+  const left = leftHandParts();
+  if (rd) { const m = trs(rd[0], rd[1], rd[2]); for (const g of right) g.applyMatrix4(m); }
+  if (ld) { const m = trs(ld[0], ld[1], ld[2]); for (const g of left) g.applyMatrix4(m); }
+  return [...right, ...left];
+}
+
+function rightHandParts() {
   const out = [];
   // prawa dłoń: grzbiet (zewnętrzna strona chwytu), palce owinięte z przodu, kciuk po lewej, palec wskazujący na spuście
   out.push(ellipsoid(0.028, 0.04, 0.03, P_GLOVE, 0.012, -0.08, 0.305, 0.28, 0, 0));
@@ -151,6 +161,11 @@ function handParts() {
   out.push(ring(0.028, 0.006, P_GACC, 0.016, -0.125, 0.338, 1.15, 0.25, 0, TAU, 12));
   out.push(...seg(0.016, -0.125, 0.338, 0.1, -0.29, 0.62, 0.027, 0.04, P_GLOVE, 9, false));
   out.push(box(0.004, 0.01, 0.16, P_GACC, -0.006, -0.19, 0.46, -1.05, 0.25, 0));
+  return out;
+}
+
+function leftHandParts() {
+  const out = [];
   // lewa dłoń: pod chwytem przednim, palce owinięte od prawej, kciuk po lewej górą
   out.push(ellipsoid(0.03, 0.022, 0.036, P_GLOVE, -0.01, -0.085, 0.105, 0.1, 0.35, 0.25));
   for (let i = 0; i < 3; i++) {
@@ -164,8 +179,82 @@ function handParts() {
   return out;
 }
 
-function buildGeometry() {
-  const parts = [...phaserParts(), ...handParts()];
+// Pistolet dwustrzałowy: krótki, dwie soczewki jedna nad drugą (seria 2 strzałów), obie dłonie na chwycie.
+const PISTOL_HEAT = [0.2, 0.07];
+function pistolParts() {
+  return [
+    // dwa emitery (soczewki + pierścienie) w jednej osłonie
+    tube(0.0095, 0.0095, 0.006, 12, P_LENS, 0, 0.011, 0.002),
+    tube(0.0095, 0.0095, 0.006, 12, P_LENS, 0, -0.011, 0.002),
+    ring(0.012, 0.003, P_RING, 0, 0.011, 0.004),
+    ring(0.012, 0.003, P_RING, 0, -0.011, 0.004),
+    chamfer(0.036, 0.052, 0.05, P_DARK, 0, 0, 0.03),
+    ring(0.026, 0.003, P_TRIM, 0, 0, 0.056, 0, 0, 0, TAU, 12),
+    // zamek / korpus
+    chamfer(0.04, 0.054, 0.15, P_BODY, 0, 0.0, 0.13),
+    chamfer(0.036, 0.046, 0.02, P_DARK, 0, 0.002, 0.215),
+    // listwy boczne
+    box(0.002, 0.004, 0.13, P_TRIM, -0.0205, -0.008, 0.13),
+    box(0.002, 0.004, 0.13, P_TRIM, 0.0205, -0.008, 0.13),
+    // górny radiator z paskiem ciepła + szczerbinka
+    box(0.022, 0.008, 0.15, P_DARK, 0, 0.03, 0.13),
+    box(0.008, 0.003, PISTOL_HEAT[0] - PISTOL_HEAT[1], P_HEAT, 0, 0.0355, (PISTOL_HEAT[0] + PISTOL_HEAT[1]) / 2),
+    box(0.014, 0.01, 0.008, P_DARK, 0, 0.038, 0.205),
+    box(0.006, 0.003, 0.003, P_TRIM, 0, 0.0445, 0.206),
+    // chwyt, osłona spustu, spust, stopka chwytu
+    chamfer(0.032, 0.1, 0.042, P_DARK, 0, -0.07, 0.19, 0.3),
+    box(0.034, 0.004, 0.028, P_TRIM, 0, -0.112, 0.205, 0.3),
+    ring(0.019, 0.003, P_BODY, 0, -0.034, 0.14, 0, Math.PI / 2, 0, Math.PI, 10),
+    box(0.007, 0.02, 0.008, P_DARK, 0, -0.04, 0.138, 0.25),
+  ];
+}
+
+// Wyrzutnia odbijająca: szeroka dysza, przezroczysta klatka z kulą-komorą (świeci kolorem gracza), cewki na korpusie.
+const BOUNCER_HEAT = [0.33, 0.19];
+function bouncerParts() {
+  const out = [
+    // dysza: soczewka, pierścień, kielich
+    tube(0.026, 0.026, 0.006, 16, P_LENS, 0, 0, 0.002),
+    ring(0.031, 0.005, P_RING, 0, 0, 0.004, 0, 0, 0, TAU, 16),
+    tube(0.036, 0.028, 0.05, 14, P_DARK, 0, 0, 0.03, true),
+    // komora: kula + 3 obręcze klatki + pręty
+    ellipsoid(0.04, 0.04, 0.04, P_LENS, 0, 0, 0.1, 0, 0, 0, 12, 8),
+    ring(0.05, 0.004, P_BODY, 0, 0, 0.1, 0, 0, 0, TAU, 16),
+    ring(0.05, 0.004, P_BODY, 0, 0, 0.1, 0, Math.PI / 2, 0, TAU, 16),
+    ring(0.05, 0.004, P_TRIM, 0, 0, 0.1, Math.PI / 2, 0, 0, TAU, 16),
+    // korpus z cewkami
+    chamfer(0.07, 0.078, 0.17, P_BODY, 0, -0.004, 0.24),
+    chamfer(0.06, 0.066, 0.03, P_DARK, 0, -0.002, 0.34),
+    ring(0.043, 0.005, P_TRIM, 0, -0.004, 0.17, 0, 0, 0, TAU, 12),
+    ring(0.043, 0.005, P_DARK, 0, -0.004, 0.19, 0, 0, 0, TAU, 12),
+    ring(0.043, 0.005, P_DARK, 0, -0.004, 0.21, 0, 0, 0, TAU, 12),
+    // listwy boczne
+    box(0.002, 0.005, 0.14, P_TRIM, -0.0355, -0.016, 0.26),
+    box(0.002, 0.005, 0.14, P_TRIM, 0.0355, -0.016, 0.26),
+    // górny radiator + pasek ciepła + celownik
+    box(0.034, 0.012, 0.16, P_DARK, 0, 0.041, 0.26),
+    box(0.012, 0.003, BOUNCER_HEAT[0] - BOUNCER_HEAT[1], P_HEAT, 0, 0.0485, (BOUNCER_HEAT[0] + BOUNCER_HEAT[1]) / 2),
+    chamfer(0.02, 0.022, 0.03, P_DARK, 0, 0.058, 0.33),
+    // chwyt przedni (pod komorą, za kulą), chwyt + spust jak fazer
+    chamfer(0.026, 0.05, 0.03, P_DARK, 0, -0.062, 0.165, -0.12),
+    chamfer(0.034, 0.1, 0.045, P_DARK, 0, -0.078, 0.29, 0.28),
+    box(0.036, 0.004, 0.03, P_TRIM, 0, -0.118, 0.302, 0.28),
+    ring(0.022, 0.0035, P_BODY, 0, -0.038, 0.232, 0, Math.PI / 2, 0, Math.PI, 10),
+    box(0.008, 0.024, 0.009, P_DARK, 0, -0.045, 0.228, 0.25),
+  ];
+  return out;
+}
+
+const MODELS = {
+  phaser: { parts: phaserParts, heat: [HEAT_BACK, HEAT_FRONT], rd: null, ld: null },
+  pistol: { parts: pistolParts, heat: PISTOL_HEAT, rd: [0, 0.006, -0.12], ld: [-0.012, -0.006, 0.07] },
+  bouncer: { parts: bouncerParts, heat: BOUNCER_HEAT, rd: null, ld: [0, -0.006, 0.062] },
+};
+
+function buildGeometry(type) {
+  const M = MODELS[type];
+  HEAT[0] = M.heat[0]; HEAT[1] = M.heat[1];
+  const parts = [...M.parts(), ...handParts(M.rd, M.ld)];
   const g = mergeGeometries(parts, false);
   for (const p of parts) p.dispose();
   return g;
@@ -245,19 +334,36 @@ export function createViewModel(camera, scene) {
     uGloveAcc: { value: VM.gloveAccent },
     uLensI: { value: VM.lensIntensity },
   };
-  const geo = buildGeometry();
   const mat = buildMaterial(uniforms);
-  const mesh = new THREE.Mesh(geo, mat);
-  mesh.name = 'viewModel';
-  mesh.frustumCulled = false;
-  mesh.renderOrder = 10;
-  mesh.layers.set(LAYER_NO_REFLECT);
-
   const group = new THREE.Group();
   group.name = 'viewModelRoot';
-  group.add(mesh);
-  group.scale.setScalar(VM.scale);
-  group.position.set(MUZZLE[0], MUZZLE[1], MUZZLE[2]);
+  const meshes = {};
+  for (const type of Object.keys(MODELS)) {
+    const mesh = new THREE.Mesh(buildGeometry(type), mat);
+    mesh.name = 'viewModel-' + type;
+    mesh.frustumCulled = false;
+    mesh.renderOrder = 10;
+    mesh.layers.set(LAYER_NO_REFLECT);
+    mesh.visible = false;
+    group.add(mesh);
+    meshes[type] = mesh;
+  }
+  // wylot broni w układzie kamery (bez kołysania/odrzutu) — bieżący model
+  const MUZZLE = [0, 0, 0];
+  const WS = new Float64Array(1); // 0 skala odrzutu bieżącej broni
+  let curType = null;
+  function setWeapon(type) {
+    const t = Object.prototype.hasOwnProperty.call(MODELS, type) ? type : 'phaser';
+    if (t === curType) return;
+    curType = t;
+    for (const k in meshes) meshes[k].visible = k === t;
+    const c = VM.weapons[t];
+    MUZZLE[0] = c.muzzle[0]; MUZZLE[1] = c.muzzle[1]; MUZZLE[2] = c.muzzle[2];
+    WS[0] = c.recoil;
+    group.scale.setScalar(c.scale);
+    group.position.set(MUZZLE[0], MUZZLE[1], MUZZLE[2]);
+  }
+  setWeapon('phaser');
   camera.add(group);
 
   let lastColor = null;
@@ -266,6 +372,7 @@ export function createViewModel(camera, scene) {
 
   function update(dt, weapon, fired, color, speed = 0, stunned = 0, gait = null) {
     S[5] += dt;
+    if (weapon && weapon.type !== curType) setWeapon(weapon.type);
     if (color !== lastColor) {
       lastColor = color;
       uniforms.uColor.value.setHex(hexNumber(color));
@@ -308,8 +415,8 @@ export function createViewModel(camera, scene) {
     const gp = group.position, gr = group.rotation;
     gp.x = MUZZLE[0] + bx + D[0] * sprint;
     gp.y = MUZZLE[1] + by + D[1] * sprint;
-    gp.z = MUZZLE[2] + VM.recoilKick * recoil + D[2] * sprint;
-    gr.set(VM.recoilPitch * recoil - VM.sprintPitch * sprint, VM.sprintYaw * sprint, VM.sprintRoll * sprint + bx * 2);
+    gp.z = MUZZLE[2] + VM.recoilKick * WS[0] * recoil + D[2] * sprint;
+    gr.set(VM.recoilPitch * WS[0] * recoil - VM.sprintPitch * sprint, VM.sprintYaw * sprint, VM.sprintRoll * sprint + bx * 2);
   }
 
   // faktyczny wylot lufy (z odrzutem i kołysaniem) w układzie świata; bez alokacji
@@ -321,9 +428,9 @@ export function createViewModel(camera, scene) {
   function dispose() {
     camera.remove(group);
     if (addedCamera && camera.parent) camera.parent.remove(camera);
-    geo.dispose();
+    for (const k in meshes) meshes[k].geometry.dispose();
     mat.dispose();
   }
 
-  return { update, muzzleWorld, dispose, group };
+  return { update, muzzleWorld, setWeapon, dispose, group, meshes };
 }

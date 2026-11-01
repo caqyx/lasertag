@@ -151,5 +151,8 @@ test('resetWeapon przywraca stan początkowy', () => {
   const W = createWeapon();
   holdFire(W, 1 / 60, 10);
   resetWeapon(W);
-  assert.deepEqual({ ...W }, { heat: 0, cooldown: 0, sinceShot: 1e3, overheated: false });
+  assert.deepEqual({ ...W }, {
+    type: 'phaser', C: CONFIG.weapons.phaser,
+    heat: 0, cooldown: 0, sinceShot: 1e3, overheated: false, burstLeft: 0, burstTimer: 0, held: false,
+  });
 });

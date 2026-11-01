@@ -22,13 +22,15 @@ export function createStandings(capacity = CONFIG.combat.maxParticipants) {
 /**
  * @param {object} sim
  * @param {string} modeId
- * @param {{ countdown?: number }} [opts]  countdown: 0 → start od razu (np. testy)
+ * @param {{ countdown?: number, teams?: number, perTeam?: number }} [opts]  countdown: 0 → start od razu (np. testy);
+ *   teams/perTeam: skład trybu Custom (getMode)
  */
 export function createMatch(sim, modeId, opts = {}) {
-  const m = getMode(modeId);
+  const m = getMode(modeId, opts);
   const cd = opts.countdown === undefined ? CONFIG.match.countdown : opts.countdown;
   const M = {
     modeId: m.id,
+    mode: m,                              // deskryptor trybu (UI: nazwa, limit; Custom: skład N × perTeam)
     teams: m.teams,                       // 0 = ffa
     timeLimit: m.timeLimit,
     elimLimit: m.elimLimit,

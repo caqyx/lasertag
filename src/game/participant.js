@@ -41,7 +41,8 @@ export function isSensorLit(P, sensor) {
 }
 
 /**
- * @param {{ id:number, name?:string, team?:number, color?:string, isPlayer?:boolean, inputSource?:object }} o
+ * @param {{ id:number, name?:string, team?:number, color?:string, isPlayer?:boolean, inputSource?:object, weapon?:string }} o
+ * weapon: typ broni (CONFIG.weapons; brak/nieznany → CONFIG.defaults.weapon).
  * team: indeks drużyny ≥ 0 w trybach drużynowych; w FFA -1 (lub unikalny indeks).
  */
 export function createParticipant(o) {
@@ -58,11 +59,12 @@ export function createParticipant(o) {
     input: createInputState(),
     prevX: 0.5, prevY: 0.5, prevZ: 0.5,
     hp: C.maxHp,
+    dmg: 0,                   // D-037: punkty HP utracone w bieżącym (najwyższym) segmencie, 0..segmentPoints-1
     state: 'alive',
     stateTimer: 0.5,
     protectTimer: 0.5,
     stunTimer: 0.5,           // D-016: hit stun — broń nieaktywna (s)
-    weapon: createWeapon(),
+    weapon: createWeapon(o.weapon),
     sensorFlash: new Float32Array(4),
     sensorsLit: C.maxHp,
     stats: { score: 0, hits: 0, elims: 0, deaths: 0, shots: 0 },
@@ -81,6 +83,7 @@ export function createParticipant(o) {
 /** Pełne zdrowie, stan alive, wyczyszczone timery (bez zmiany pozycji). Nie alokuje. */
 export function resetVitals(P) {
   P.hp = CONFIG.combat.maxHp;
+  P.dmg = 0;
   P.sensorsLit = P.hp;
   P.state = 'alive';
   P.stateTimer = 0;

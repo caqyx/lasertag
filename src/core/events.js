@@ -10,13 +10,18 @@
 //   RESPAWN     a = uczestnik; x,y,z = punkt spawnu; team = drużyna uczestnika
 //   OVERHEAT    a = uczestnik; value = ciepło
 //   PROTECT_END a = uczestnik; value: 1 = przerwana strzałem, 0 = upłynął czas
+//   (D-037) SHOT z broni hitscan: nx,ny,nz = normalna trafionej powierzchni (value 0 i trafiona bryła/podłoga), inaczej 0
+//   LAUNCH      a = strzelec (wyrzutnia); x,y,z = start pocisku; x2,y2,z2 = kierunek (jednostkowy); value = slot puli
+//   BOUNCE      a = właściciel pocisku; x,y,z = punkt odbicia; nx,ny,nz = normalna powierzchni; x2,y2,z2 = nowy kierunek
+//   PROJ_END    a = właściciel; b = trafiony lub -1; x,y,z = punkt końca; nx,ny,nz = normalna (ściana) lub 0;
+//               x2,y2,z2 = kierunek lotu; value: 0 = 2. kontakt z powierzchnią, 1 = trafienie, 2 = ochrona celu, 3 = koniec życia
 
-export const EV = Object.freeze({ SHOT: 1, HIT: 2, ELIM: 3, RESPAWN: 4, OVERHEAT: 5, PROTECT_END: 6 });
+export const EV = Object.freeze({ SHOT: 1, HIT: 2, ELIM: 3, RESPAWN: 4, OVERHEAT: 5, PROTECT_END: 6, LAUNCH: 7, BOUNCE: 8, PROJ_END: 9 });
 
 function createRec() {
   return {
     type: 0, time: 0.5, a: -1, b: -1, team: -1, sensor: -1,
-    x: 0.5, y: 0.5, z: 0.5, x2: 0.5, y2: 0.5, z2: 0.5, value: 0.5,
+    x: 0.5, y: 0.5, z: 0.5, x2: 0.5, y2: 0.5, z2: 0.5, nx: 0.5, ny: 0.5, nz: 0.5, value: 0.5,
   };
 }
 
@@ -29,6 +34,7 @@ function resetRec(r, type) {
   r.sensor = -1;
   r.x = 0; r.y = 0; r.z = 0;
   r.x2 = 0; r.y2 = 0; r.z2 = 0;
+  r.nx = 0; r.ny = 0; r.nz = 0;
   r.value = 0;
 }
 

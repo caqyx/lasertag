@@ -28,6 +28,7 @@ import reactor from '../../src/world/maps/reactor.js';
 import orbita from '../../src/world/maps/orbita.js';
 import { createAdapt, recordFromEvents } from '../../src/game/bots/adapt.js';
 import { createMatch, stepMatch } from '../../src/game/match.js';
+import { setupRoster, spawnTeamCount } from '../../src/game/modes.js';
 
 const N = 100_000;
 const LIMIT = 64 * 1024;
@@ -86,7 +87,7 @@ const acc = new Float64Array(1);
 
 // --- stepSim: kilku uczestników w ciągłym ogniu (strzały, trafienia, eliminacje, respawn/pickSpawn, ochrona, przegrzanie)
 /** InputSource bez alokacji: celuje w najbliższego żywego wroga, ciągły ogień, chód bokiem/do przodu. */
-function createShooterInput() {
+function createShooterInput(click = false) {
   return {
     sample(P, sim, out) {
       const ps = sim.participants;
@@ -100,7 +101,7 @@ function createShooterInput() {
         const d = dx * dx + dz * dz;
         if (d < bd) { bd = d; best = i; }
       }
-      out.fire = true;
+      out.fire = click ? (Math.floor(sim.time * 60) & 1) === 0 : true;   // click: naciśnij/puść (pistolet semi-auto)
       out.jump = false;
       out.sprint = false;
       out.pitch = 0;
@@ -121,10 +122,13 @@ const arena = buildWorld({
     .map(([x, z], i) => ({ x, z, team: i % 4, yaw: Math.atan2(x, z) })),
 });
 /** Mecz: `shooters` strzelców + `dummies` manekinów; opts → createSim. */
-function makeMatch(w, shooters, dummies, opts = {}, teamOf = () => -1) {
+function makeMatch(w, shooters, dummies, opts = {}, teamOf = () => -1, weaponOf = () => 'phaser') {
   const sim = createSim({ world: w, seed: 11, ...opts });
   let id = 0;
-  for (let i = 0; i < shooters; i++, id++) addParticipant(sim, createParticipant({ id, team: teamOf(id), inputSource: createShooterInput() }));
+  for (let i = 0; i < shooters; i++, id++) {
+    const weapon = weaponOf(id);
+    addParticipant(sim, createParticipant({ id, team: teamOf(id), weapon, inputSource: createShooterInput(weapon !== 'phaser') }));
+  }
   for (let i = 0; i < dummies; i++, id++) addParticipant(sim, createParticipant({ id, team: teamOf(id), inputSource: createDummyInput({ strafe: (i & 1) === 1 }) }));
   return sim;
 }
@@ -132,6 +136,10 @@ const ffaSim = makeMatch(arena, 4, 2);
 const teamSim = makeMatch(arena, 6, 0, { teamCount: 2, friendlyFire: false }, (id) => id & 1);
 const ffSim = makeMatch(arena, 4, 0, { teamCount: 2, friendlyFire: true }, (id) => id & 1);
 const uvSim = makeMatch(world, 4, 3);
+// D-037: pistolet (seria, semi-auto) i wyrzutnia (pula pocisków, odbicia, trafienia pociskiem)
+const pistolSim = makeMatch(arena, 4, 2, {}, () => -1, () => 'pistol');
+const bouncerSim = makeMatch(arena, 4, 2, {}, () => -1, () => 'bouncer');
+const mixedSim = makeMatch(world, 6, 2, {}, () => -1, (id) => ['phaser', 'pistol', 'bouncer'][id % 3]);
 const SUB = 4; // kroki symulacji na „klatkę" (kolejkę czyści właściciel pętli raz na klatkę)
 /** Jeden krok + czyszczenie kolejki co SUB kroków (jak main.js). */
 function simStep(sim, i) {
@@ -168,6 +176,9 @@ const SCENARIOS = {
   'stepSim (TDM 3v3, teamCount 2)': (i) => simStep(teamSim, i),
   'stepSim (friendlyFire, 2v2)': (i) => simStep(ffSim, i),
   'stepSim (uvmaze, 4 strzelców + 3 manekiny)': (i) => simStep(uvSim, i),
+  'stepSim (pistolet, 4 strzelców + 2 manekiny)': (i) => simStep(pistolSim, i),
+  'stepSim (wyrzutnia, 4 strzelców + 2 manekiny)': (i) => simStep(bouncerSim, i),
+  'stepSim (uvmaze, fazer + pistolet + wyrzutnia)': (i) => simStep(mixedSim, i),
 };
 // stepSim z 8 botami (createBotBrain: patrol/engage/cover/chase, nav, widzenie) na każdej mapie
 const LEVELS = ['easy', 'normal', 'hard'];
@@ -179,6 +190,13 @@ for (const [mapName, data] of [['uvmaze', uvmaze], ['neonhive', neonhive], ['rea
     addParticipant(sim, createParticipant({ id, inputSource: createBotBrain({ level: LEVELS[id % 3], nav, adapt: null }) }));
   }
   SCENARIOS[`stepSim (${mapName}, 8 botów)`] = (i) => simStep(sim, i);
+  if (mapName === 'uvmaze' || mapName === 'reactor') {   // boty z pistoletem i wyrzutnią (D-037)
+    const simW = createSim({ world: w, seed: 23 });
+    for (let id = 0; id < 8; id++) {
+      addParticipant(simW, createParticipant({ id, weapon: ['pistol', 'bouncer'][id & 1], inputSource: createBotBrain({ level: LEVELS[id % 3], nav, adapt: null }) }));
+    }
+    SCENARIOS[`stepSim (${mapName}, 8 botów: pistolet + wyrzutnia)`] = (i) => simStep(simW, i);
+  }
 }
 // Pełna pętla meczu jak main.js: gracz (isPlayer) + 8 botów z adaptacją, stepMatch i recordFromEvents co krok.
 {
@@ -197,6 +215,31 @@ for (const [mapName, data] of [['uvmaze', uvmaze], ['neonhive', neonhive], ['rea
     recordFromEvents(adapt, sim.events, 0);
     sim.events.clear();
     if (M.state === 'ended') {   // nowy „mecz" bez alokacji: zeruj wyniki i czas
+      for (let k = 0; k < ps.length; k++) { const st = ps[k].stats; st.score = 0; st.elims = 0; st.deaths = 0; st.hits = 0; st.shots = 0; }
+      M.state = 'playing'; M.timeLeft = M.timeLimit; M.elapsed = 0; M.sinceStart = 0;
+    }
+  };
+}
+// Multiplayer → Custom 4×4 (D-039): 16 uczestników (gracz-manekin + 15 botów) w 4 drużynach, spawny per strona,
+// stepMatch z 4 drużynami (sumy, limit drużyny, standings przy końcu).
+{
+  const nav = buildNav(world);
+  const sim = createSim({ world, seed: 44, teamCount: spawnTeamCount('custom', { teams: 4, perTeam: 4 }) });
+  const adapt = createAdapt();
+  for (const r of setupRoster('custom', { teams: 4, perTeam: 4 })) {
+    addParticipant(sim, createParticipant({
+      id: r.id, team: r.team, isPlayer: r.isPlayer,
+      inputSource: r.kind === 'local' ? createDummyInput({ strafe: true }) : createBotBrain({ level: LEVELS[r.id % 3], nav, adapt }),
+    }));
+  }
+  const M = createMatch(sim, 'custom', { teams: 4, perTeam: 4, countdown: 0 });
+  const ps = sim.participants;
+  SCENARIOS['stepSim + stepMatch (uvmaze, Custom 4×4: gracz + 15 botów)'] = () => {
+    stepSim(sim, 1 / 60);
+    stepMatch(M, sim, 1 / 60);
+    recordFromEvents(adapt, sim.events, 0);
+    sim.events.clear();
+    if (M.state === 'ended') {
       for (let k = 0; k < ps.length; k++) { const st = ps[k].stats; st.score = 0; st.elims = 0; st.deaths = 0; st.hits = 0; st.shots = 0; }
       M.state = 'playing'; M.timeLeft = M.timeLimit; M.elapsed = 0; M.sinceStart = 0;
     }
@@ -232,6 +275,19 @@ test('stepSim scenariusze alokacji faktycznie walczą (strzały, trafienia, elim
   }
   for (const t of [EV.SHOT, EV.HIT, EV.ELIM, EV.RESPAWN, EV.OVERHEAT, EV.PROTECT_END]) {
     assert.ok(seen.has(t), `scenariusz nie generuje zdarzenia ${t}`);
+  }
+});
+
+test('stepSim scenariusze pistoletu/wyrzutni walczą (strzały, wystrzały, odbicia, trafienia, eliminacje)', () => {
+  for (const [w, ev] of [['pistol', [EV.SHOT, EV.HIT, EV.ELIM]], ['bouncer', [EV.LAUNCH, EV.BOUNCE, EV.PROJ_END, EV.HIT, EV.ELIM]]]) {
+    const sim = makeMatch(arena, 4, 2, {}, () => -1, () => w);
+    const seen = new Set();
+    for (let i = 0; i < 60 * 60; i++) {
+      stepSim(sim, 1 / 60);
+      for (let k = 0; k < sim.events.count; k++) seen.add(sim.events.at(k).type);
+      sim.events.clear();
+    }
+    for (const t of ev) assert.ok(seen.has(t), `${w}: brak zdarzenia ${t}`);
   }
 });
 

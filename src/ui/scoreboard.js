@@ -126,9 +126,9 @@ export function createScoreboard(rootEl) {
     const now = performance.now();
     if (now - last < refreshMs) return;
     last = now;
-    if (cMode !== M.modeId) {
-      cMode = M.modeId;
-      const m = getMode(M.modeId);
+    if (cMode !== (M.mode || M.modeId)) {
+      cMode = M.mode || M.modeId;
+      const m = M.mode || getMode(M.modeId);
       modeEl.textContent = m.short + ' · ' + m.name;
       const f = 'Limit: ' + m.elimLimit + (m.teams > 0 ? ' eliminacji drużyny' : ' eliminacji') + ' · E = eliminacje, D = śmierci';
       if (f !== cFoot) { cFoot = f; foot.textContent = f; }

@@ -81,7 +81,7 @@ export function createEndScreen(rootEl, onRestart, onMenu) {
     }
     root.style.setProperty('--win', winColor);
 
-    const m = getMode(M.modeId);
+    const m = M.mode || getMode(M.modeId);
     const reason = M.endReason === 'limit' ? 'Limit ' + m.elimLimit + ' eliminacji' : 'Koniec czasu';
     meta.textContent = m.short + ' · ' + reason + ' · czas gry ' + formatTime(M.elapsed);
 

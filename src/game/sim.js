@@ -10,10 +10,11 @@ import { stepWeapon, resetWeapon } from './weapon.js';
 import { resetVitals, placeAt } from './participant.js';
 import { resolveShot, stepParticipantState, pickSpawn } from './combat.js';
 import { resetDoors, stepDoors } from './doors.js';
+import { createProjectiles, launchProjectile, stepProjectiles } from './projectiles.js';
 
 /**
  * @param {{ world:object, seed?:number, friendlyFire?:boolean, teamCount?:number }} o
- *   teamCount > 0 → spawny drużynowe (sp.team % teamCount === P.team); 0 (domyślnie) → wszystkie spawny.
+ *   teamCount > 0 → spawny drużynowe (2: sp.team % 2 === P.team; 3–4: sp.team === P.team — combat.spawnAllowed); 0 (domyślnie) → wszystkie spawny.
  */
 export function createSim(o) {
   resetDoors(o.world, 0);   // drzwi przesuwne: poza z czasu 0 (świat współdzielony między meczami)
@@ -29,6 +30,7 @@ export function createSim(o) {
     teams,
     friendlyFire: o.friendlyFire === undefined ? CONFIG.combat.friendlyFire : !!o.friendlyFire,
     teamCount: o.teamCount | 0,
+    proj: createProjectiles(),   // D-037: pula pocisków wyrzutni
   };
 }
 
@@ -170,7 +172,10 @@ function fireOne(sim, P, dt) {
   const W = P.weapon;
   const wasOver = W.overheated;
   // hit stun (D-016): trafiony ma fazer nieaktywny, dopóki P.stunTimer > 0 (brak pola = 0)
-  if (stepWeapon(W, P.input.fire && !(P.stunTimer > 0), dt)) resolveShot(sim, P);
+  if (stepWeapon(W, P.input.fire && !(P.stunTimer > 0), dt)) {
+    if (W.C.kind === 'projectile') launchProjectile(sim, P);   // D-037: wyrzutnia — pocisk w sim.proj
+    else resolveShot(sim, P);
+  }
   if (!wasOver && W.overheated) {
     const r = sim.events.push(EV.OVERHEAT);
     r.time = sim.time;
@@ -194,4 +199,5 @@ export function stepSim(sim, dt) {
   for (let i = 0; i < ps.length; i++) moveOne(sim, ps[i], dt);
   separateParticipants(sim);
   for (let i = 0; i < ps.length; i++) fireOne(sim, ps[i], dt);
+  stepProjectiles(sim, dt);   // pociski po strzałach (nowe lecą już w tym kroku)
 }

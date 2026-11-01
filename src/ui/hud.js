@@ -2,9 +2,10 @@
 // DOM budowany raz w rootEl (#hud). update() porównuje z poprzednimi wartościami (cache) i dotyka DOM
 // tylko przy zmianie. Zdarzenia czytane z sim.events (count/at(i)) — kolejkę czyści main po klatce.
 // Elementy: 4 segmenty HP (kolor gracza, błysk przy utracie), pasek ciepła (+ ostrzeżenie, PRZEGRZANIE),
-// hitmarker, wskaźnik kierunku obrażeń (łuk wokół celownika), ekran eliminacji z odliczaniem,
+// hitmarker, wskaźnik kierunku obrażeń (łuk wokół środka ekranu; bez celownika — D-037), ekran eliminacji z odliczaniem,
 // wskaźnik ochrony, feed eliminacji (ostatnie N, znikają), wynik gracza, hit stun (P.stunTimer > 0 → „FAZER OFF”),
 // stamina (body.stamina 0..1 pod segmentami HP; body.exhausted → szary + miganie; pełna > hud.staminaHide s → zanika).
+// D-037: nazwa broni (weapon.C.name) w panelu ciepła; segment częściowo uszkodzony (P.dmg > 0) — przygaszony.
 import { CONFIG } from '../config.js';
 import { EV } from '../core/events.js';
 import { findParticipant } from '../game/sim.js';
@@ -25,9 +26,9 @@ export function createHud(rootEl) {
   for (let i = 0; i < 4; i++) el(hit, 'lt-hm lt-hm' + i);
   const dmg = el(center, 'lt-dmgdir');
   el(dmg, 'lt-dmgarc');
-  // hit stun (P.stunTimer > 0): krótki napis + pasek pod celownikiem
+  // hit stun (P.stunTimer > 0): krótki napis + pasek pod środkiem ekranu
   const stun = el(root, 'lt-stun');
-  el(stun, 'lt-stun-label', 'FAZER OFF');
+  const stunLabel = el(stun, 'lt-stun-label', 'FAZER OFF');
   const stunBar = el(el(stun, 'lt-stun-track'), 'lt-stun-fill');
   const protect = el(root, 'lt-protect');
   el(protect, 'lt-protect-label', 'OCHRONA');
@@ -50,8 +51,9 @@ export function createHud(rootEl) {
   const heatHead = el(heat, 'lt-heat-head');
   el(heatHead, 'lt-label', 'CIEPŁO');
   el(heatHead, 'lt-heat-warn', 'PRZEGRZANIE');
-  el(heatHead, 'lt-heat-stun', 'FAZER OFF');
+  const heatStun = el(heatHead, 'lt-heat-stun', 'FAZER OFF');
   const heatFill = el(el(heat, 'lt-heat-track'), 'lt-heat-fill');
+  const heatWeapon = el(heat, 'lt-heat-weapon lt-label', '');
 
   // --- prawa góra: feed eliminacji
   const feed = el(root, 'lt-feed');
@@ -76,6 +78,7 @@ export function createHud(rootEl) {
 
   // --- cache stanu (wartości ostatnio zapisane do DOM)
   let t = 0;
+  let cWeapon = null, cPart = -1;
   let cColor = null, cHp = -1, cScore = -1, cHeat = -1, cWarn = -1, cOver = -1;
   let cDead = -1, cElimBy = -2, cCount = -1, cProt = -1, cProtW = -1;
   let cHitOp = -1, cHitKill = -1, cDmgOp = -1, cDmgAng = 1e9;
@@ -126,12 +129,15 @@ export function createHud(rootEl) {
       if (cHp > hp) for (let i = Math.max(0, hp); i < cHp && i < MAX_HP; i++) segFlashT[i] = H.hpFlashTime;
       cHp = hp;
     }
+    // najwyższy zapalony segment częściowo uszkodzony (D-037: P.dmg punktów z combat.segmentPoints)
+    const part = hp > 0 && player.dmg > 0 ? hp - 1 : -1;
+    if (part !== cPart) { cPart = part; for (let i = 0; i < MAX_HP; i++) segState[i] = -1; }
     for (let i = 0; i < MAX_HP; i++) {
-      let s = i < hp ? 1 : 0;
+      let s = i < hp ? (i === part ? 3 : 1) : 0;
       if (segFlashT[i] > 0) s = 2;
       if (s !== segState[i]) {
         segState[i] = s;
-        segs[i].className = s === 1 ? 'lt-seg on' : s === 2 ? 'lt-seg flash' : 'lt-seg';
+        segs[i].className = s === 1 ? 'lt-seg on' : s === 3 ? 'lt-seg on part' : s === 2 ? 'lt-seg flash' : 'lt-seg';
       }
     }
     const sc = player.stats ? player.stats.score : 0;
@@ -140,6 +146,12 @@ export function createHud(rootEl) {
 
   function updateHeat(player) {
     const W = player.weapon;
+    if (W && W.C && W.C.name !== cWeapon) {
+      cWeapon = W.C.name;
+      heatWeapon.textContent = cWeapon;
+      stunLabel.textContent = cWeapon + ' OFF';
+      heatStun.textContent = cWeapon + ' OFF';
+    }
     const h = W ? q(Math.min(1, Math.max(0, W.heat)), 0.01) : 0;
     if (h !== cHeat) { cHeat = h; heatFill.style.transform = 'scaleX(' + h + ')'; }
     const over = W && W.overheated ? 1 : 0;

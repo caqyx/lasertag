@@ -476,3 +476,28 @@
 @keyframes lt-cd-pop { from { transform: scale(1.5); opacity: 0.2; } to { transform: scale(1); opacity: 1; } }
 .lt-countdown-label { font-size: 12px; letter-spacing: 0.5em; color: rgba(216, 212, 255, 0.7); }
 .lt-st-head + .lt-st-team { margin-top: 0; }
+
+/* ---------- zakładki SOLO / MULTIPLAYER, Custom (D-039) ---------- */
+.lt-mn-tabs .lt-mn-options { grid-auto-flow: column; grid-auto-columns: 1fr; max-width: 640px; margin: 0 auto; width: 100%; }
+.lt-mn-tabs .lt-mn-label { justify-content: center; }
+.lt-mn-tab { --c: var(--neon-magenta); padding: 10px 14px; }
+.lt-mn-tab .lt-mn-pill-name { font-size: 16px; letter-spacing: 0.32em; }
+.lt-mn-tab.sel { box-shadow: 0 0 14px rgba(255, 43, 214, 0.55), inset 0 0 14px rgba(255, 43, 214, 0.18); }
+.lt-mn-tab.sel .lt-mn-pill-name { color: var(--neon-magenta); text-shadow: 0 0 8px rgba(255, 43, 214, 0.85); }
+.lt-mn-row.lt-mn-hidden, .lt-mn-pair.lt-mn-hidden { display: none; }
+.lt-mn-pair { display: grid; grid-template-columns: 3fr 5fr; gap: 4px; }
+.lt-mn-pill.lt-mn-off { display: none; }
+.lt-mn-mp.lt-mn-modes .lt-mn-options { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); align-items: center; }
+.lt-mn-mpcard .lt-mn-dots { margin-right: 18px; }
+.lt-mn-mpnote { font-size: 11px; line-height: 1.5; color: rgba(216, 212, 255, 0.5); }
+.lt-mn-teamsw { display: flex; justify-content: center; gap: 4px; }
+.lt-mn-teamsw .lt-mn-dot { width: 7px; height: 7px; }
+@media (max-width: 760px) {
+  .lt-mn-mp.lt-mn-modes .lt-mn-options, .lt-mn-pair { grid-template-columns: 1fr; }
+}
+
+/* --- BROŃ (D-037): 3 kompaktowe karty broni gracza --- */
+.lt-mn-weaponcard { --c: var(--neon-magenta); padding: 9px 12px; }
+.lt-mn-weaponcard .lt-mn-card-top { margin-bottom: 4px; }
+.lt-mn-weaponcard .lt-mn-card-tag { color: var(--neon-magenta); border-color: rgba(255, 43, 214, 0.45); }
+.lt-mn-weaponcard .lt-mn-card-desc { margin-top: 3px; font-size: 11px; }

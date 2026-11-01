@@ -258,13 +258,16 @@ const waitApp = (page, app, ms = FLOW_T) => page.waitForFunction((a) => window._
 
 /** Wybór w menu kliknięciami (karta mapy, karta trybu, poziom, preset) i start klawiszem Enter (gest → pointer lock). */
 async function menuStart(page, map, mode, diff, preset) {
+  const row = (key) => page.locator(`.lt-mn-row[data-key="${key}"]`);
+  if (await row('group').count()) await row('group').locator('.lt-mn-pill').nth(0).click(); // zakładka SOLO
   await page.locator('.lt-mn-mapcard').nth(mapIds.indexOf(map)).click();
-  await page.locator('.lt-mn-modecard').nth(modeIds.indexOf(mode)).click();
-  const seg = page.locator('.lt-mn-row.lt-mn-seg');
-  await seg.nth(0).locator('.lt-mn-pill').nth(diffIds.indexOf(diff)).click();
-  await seg.nth(1).locator('.lt-mn-pill').nth(presetIds.indexOf(preset)).click();
-  const sel = await page.evaluate(() => [...document.querySelectorAll('.lt-menu .sel')].length);
-  if (sel !== 4) throw new Error(`menu: zaznaczonych opcji ${sel} ≠ 4`);
+  await row('mode').locator('.lt-mn-modecard').nth(modeIds.indexOf(mode)).click();
+  await row('diff').locator('.lt-mn-pill').nth(diffIds.indexOf(diff)).click();
+  await row('preset').locator('.lt-mn-pill').nth(presetIds.indexOf(preset)).click();
+  // każdy widoczny wiersz menu ma dokładnie jedną zaznaczoną opcję
+  const bad = await page.evaluate(() => [...document.querySelectorAll('.lt-menu .lt-mn-row[data-key]')]
+    .filter((r) => !r.classList.contains('lt-mn-hidden') && r.querySelectorAll('.sel').length !== 1).map((r) => r.dataset.key));
+  if (bad.length) throw new Error(`menu: wiersze bez jednej zaznaczonej opcji: ${bad.join(', ')}`);
   await page.keyboard.press('Enter');
   await waitApp(page, 'match');
   return waitLock(page);

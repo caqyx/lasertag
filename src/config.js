@@ -1,6 +1,25 @@
 // CONFIG — jedyne źródło liczb w grze (SPEC §12). Moduły importują stąd, nie hardkodują wartości.
 // Sekcje odpowiadają modułom. Wartości z SPEC §2/§5/§7.
 
+// Fazer z przegrzewaniem (SPEC §2.3) — wspólny obiekt CONFIG.weapon i CONFIG.weapons.phaser.
+const PHASER = {
+  name: 'FAZER', kind: 'hitscan',
+  range: 50,
+  fireInterval: 0.22,
+  burst: 1, burstGap: 0, semiAuto: false,
+  heatPerShot: 0.11,
+  coolRate: 0.45,
+  coolDelay: 0.25,
+  overheatCoolRate: 0.6,
+  overheatRecover: 0.35,
+  damage: 4,                // punkty HP = 1 segment (combat.segmentPoints)
+  stunScale: 1,
+  beamDuration: 0.12,
+  beamWidth: 1,             // × fx.beamWidth
+  muzzleOffset: [0.22, -0.18, -0.45], // względem kamery (prawo, dół, przód) — wylot broni awatara (wiązki botów)
+  bot: { maxFireDist: 0, engage: null, lead: false },   // 0/null → wartości poziomu bota / bots.engageRange
+};
+
 export const CONFIG = Object.freeze({
   sim: {
     hz: 60,                 // stały krok symulacji
@@ -43,21 +62,50 @@ export const CONFIG = Object.freeze({
     groundSnap: 0.12,
   },
 
-  weapon: {
-    range: 50,
-    fireInterval: 0.22,
-    heatPerShot: 0.11,
-    coolRate: 0.45,
-    coolDelay: 0.25,
-    overheatCoolRate: 0.6,
-    overheatRecover: 0.35,
-    beamDuration: 0.12,
-    muzzleOffset: [0.22, -0.18, -0.45], // względem kamery (prawo, dół, przód)
+  weapon: PHASER,           // fazer = broń domyślna (SPEC §2.3); alias CONFIG.weapons.phaser
+
+  // Bronie (D-037): wybór przed meczem (menu BROŃ / ?weapon=), jedna na mecz; boty losują z sim.rng.
+  // damage w punktach HP (combat.segmentPoints punktów = 1 segment kamizelki); stunScale × combat.hitStun.
+  // burst > 1: jedno naciśnięcie spustu = seria (burstGap s między strzałami); semiAuto: trzymanie spustu nie powtarza.
+  weapons: {
+    phaser: PHASER,
+    pistol: {
+      name: 'PISTOLET', kind: 'hitscan',
+      range: 16,              // m — mały zasięg
+      fireInterval: 0.3,      // s od początku serii do gotowości na kolejną
+      burst: 2, burstGap: 0.07, semiAuto: true,
+      heatPerShot: 0.025,     // bardzo mało ciepła na strzał (40 strzałów do przegrzania)
+      coolRate: 0.45, coolDelay: 0.25, overheatCoolRate: 0.6, overheatRecover: 0.35,
+      damage: 2,              // ½ segmentu — seria 2 trafień = 1 trafienie fazera
+      stunScale: 0.5,
+      beamDuration: 0.07,     // wiązka krótsza w czasie
+      beamWidth: 0.5,         // × fx.beamWidth (cieńsza)
+      bot: { maxFireDist: 14, engage: [3, 9], lead: false },
+    },
+    bouncer: {
+      name: 'WYRZUTNIA', kind: 'projectile',
+      speed: 14,              // m/s — wolny impuls (nie hitscan)
+      life: 2.5,              // s lotu (zasięg ≈ 35 m)
+      maxBounces: 1,          // odbicie lustrzane raz; drugi kontakt z powierzchnią = znika
+      range: 35,              // m — dla botów/opisu (≈ speed × life)
+      fireInterval: 0.55,
+      burst: 1, burstGap: 0, semiAuto: false,
+      heatPerShot: 0.2,
+      coolRate: 0.45, coolDelay: 0.25, overheatCoolRate: 0.6, overheatRecover: 0.35,
+      damage: 4,              // 1 segment
+      stunScale: 1,
+      beamDuration: 0, beamWidth: 0,
+      maxActive: 48,          // pula pocisków w sim (najstarszy nadpisywany po wyczerpaniu)
+      surfaceEps: 0.01,       // m — odsunięcie od powierzchni po odbiciu
+      bot: { maxFireDist: 24, engage: [6, 15], lead: true },
+    },
   },
 
+
   combat: {
-    maxHp: 4,
-    damage: 1,
+    maxHp: 4,               // segmenty kamizelki (P.hp)
+    damage: 1,              // segmenty na trafienie fazera (= weapons.phaser.damage / segmentPoints)
+    segmentPoints: 4,       // D-037: punkty HP na segment; P.dmg = punkty utracone w bieżącym segmencie
     eliminatedTime: 3.0,
     protectionTime: 2.0,
     hitFlashTime: 0.15,
@@ -75,6 +123,7 @@ export const CONFIG = Object.freeze({
     loseOrder: ['back', 'left', 'right', 'front'],
     spawnOccupiedRadius: 1.5, // m — spawn z żywym uczestnikiem bliżej niż to jest zajęty (pickSpawn)
     spawnOffset: 1.2,       // m — przesunięcie od spawnu, gdy wszystkie dozwolone zajęte
+    spawnOffsetClear: 0.8,  // m — punkt przesunięty wolny, gdy nikt bliżej (≥ 2 × player.radius; D-039: 16 osób na 8 spawnach)
     hitStun: 0.45,          // D-016: s bez broni po trafieniu (nie eliminującym) — kto trafi pierwszy, wygrywa wymianę
     eventCapacity: 256,     // pierścień zdarzeń symulacji (core/events.js); czyszczony raz na klatkę renderu
     maxParticipants: 16,    // pojemność instancji awatarów
@@ -93,6 +142,10 @@ export const CONFIG = Object.freeze({
     ffa: { teams: 0, participants: 8, timeLimit: 300, elimLimit: 25 },
     tdm2: { teams: 2, perTeam: 4, timeLimit: 300, elimLimit: 60 },
     tdm4: { teams: 4, perTeam: 2, timeLimit: 300, elimLimit: 30 },
+    // Multiplayer → Custom (D-039): N drużyn × tyle samo osób; gracz w drużynie 0, reszta slotów = boty (pod M5: 'remote').
+    // Łącznie ≤ combat.maxParticipants → maks. osób w drużynie = floor(16 / teams) (2→8, 3→5, 4→4).
+    // Limit eliminacji drużyny = elimPerMember × perTeam (4v4 → 60 jak tdm2, 4×2 → 30 jak tdm4).
+    custom: { minTeams: 2, maxTeams: 4, minPerTeam: 1, defaultTeams: 2, defaultPerTeam: 4, timeLimit: 300, elimPerMember: 15 },
   },
 
   // Kamera gracza (main.js): wygładzanie wysokości oka (kucanie) i death cam (SPEC §2.2).
@@ -393,24 +446,72 @@ export const CONFIG = Object.freeze({
       // tablice (decale) na ścianach obwodowych: symbol sektora + znaki — orientacja w hali
       signs: { maps: ['reactor', 'neonhive'], size: 2.2, y: 2.6, intensity: 1.1, texSize: 512 },
     },
+    // Ruchome głowice pod kratownicą (render/ceilingLights.js, D-038): liczba głowic = preset.heads, plamy = preset.headSpots.
+    // 2 draw calle (głowice + snopy), poza odbiciem planarnym; plamy na podłodze/ścianach w shaderach powierzchni.
+    movingHeads: {
+      maxHeads: 8,                  // rozmiar tablic uniformów (podłoga/ściany/dym)
+      spacing: 8,                   // rozstaw kandydatów wzdłuż dźwigara (m); co drugi rząd przesunięty o ½
+      edge: 2.5,                    // min. odstęp od granic areny (m)
+      minGap: 6,                    // min. odstęp między wybranymi głowicami (m)
+      lampClear: [1.6, 2.2],        // odstęp od opraw lamp (|dx|, |dz|)
+      tubeClear: 0.5,               // odstęp od świetlówek UV (m, poza ½ długości tuby)
+      tallClear: 1.2,               // bryła sięgająca wyżej niż soczewka − to (m) blokuje miejsce
+      solidClear: 1.2,
+      colors: ['primary', 'secondary', 'uv'],   // klucze palety (przez lightColorHex; bez akcentu — D-008)
+      colorsMap: { neonhive: ['primary', 'uv'], reactor: ['primary', 'secondary'] },
+      halfAngle: 0.1,               // kąt połówkowy snopu (rad)
+      tiltBase: 0.5, tiltAmp: 0.28, tiltSpeed: 0.31,   // odchylenie od pionu (rad) = base + amp·sin(speed·t + φ)
+      panAmp: 1.1, panSpeed: 0.37,  // omiatanie: wahadło wokół kierunku do środka hali
+      spin: 0.42,                   // tryb krąg (co 3. głowica): ciągły obrót (rad/s)
+      phaseStep: 2.399,             // faza kolejnych głowic (złoty kąt)
+      // wygląd głowicy (m): obejma, trzpień, jarzmo, głowa, soczewka
+      geo: { clamp: [0.14, 0.06, 0.14], rod: 0.02, rodLen: 0.1, yokeW: 0.3, yokeT: 0.03, yokeD: 0.08, armLen: 0.22,
+        headR: 0.09, headLen: 0.28, lensR: 0.07 },
+      bodyColor: '#141420',
+      bodyTint: 0.06,               // odbłysk koloru soczewki na korpusie
+      lensIntensity: 3.2,           // HDR → bloom
+      lensFogKeep: 0.6,             // soczewka mniej tonie we mgle
+      beamSegments: 16, beamRows: 6,
+      beamOpacity: 0.32,
+      beamNoSmoke: 0.6,             // × krycie snopu bez dymu (Low)
+      beamIntensity: 1.0,
+      beamIntensityMap: { neonhive: 0.75, reactor: 0.9 },
+      beamEdge: [0.15, 1.0],        // fresnel boków stożka
+      beamFalloff: 0.18,            // 1/(1 + d·k)
+      beamStart: 0.25,              // m od soczewki — miękki początek
+      beamEndFade: 0.6, beamEndDim: 0.6,
+      beamNoise: 0.4,
+      beamNear: [0.5, 2.5],         // m od kamery — snop nie oślepia
+      beamFog: 0.5,
+      spotIntensity: 0.55,          // plamy na powierzchniach (emisja, × kolor głowicy)
+      spotIntensityMap: { neonhive: 0.7, reactor: 0.85 },
+      spotWall: 0.45,               // × plamy na ścianach (farba UV nie jest zalewana)
+      spotFloor: 1.0,
+      spotEdge: 0.55,               // r (0 oś … 1 krawędź), od którego plama miękko gaśnie
+      goboBase: 0.55, goboRing: [0.45, 0.75],   // gobo: środek przygaszony, jaśniejszy pierścień
+      spotSlack: [0.12, 0.35],      // m za punktem trafienia — plama tylko na pierwszej przeszkodzie
+      spotRef: 3.0,                 // m — osłabienie 1/d powyżej tej odległości
+      smokeGain: 0.9,               // dym: ile koloru snopu łapie kłąb w snopie
+      smokeWidth: 0.35,             // × rozmiar kłębu dodawany do promienia snopu (kłąb częściowo w snopie)
+    },
   },
 
   presets: {
     low: {
       pixelRatio: 0.75, aa: 'none', bloom: null,
-      smoke: 0, pointLights: 0, envReflections: false, texSize: 256, anisotropy: 1,
+      smoke: 0, heads: 4, headSpots: false, pointLights: 0, envReflections: false, texSize: 256, anisotropy: 1,
     },
     medium: {
       pixelRatio: 1.0, aa: 'fxaa', bloom: { strength: 0.75, radius: 0.0, threshold: 0.42, scale: 0.5 },
-      smoke: 24, pointLights: 2, envReflections: false, texSize: 512, anisotropy: 2,
+      smoke: 24, heads: 6, headSpots: true, pointLights: 2, envReflections: false, texSize: 512, anisotropy: 2,
     },
     high: {
       pixelRatio: 1.5, aa: 'msaa', bloom: { strength: 0.82, radius: 0.0, threshold: 0.4, scale: 1.0 },
-      smoke: 64, pointLights: 4, envReflections: true, texSize: 1024, anisotropy: 4,
+      smoke: 64, heads: 8, headSpots: true, pointLights: 4, envReflections: true, texSize: 1024, anisotropy: 4,
     },
     ultra: {
       pixelRatio: 2.0, aa: 'msaa', bloom: { strength: 0.9, radius: 0.0, threshold: 0.4, scale: 1.0 },
-      smoke: 128, pointLights: 6, envReflections: true, texSize: 1024, anisotropy: 8,
+      smoke: 128, heads: 8, headSpots: true, pointLights: 6, envReflections: true, texSize: 1024, anisotropy: 8,
     },
   },
 
@@ -480,17 +581,38 @@ export const CONFIG = Object.freeze({
     muzzleFlashIntensity: 2.2,
     endFlashSize: 0.22,       // poświata w punkcie końca wiązki (ściana)
     endFlashIntensity: 1.4,
-    sparkLife: 0.42,          // s
-    sparkFragments: 12,       // odłamków na trafienie (geometria, nie CPU)
-    sparkSpeed: [2.0, 6.0],   // m/s
-    sparkGravity: 9.0,
-    sparkStreak: 0.03,        // s — długość smugi = prędkość × to
-    sparkWidth: 0.014,        // m
-    sparkIntensity: 3.0,
     hitFlashSize: 0.6,        // m — rozbłysk w punkcie trafienia
     hitFlashTime: 0.16,
     hitFlashIntensity: 2.6,
-    wallPower: 0.35,          // siła iskier przy trafieniu w ścianę (hit=false) względem trafienia w uczestnika
+    wallPower: 0.45,          // rozbłysk przy trafieniu w ścianę/odbiciu względem trafienia w uczestnika (rozmiar, jasność)
+    // Odłamki lasera (render/beams.js, ta sama pula co rozbłyski trafień; D-037): przy trafieniu w ścianę/przeszkodę/podłogę
+    // lecą od punktu wzdłuż kierunku odbitego od normalnej (+ rozrzut), opadają pod grawitacją, raz słabo odbijają się
+    // od podłogi i gasną. Lot liczony w shaderze (zero pracy CPU na odłamek). Trafienie uczestnika: kierunek ku strzelcowi.
+    shards: {
+      count: 16,              // odłamków na zdarzenie (geometria instancji)
+      life: [0.6, 1.2],       // s — czas życia odłamka (losowy per odłamek)
+      speed: [1.4, 5.0],      // m/s
+      spread: 0.75,           // rozrzut kierunku (× losowy wektor jednostkowy, dodawany do kierunku odbicia)
+      gravity: 9.0,           // m/s²
+      restitution: 0.3,       // odbicie od podłogi: składowa pionowa × to
+      friction: 0.5,          // … pozioma × to
+      streak: 0.03,           // s — długość smugi = prędkość × to
+      width: 0.016,           // m
+      intensity: 3.0,
+      hitLife: 0.6,           // × life dla trafienia w uczestnika (krótsze iskry)
+    },
+    // Pocisk wyrzutni (render/projectiles.js): świecąca kula + ślad, 1 draw call (instancje = aktywne pociski).
+    projectile: {
+      size: 0.13,             // m — promień poświaty kuli
+      coreIntensity: 3.2,
+      glowIntensity: 2.0,
+      pulseHz: 9,             // pulsowanie kuli
+      pulse: 0.18,            // amplituda pulsowania (× rozmiar)
+      trail: 1.6,             // m — długość śladu (≤ droga od startu / odbicia)
+      trailWidth: 0.07,       // m
+      trailIntensity: 1.6,
+      muzzleBlend: 0.12,      // s — własny pocisk: start wizualny z lufy FPP zbiega do pozycji z symulacji
+    },
   },
 
   // Awatary uczestników (render/avatars.js).
@@ -551,8 +673,14 @@ export const CONFIG = Object.freeze({
 
   // Broń FPP + ręce (render/viewModel.js). Lufa kończy się w CONFIG.weapon.muzzleOffset.
   viewModel: {
-    scale: 0.72,              // skala względem wylotu lufy (było 0.42; wylot dalej od oka → broń większa w kadrze o ~1.5×)
-    offset: [0.017, -0.02, -0.1], // przesunięcie broni względem CONFIG.weapon.muzzleOffset (niżej w kadrze); viewModel.muzzleWorld() zwraca faktyczny wylot
+    // D-037: model per broń; muzzle = wylot lufy w układzie kamery (x prawo, y góra, z przód = −), scale = skala modelu,
+    // recoil = × recoilKick/recoilPitch. Broń bliżej twarzy (bliżej osi wzroku niż dawne [0.237, −0.2, −0.55]) — bez celownika
+    // lufa wskazuje kierunek strzału; viewModel.muzzleWorld() zwraca faktyczny wylot (start wiązki gracza).
+    weapons: {
+      phaser: { muzzle: [0.15, -0.145, -0.52], scale: 0.72, recoil: 1 },
+      pistol: { muzzle: [0.13, -0.13, -0.42], scale: 0.72, recoil: 0.7 },
+      bouncer: { muzzle: [0.15, -0.15, -0.52], scale: 0.72, recoil: 1.5 },
+    },
     bodyColor: '#0e0c16',
     roughness: 0.75,
     metalness: 0.1,
@@ -618,5 +746,6 @@ export const CONFIG = Object.freeze({
     mode: 'ffa',
     diff: 'normal',
     bots: null,             // null → liczba z trybu (CONFIG.modes)
+    weapon: 'phaser',       // broń gracza (menu BROŃ / ?weapon=phaser|pistol|bouncer)
   },
 });

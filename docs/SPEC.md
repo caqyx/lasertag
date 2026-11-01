@@ -35,6 +35,14 @@ mecze 5-minutowe z botami. Architektura gotowa na tryb online (M5, poza tą sesj
 - Szybkostrzelność: 1 strzał / **0.22 s** (trzymanie spustu = ogień ciągły).
 - **Przegrzewanie:** każdy strzał +0.11 ciepła (0..1). Chłodzenie 0.45/s, start po 0.25 s od strzału.
   Przy 1.0 → **przegrzanie**: blokada do spadku ciepła < 0.35 (chłodzenie w przegrzaniu 0.6/s).
+- **Wybór broni (D-037)** — przed meczem w menu (sekcja BROŃ) lub `?weapon=phaser|pistol|bouncer`; jedna broń na mecz.
+  Boty losują broń z deterministycznego rng symulacji przy starcie meczu. Liczby w `CONFIG.weapons`.
+  - **Fazer** — jak wyżej (domyślny), trafienie = 1 segment.
+  - **Pistolet dwustrzałowy** — kliknięcie = seria 2 hitscanów co 0.07 s (półautomat: trzymanie spustu nie powtarza),
+    seria co ≥ 0.3 s, zasięg 16 m, +0.025 ciepła/strzał, trafienie = ½ segmentu (seria = 1 segment), stun × 0.5.
+  - **Wyrzutnia odbijająca** — wolny impuls-pocisk 14 m/s (życie 2.5 s), odbija się lustrzanie dokładnie raz od dowolnej
+    powierzchni (ściana, przeszkoda, rampa, podłoga, sufit), może trafić zza rogu; drugi kontakt z powierzchnią = znika.
+    Co 0.55 s, +0.2 ciepła, trafienie = 1 segment. Pula pocisków w symulacji (maks. 48 aktywnych).
 
 ### 2.4 Punktacja
 - Trafienie +10, eliminacja +50 (dla strzelającego). Bycie wyeliminowanym 0 (licznik śmierci).
@@ -66,6 +74,14 @@ mecze 5-minutowe z botami. Architektura gotowa na tryb online (M5, poza tą sesj
 - **tdm2** — 2 drużyny 4v4 (czerwoni / niebiescy), 5 min, limit 60 eliminacji drużyny.
 - **tdm4** — 4 drużyny 2-osobowe (czerwoni / niebiescy / zieloni / żółci), 5 min, limit 30 eliminacji drużyny.
 - Wygrywa najwyższy wynik punktowy (remis → więcej eliminacji → remis ogłoszony).
+- **Multiplayer → Custom** (menu: zakładka MULTIPLAYER; D-039) — lokalnie, bez sieci, przygotowanie pod M5:
+  gracz wybiera liczbę drużyn (2–4) i liczbę osób w drużynie (1…⌊16 / drużyny⌋: 2 → 8, 3 → 5, 4 → 4; wszystkie drużyny
+  równe). Gracz w drużynie 0, pozostałe sloty zajmują boty (poziom z wyboru BOTY). Drużynowy deathmatch na zasadach tdm
+  (bez friendly fire, wynik drużyny = suma wyników), 5 min, limit eliminacji drużyny = 15 × osób w drużynie
+  (4v4 → 60 jak tdm2, 4×2 → 30 jak tdm4). Spawny: 2 drużyny jak tdm2 (strona % 2), 3–4 drużyny wg strony
+  (N 0, S 1, E 2, W 3; przy 3 drużynach strona W wolna). Slot = `{ team, kind: 'local' | 'bot' | 'remote' }` —
+  w M5 bot w slocie zostanie podmieniony na gracza sieciowego (wymienny InputSource); `remote` na razie tylko w danych
+  (sterowany botem). URL: `?mode=custom&teams=3&per=4`.
 
 ### 2.7 Ruch i stamina
 - Chód 3.8 m/s, sprint 5.6 m/s tylko do przodu (D-013/D-015). **Stamina** (0..1, wspólna mechanika gracza i botów, D-023):
@@ -201,8 +217,8 @@ tests/                unit/*.test.mjs (node --test), smoke/*.mjs (Playwright), t
 
 ## 9. Sterowanie i UI
 - WASD ruch (chód 3.8 m/s, sprint 5.6 m/s), C kucanie (wysokość 1.15 m, oko 1.0 m, ×0.45 prędkości), mysz celowanie (pointer lock), LPM strzał, Shift sprint, Spacja skok, Tab tablica wyników, Esc pauza/menu.
-- HUD: celownik, HP jako 4 segmenty, pasek ciepła, timer, wynik, feed eliminacji, wskaźnik trafienia, ekran eliminacji.
-- Parametry URL: `?preset=&map=&mode=&bots=&diff=&cam=&nohud=1&stats=1&seed=&autostart=1`.
+- HUD (bez celownika — D-037): HP jako 4 segmenty (segment częściowo uszkodzony prążkowany), nazwa broni przy pasku ciepła, pasek ciepła, timer, wynik, feed eliminacji, wskaźnik trafienia, ekran eliminacji.
+- Parametry URL: `?preset=&map=&mode=&bots=&diff=&cam=&nohud=1&stats=1&seed=&autostart=1&weapon=phaser|pistol|bouncer`; Custom: `&mode=custom&teams=2..4&per=1..⌊16/teams⌋` (za duże → przycięte, błędne → domyślne z `CONFIG.modes.custom`).
 
 ## 10. Roadmapa
 
@@ -272,3 +288,5 @@ tests/                unit/*.test.mjs (node --test), smoke/*.mjs (Playwright), t
 | D-034 | 2026-10-31 | Runda renderu (wszystkie mapy, 3 rundy): dym — warstwa środkowa 1.0–2.4 m z kryciem/jasnością per kłąb (128/64 cząstek Ultra/High), mniej płacht przyziemnych; emisja farby 0.75 → 0.62 (Reactor bez zmian przez paintIntensityMap), mniej poświaty na wierzchach brył, rzadsze i ciemniejsze rurki UV, ciemniejszy strop Orbity. Szerszy bloom i mniejsze motywy farby cofnięte. Wynik: UV Maze 9 → 10, Orbita 8 → 8, Hive 12 → 10, Reactor 10 → 8. | Bloom/skala farby dały regresję (brudne halo Hive, przepalony rdzeń i moiré Reactora) — cofnięte w rundzie 2; pozostały spadek Hive/Reactora vs wcześniejsze oceny mieści się częściowo w rozrzucie recenzentów (±1–2), punkty NIE: kolor mgły (turkus/zieleń z palet map), dym wciąż jako plamy, rurki UV bez czytelnych mocowań. |
 | D-035 | 2026-10-31 | Drzwi: szyna-prowadnica na wspornikach (statyczna), pas ostrzegawczy w kolorze akcentu przy krawędzi natarcia, uchwyt; opony r 0.55, 4 sztuki z wcięciami i przerywanym bieżnikiem; siatka obwisła bez sztywnej ramy. | Recenzja: drzwi czytane jak okno (krzyż), opony nieodróżnialne od beczek, siatka jak ogrodzenie. |
 | D-036 | 2026-10-31 | `Target crashed` w smoke (2 z 8 pełnych przebiegów) = OOM-kill cgroup (dmesg: chrome-headless 5 GB RSS); RSS pojedynczej strony jak przed sesją (UV Maze 889 vs 891 MB, Hive 933 vs 968, Reactor 906 vs 905). Test bez zmian. | Ograniczenie środowiska (wiele przeglądarek SwiftShader równolegle), nie regresja aplikacji; ewentualnie `--jobs 2` przy uruchamianiu smoke w tym kontenerze. |
+| D-037 | 2026-11-01 | **Bronie + model obrażeń + brak celownika.** (1) Obrażenia w punktach: `combat.segmentPoints` = 4 punkty na segment; `P.hp` nadal = liczba segmentów (kontrakt HUD/botów/testów bez zmian), nowe `P.dmg` = punkty utracone w bieżącym segmencie (pełne 4 → −1 segment). Fazer zadaje 4 pkt (= dawne −1 HP), pistolet 2 pkt (½ segmentu), wyrzutnia 4. Punkty za trafienie proporcjonalne: `scoring.hit × dmg / segmentPoints` (seria pistoletu = 10 jak fazer); hit stun × `stunScale` broni. (2) Wyrzutnia: pocisk w sim (pula typed arrays, zero alokacji, deterministyczny), lot prostoliniowy bez grawitacji; **każda powierzchnia** (ściana, przeszkoda, rampa, podłoga, sufit) liczy się jako kontakt — 1. kontakt = odbicie lustrzane v − 2(v·n)n, 2. = znika; siatki maskujące przepuszczają (jak hitscan). Start z wylotu lufy awatara w kierunku punktu celowania z oka; strzelec nie trafia sam siebie, sojusznicy przepuszczani. Nowe zdarzenia LAUNCH/BOUNCE/PROJ_END i pola rekordu nx/ny/nz (normalna powierzchni, także w SHOT przy trafieniu w ścianę → odłamki). (3) Celownik usunięty całkowicie (bez zamiennika); broń FPP bliżej osi wzroku (`viewModel.weapons[typ].muzzle`), bez zmiany FOV. (4) Odłamki lasera = rozbudowane iskry z beams.js (ta sama pula, 1 draw call): kierunek odbity od normalnej + rozrzut, grawitacja, jedno słabe odbicie od podłogi (analitycznie w shaderze), życie 0.6–1.2 s. | Ułamkowe HP przez osobne pole zamiast skali `hp` × 4 — istniejące testy/boty/HUD ustawiają i czytają `hp` jako segmenty. Podłoga jako kontakt: jedna, przewidywalna reguła („drugi kontakt z czymkolwiek”) i strzały odbijane od podłogi pod przeszkodą; pocisk bez grawitacji, bo to impuls lasera, a tor prosty ułatwia odbicia zza rogu. Pozostałe bronie hitscan liczone w sim jak fazer (te same sensory/kapsuły). |
+| D-039 | 2026-11-01 | Menu: zakładki SOLO / MULTIPLAYER; MULTIPLAYER → **Custom** (lokalnie z botami): 2–4 drużyny × 1…⌊16/drużyny⌋ osób, jedna liczebność dla wszystkich drużyn (`CONFIG.modes.custom`); sloty `{ team, kind: local/bot/remote }` (remote = typ pod M5, do czasu sieci bot). Spawny: 2 drużyny `sp.team % 2`, 3–4 drużyny `sp.team === team`. Punkt przesunięty od zajętego spawnu wolny przy luzie `combat.spawnOffsetClear` 0.8 m (zamiast `spawnOccupiedRadius` 1.5 m) i szukany wokół kolejnych dozwolonych spawnów. Numer D-037/D-038 zajęty w kodzie przez równoległe prace (bronie, mapy, render). | Jedna wartość „osób w drużynie” = prostszy, czytelny UI i równe drużyny; per-drużyna niepotrzebne bez sieci. Przy 3 drużynach % 3 dawało drużynie 0 dwie strony (N+W) — nierówno. `spawnOccupiedRadius` > `spawnOffset` sprawiał, że uczestnik stojący na spawnie blokował każdy punkt przesunięty: przy 16 osobach na 8 spawnach kilka ciał startowało w tym samym punkcie (test custom: min. odstęp ≥ 2 × promień ciała na wszystkich mapach). |

@@ -12,6 +12,8 @@ test('brak parametrów → domyślne z CONFIG.defaults, flagi false, seed/cam nu
     assert.deepEqual(p, {
       preset: D.preset, map: D.map, mode: D.mode, bots: CONFIG.defaults.bots ?? null, diff: D.diff,
       cam: null, nohud: false, stats: false, seed: null, autostart: false,
+      teams: CONFIG.modes.custom.defaultTeams, perTeam: CONFIG.modes.custom.defaultPerTeam,
+      weapon: D.weapon,
     });
   }
 });
@@ -26,6 +28,8 @@ test('poprawne wartości są przyjmowane (z ? i bez)', () => {
   assert.deepEqual(p, {
     preset: 'low', map: 'uvmaze', mode: 'tdm4', bots: 7, diff: 'hard', cam: 2,
     nohud: true, stats: true, seed: 42, autostart: true,
+    teams: CONFIG.modes.custom.defaultTeams, perTeam: CONFIG.modes.custom.defaultPerTeam,
+    weapon: D.weapon,
   });
   assert.equal(parseParams('preset=ultra').preset, 'ultra');
   for (const k of Object.keys(CONFIG.presets)) assert.equal(parseParams(`?preset=${k}`).preset, k);
@@ -106,4 +110,28 @@ test('powtórzony parametr → pierwsze wystąpienie; nieznane parametry ignorow
   const p = parseParams('?foo=bar&preset=medium');
   assert.equal(p.preset, 'medium');
   assert.ok(!('foo' in p));
+});
+
+test('custom: ?mode=custom&teams=&per= — zakres, limit maxParticipants, błędne → domyślne', () => {
+  const C = CONFIG.modes.custom;
+  const max = CONFIG.combat.maxParticipants;
+  let p = parseParams('?mode=custom&teams=3&per=4');
+  assert.equal(p.mode, 'custom'); assert.equal(p.teams, 3); assert.equal(p.perTeam, 4);
+  for (let t = C.minTeams; t <= C.maxTeams; t++) {
+    p = parseParams(`?mode=custom&teams=${t}&per=99`);
+    assert.equal(p.teams, t);
+    assert.equal(p.perTeam, Math.floor(max / t), `teams=${t}: per przycięte do limitu`);
+    assert.ok(p.teams * p.perTeam <= max);
+  }
+  p = parseParams('?mode=custom&teams=9&per=0');
+  assert.equal(p.teams, C.maxTeams); assert.equal(p.perTeam, C.minPerTeam);
+  p = parseParams('?mode=custom&teams=1');
+  assert.equal(p.teams, C.minTeams);
+  p = parseParams('?mode=custom&teams=x&per=-3');
+  assert.equal(p.teams, C.defaultTeams); assert.equal(p.perTeam, C.defaultPerTeam);
+});
+
+test('weapon: ?weapon=phaser|pistol|bouncer; nieznane / klucze prototypu → domyślna', () => {
+  for (const k of Object.keys(CONFIG.weapons)) assert.equal(parseParams(`?weapon=${k}`).weapon, k);
+  for (const v of ['nope', '', '__proto__', 'constructor', 'PISTOL']) assert.equal(parseParams(`?weapon=${encodeURIComponent(v)}`).weapon, D.weapon, v);
 });

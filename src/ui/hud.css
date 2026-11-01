@@ -1,4 +1,4 @@
-/* HUD M1 (ui/hud.js) — neonowy, spójny ze styles.css. Środek ekranu wolny (poza celownikiem i hitmarkerem). */
+/* HUD M1 (ui/hud.js) — neonowy, spójny ze styles.css. Środek ekranu wolny (bez celownika — D-037; tylko chwilowy hitmarker). */
 .lt-hud {
   --pc: #22e8ff;               /* kolor gracza (ustawiany z JS) */
   --pc-glow: color-mix(in srgb, var(--pc) 55%, transparent);
@@ -61,7 +61,7 @@
           mask: radial-gradient(circle, transparent 60%, #000 61%);
 }
 
-/* ---------- ochrona (pod celownikiem, poza środkiem) ---------- */
+/* ---------- ochrona (pod środkiem ekranu) ---------- */
 .lt-protect {
   position: absolute;
   left: 50%;
@@ -114,6 +114,11 @@
   border-color: color-mix(in srgb, var(--pc) 60%, #fff);
   box-shadow: 0 0 6px var(--pc), 0 0 16px var(--pc-glow);
 }
+/* D-037: segment częściowo uszkodzony (pistolet: ½ segmentu) — przygaszony, prążkowany */
+.lt-seg.on.part {
+  background: repeating-linear-gradient(90deg, var(--pc) 0 4px, color-mix(in srgb, var(--pc) 25%, transparent) 4px 8px);
+  box-shadow: 0 0 4px var(--pc-glow);
+}
 .lt-seg.flash {
   background: #ffffff;
   border-color: #fff;
@@ -161,6 +166,7 @@
   border-radius: 4px;
   box-shadow: 0 0 14px rgba(122, 60, 255, 0.2);
 }
+.lt-heat-weapon { margin-top: 6px; text-align: right; font-size: 10px; opacity: 0.55; }
 .lt-heat-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 7px; }
 .lt-heat-warn {
   visibility: hidden;
@@ -247,7 +253,6 @@
   opacity: 0.8;
 }
 .lt-hud.dead .lt-center, .lt-hud.dead .lt-protect { display: none; }
-#hud.lt-dead .crosshair { display: none; }
 
 @keyframes lt-blink { 0% { opacity: 1; } 50% { opacity: 0.25; } 100% { opacity: 1; } }
 @keyframes lt-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
