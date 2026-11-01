@@ -30,7 +30,7 @@ html, body {
   width: 100vw;
   height: 100vh;
   outline: none;
-  cursor: crosshair;
+  cursor: default;
 }
 
 /* ---------- HUD ---------- */
@@ -39,32 +39,6 @@ html, body {
   inset: 0;
   pointer-events: none;
   z-index: 10;
-}
-
-.crosshair {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 0;
-  height: 0;
-}
-.ch-line, .ch-dot {
-  position: absolute;
-  background: var(--neon-cyan);
-  box-shadow: 0 0 4px var(--neon-cyan), 0 0 9px rgba(34, 232, 255, 0.55);
-  border-radius: 1px;
-}
-.ch-t, .ch-b { width: 2px; height: 8px; left: -1px; }
-.ch-l, .ch-r { width: 8px; height: 2px; top: -1px; }
-.ch-t { top: -14px; }
-.ch-b { top: 6px; }
-.ch-l { left: -14px; }
-.ch-r { left: 6px; }
-.ch-dot {
-  width: 3px; height: 3px; left: -1.5px; top: -1.5px;
-  border-radius: 50%;
-  background: var(--neon-magenta);
-  box-shadow: 0 0 5px var(--neon-magenta);
 }
 
 /* ---------- Ekran startowy / pauza ---------- */
