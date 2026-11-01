@@ -90,7 +90,7 @@ export function createMenu(rootEl, opts, onStart) {
       if (p[k]) el(bar, 'lt-mn-swatch').style.setProperty('--c', p[k]);
     }
     el(card, 'lt-mn-card-name', m.name || m.id);
-    const info = m.size ? m.size.w + ' × ' + m.size.d + ' m' : '';
+    const info = m.size ? Math.round(m.size.w) + ' × ' + Math.round(m.size.d) + ' m' : '';
     el(card, 'lt-mn-card-desc', info + (m.ceiling ? ' · sufit ' + m.ceiling + ' m' : ''));
     addItem(rMap, m.id, card);
   }
