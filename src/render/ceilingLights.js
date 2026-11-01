@@ -11,7 +11,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { CONFIG } from '../config.js';
-import { RAYARG, raycastWorldBuf, segmentClear, createHit } from '../world/physics.js';
+import { segmentClear } from '../world/physics.js';
 import { lightColorHex, lampPosition, LAYER_NO_REFLECT } from './arenaBuilder.js';
 
 const H = CONFIG.render.movingHeads;
@@ -186,6 +186,59 @@ void main() {
   gl_FragColor = vec4( vColor * a, 1.0 );
 }`;
 
+// ------------------------------------------------------------ długość snopu (własny raycast bez alokacji)
+// raycastWorld z physics.js alokował ~3–4 B/promień przy promieniach w dół (pomiar v8.GCProfiler) — tu prosty test
+// promień–OBB po wszystkich bryłach + powierzchnie ramp + podłoga; argumenty i wynik w Float64Array (D-012).
+const RB = new Float64Array(8);
+const NO_RAMPS = [];   // ox, oy, oz, dx, dy, dz, max → [7] wynik
+
+function beamLength(world) {
+  const ox = RB[0], oy = RB[1], oz = RB[2], dx = RB[3], dy = RB[4], dz = RB[5];
+  let best = RB[6];
+  if (dy < -1e-6) { const t = -oy / dy; if (t < best) best = t; }
+  const solids = world.solids;
+  for (let i = 0; i < solids.length; i++) {
+    const s = solids[i];
+    if (s.seeThrough === true) continue;
+    const rx = ox - s.cx, rz = oz - s.cz, c = s.cos, sn = s.sin;
+    const lox = rx * c - rz * sn, loz = rx * sn + rz * c;
+    const ldx = dx * c - dz * sn, ldz = dx * sn + dz * c;
+    let t0 = 0, t1 = best;
+    if (ldx > -1e-6 && ldx < 1e-6) { if (lox < -s.hx || lox > s.hx) continue; } else {
+      let a = (-s.hx - lox) / ldx, b = (s.hx - lox) / ldx;
+      if (a > b) { const t = a; a = b; b = t; }
+      if (a > t0) t0 = a; if (b < t1) t1 = b; if (t0 > t1) continue;
+    }
+    if (dy > -1e-6 && dy < 1e-6) { if (oy < s.y0 || oy > s.y1) continue; } else {
+      let a = (s.y0 - oy) / dy, b = (s.y1 - oy) / dy;
+      if (a > b) { const t = a; a = b; b = t; }
+      if (a > t0) t0 = a; if (b < t1) t1 = b; if (t0 > t1) continue;
+    }
+    if (ldz > -1e-6 && ldz < 1e-6) { if (loz < -s.hz || loz > s.hz) continue; } else {
+      let a = (-s.hz - loz) / ldz, b = (s.hz - loz) / ldz;
+      if (a > b) { const t = a; a = b; b = t; }
+      if (a > t0) t0 = a; if (b < t1) t1 = b; if (t0 > t1) continue;
+    }
+    if (t0 < best) best = t0;
+  }
+  // rampy: płaszczyzna y = y0 + k·(lz + hz) w obrysie |lx| ≤ hx, |lz| ≤ hz
+  const ramps = world.ramps || NO_RAMPS;
+  for (let i = 0; i < ramps.length; i++) {
+    const r = ramps[i];
+    const rx = ox - r.cx, rz = oz - r.cz, c = r.cos, sn = r.sin;
+    const lox = rx * c - rz * sn, loz = rx * sn + rz * c;
+    const ldx = dx * c - dz * sn, ldz = dx * sn + dz * c;
+    const k = (r.y1 - r.y0) / (2 * r.hz);
+    const den = dy - k * ldz;
+    if (den > -1e-6 && den < 1e-6) continue;
+    const t = (r.y0 + k * (loz + r.hz) - oy) / den;
+    if (t <= 0 || t >= best) continue;
+    const px = lox + ldx * t, pz = loz + ldz * t;
+    if (px >= -r.hx && px <= r.hx && pz >= -r.hz && pz <= r.hz) best = t;
+  }
+  RB[7] = best;
+}
+
 // ------------------------------------------------------------ rozmieszczenie
 
 function trussRows(world) {
@@ -196,7 +249,7 @@ function trussRows(world) {
 }
 
 /** Kandydaci pod pasem dolnym dźwigarów: z dala od lamp/świetlówek, nad wolną przestrzenią, wewnątrz hali. */
-function placeHeads(world, count, mountY, lensY) {
+export function placeHeads(world, count, mountY, lensY) {
   const b = world.bounds;
   const U = { ...A.uvTube, ...(A.uvTubeMap[world.id] || {}) };
   const rows = trussRows(world);
@@ -235,13 +288,16 @@ function placeHeads(world, count, mountY, lensY) {
   cands.forEach((c, i) => { const d = Math.hypot(c.x - cx, c.z - cz); if (d < bd) { bd = d; first = i; } });
   out.push(cands[first]);
   while (out.length < Math.min(count, cands.length)) {
-    let best = -1, bestD = -1;
+    let best = -1, bestD = -Infinity;
     cands.forEach((c, i) => {
       let m = Infinity;
       for (const o of out) m = Math.min(m, Math.hypot(c.x - o.x, c.z - o.z));
-      if (m > bestD) { bestD = m; best = i; }
+      if (m < H.minGap) return;
+      // najdalej od wybranych, z lekką preferencją środka hali (snopy nad placami, nie w narożnikach obwodu)
+      const score = m - H.centerBias * Math.hypot(c.x - cx, c.z - cz);
+      if (score > bestD) { bestD = score; best = i; }
     });
-    if (bestD < H.minGap) break;
+    if (best < 0) break;
     out.push(cands[best]);
   }
   return out;
@@ -364,10 +420,10 @@ export function createCeilingLights(world, preset, atmo) {
   atmo.spotCount.value = n;
   atmo.spotSurf.value = preset.headSpots ? 1 : 0;
   const cosHalf = Math.cos(H.halfAngle), tanHalf = Math.tan(H.halfAngle);
-  const hit = createHit();
   const maxLen = Math.hypot(world.bounds.maxX - world.bounds.minX, world.ceiling) + 1;
   const tilt0 = H.tiltBase, tiltAmp = H.tiltAmp, panAmp = H.panAmp, spin = H.spin, wPan = H.panSpeed, wTilt = H.tiltSpeed;
 
+  const sp4 = atmo.spotPos.value, sd4 = atmo.spotDir.value;
   function update(time) {
     beamMat.uniforms.time.value = time;
     for (let i = 0; i < n; i++) {
@@ -380,12 +436,15 @@ export function createCeilingLights(world, preset, atmo) {
       const st = Math.sin(tilt), ct = Math.cos(tilt), sp = Math.sin(pan), cp = Math.cos(pan);
       const dx = -st * sp, dy = -ct, dz = -st * cp;
       const ox = spots[i].x + dx * hg.lensOff, oy = lensY + dy * hg.lensOff, oz = spots[i].z + dz * hg.lensOff;
-      RAYARG[0] = ox; RAYARG[1] = oy; RAYARG[2] = oz; RAYARG[3] = dx; RAYARG[4] = dy; RAYARG[5] = dz; RAYARG[6] = maxLen;
-      const len = raycastWorldBuf(world, hit) ? hit.dist : maxLen;
+      RB[0] = ox; RB[1] = oy; RB[2] = oz; RB[3] = dx; RB[4] = dy; RB[5] = dz; RB[6] = maxLen;
+      beamLength(world);
+      const len = RB[7];
       bHead[i * 4] = ox; bHead[i * 4 + 1] = oy; bHead[i * 4 + 2] = oz; bHead[i * 4 + 3] = len;
       bDir[i * 4] = dx; bDir[i * 4 + 1] = dy; bDir[i * 4 + 2] = dz; bDir[i * 4 + 3] = tanHalf;
-      atmo.spotPos.value[i].set(ox, oy, oz, len);
-      atmo.spotDir.value[i].set(dx, dy, dz, cosHalf);
+      // pola wprost (bez wywołania set z doublami w argumentach — boxing V8, D-012)
+      const P = sp4[i], Dv = sd4[i];
+      P.x = ox; P.y = oy; P.z = oz; P.w = len;
+      Dv.x = dx; Dv.y = dy; Dv.z = dz; Dv.w = cosHalf;
     }
     aimAttr.needsUpdate = true;
     headAttr.needsUpdate = true;

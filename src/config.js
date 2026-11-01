@@ -453,10 +453,11 @@ export const CONFIG = Object.freeze({
       spacing: 8,                   // rozstaw kandydatów wzdłuż dźwigara (m); co drugi rząd przesunięty o ½
       edge: 2.5,                    // min. odstęp od granic areny (m)
       minGap: 6,                    // min. odstęp między wybranymi głowicami (m)
+      centerBias: 0.35,             // wybór: odległość od wybranych − to × odległość od środka hali
       lampClear: [1.6, 2.2],        // odstęp od opraw lamp (|dx|, |dz|)
       tubeClear: 0.5,               // odstęp od świetlówek UV (m, poza ½ długości tuby)
-      tallClear: 1.2,               // bryła sięgająca wyżej niż soczewka − to (m) blokuje miejsce
-      solidClear: 1.2,
+      tallClear: 0.6,               // bryła sięgająca wyżej niż soczewka − to (m) blokuje miejsce (filar, rdzeń; nie zwykłe ściany)
+      solidClear: 0.6,              // m — odstęp w XZ od takiej bryły
       colors: ['primary', 'secondary', 'uv'],   // klucze palety (przez lightColorHex; bez akcentu — D-008)
       colorsMap: { neonhive: ['primary', 'uv'], reactor: ['primary', 'secondary'] },
       halfAngle: 0.1,               // kąt połówkowy snopu (rad)
